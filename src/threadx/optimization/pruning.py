@@ -384,3 +384,6 @@ if __name__ == "__main__":
         f"Métadonnées: {metadata['pruning_rate']:.1%} pruned, "
         f"early_stop={metadata['early_stop_triggered']}"
     )
+
+
+

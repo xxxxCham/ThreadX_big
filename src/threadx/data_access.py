@@ -132,3 +132,7 @@ def load_ohlcv(symbol: str, timeframe: str, start=None, end=None) -> pd.DataFram
         df = df[df.index <= pd.to_datetime(end)]
 
     return df
+
+
+
+

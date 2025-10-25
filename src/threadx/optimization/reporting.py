@@ -480,3 +480,6 @@ if __name__ == "__main__":
         f"Test reporting: {len(stats)} métriques analysées, "
         f"{len(heatmaps)} heatmaps générées"
     )
+
+
+

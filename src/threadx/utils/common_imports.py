@@ -63,7 +63,7 @@ def create_logger(name: str):
     Helper pour créer un logger avec le bon nom.
 
     Args:
-        name: Nom du module (ex: "threadx.data.loader")
+        name: Nom du module (ex: "threadx.dataset.loader")
 
     Returns:
         Logger configuré
@@ -77,3 +77,6 @@ def create_logger(name: str):
 
 # === Default logger pour usage simple ===
 logger = get_logger("threadx")
+
+
+

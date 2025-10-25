@@ -834,3 +834,6 @@ def get_gpu_accelerated_bank() -> GPUAcceleratedIndicatorBank:
         logger.info("Banque indicateurs GPU globale créée")
 
     return _gpu_indicator_bank
+
+
+

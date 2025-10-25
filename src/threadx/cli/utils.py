@@ -194,3 +194,6 @@ def handle_bridge_error(error: Exception, json_mode: bool = False) -> None:
         print(f"\n❌ Error: {error}\n")
 
     sys.exit(1)
+
+
+

@@ -10,7 +10,7 @@ Architecture Option B :
 3. Pipeline unifié : Orchestration et intégration complète
 4. Persistance : Cache/registry pour optimisation
 
-Usage CLI : python -m threadx.data.unified_diversity_pipeline --mode diversity
+Usage CLI : python -m threadx.dataset.unified_diversity_pipeline --mode diversity
 """
 
 from __future__ import annotations
@@ -23,14 +23,14 @@ from typing import Dict, List, Optional, Any, cast
 
 import pandas as pd
 
-from threadx.data.tokens import (
+from threadx.dataset.tokens import (
     TokenDiversityDataSource,
     TokenDiversityConfig,
     create_default_config,
 )
 from threadx.config import load_config_dict
 from threadx.indicators.bank import IndicatorBank
-from threadx.data.io import write_frame
+from threadx.dataset.io import write_frame
 
 log = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ class UnifiedDiversityPipeline:
         self.indicator_bank = IndicatorBank()
 
         # Registry désactivé (fonctions utilitaires disponibles dans
-        # threadx.data.registry)
+        # threadx.dataset.registry)
         self.registry = None
 
         log.info(
@@ -837,16 +837,16 @@ def main():
         epilog="""
 Exemples:
   # Traitement symbole unique
-  python -m threadx.data.unified_diversity_pipeline --mode diversity --symbol BTCUSDT --timeframe 1h
+  python -m threadx.dataset.unified_diversity_pipeline --mode diversity --symbol BTCUSDT --timeframe 1h
 
   # Traitement groupe DeFi
-  python -m threadx.data.unified_diversity_pipeline --mode diversity --group DeFi --timeframe 4h
+  python -m threadx.dataset.unified_diversity_pipeline --mode diversity --group DeFi --timeframe 4h
 
   # Traitement complet avec limite par groupe
-  python -m threadx.data.unified_diversity_pipeline --mode diversity --timeframe 1d --limit 5
+  python -m threadx.dataset.unified_diversity_pipeline --mode diversity --timeframe 1d --limit 5
 
   # Indicateurs personnalisés
-  python -m threadx.data.unified_diversity_pipeline --mode diversity --group L2 --indicators rsi macd sma_20
+  python -m threadx.dataset.unified_diversity_pipeline --mode diversity --group L2 --indicators rsi macd sma_20
         """,
     )
 
@@ -908,3 +908,6 @@ Exemples:
 
 if __name__ == "__main__":
     main()
+
+
+

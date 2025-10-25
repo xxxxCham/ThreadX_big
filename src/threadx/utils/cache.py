@@ -790,3 +790,6 @@ def indicators_cache(ttl_seconds: int = 3600, lru_capacity: int = 1000) -> Calla
     Optimized for indicator computation patterns with sensible defaults.
     """
     return cached(ttl=ttl_seconds, lru=lru_capacity, namespace="indicators")
+
+
+

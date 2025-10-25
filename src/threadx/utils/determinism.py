@@ -424,3 +424,6 @@ if __name__ == "__main__":
     print(f"Hashes identiques: {hash1 == hash2}")
 
     print("✅ Tests déterminisme OK")
+
+
+

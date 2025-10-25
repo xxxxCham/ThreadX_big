@@ -400,3 +400,6 @@ else:
         """Exception pour erreurs runtime GPU (fallback)"""
 
         pass
+
+
+

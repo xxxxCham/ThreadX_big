@@ -334,3 +334,6 @@ class Configuration:
         if self.max_workers < 1:
             raise ValueError(f"max_workers must be >= 1, got {self.max_workers}")
         return True
+
+
+

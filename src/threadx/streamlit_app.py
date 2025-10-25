@@ -21,13 +21,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 try:
-    from threadx.ui.data_access import DATA_DIR, load_ohlcv
+    from threadx.data_access import DATA_DIR, load_ohlcv
     from threadx.ui.page_selection_token import main as selection_page_main
     from threadx.ui.page_strategy_indicators import main as strategy_page_main
     from threadx.ui.page_backtest_results import main as backtest_page_main
     from threadx.ui.strategy_registry import list_strategies
     from threadx.ui.backtest_bridge import run_backtest, BacktestResult
-    from threadx.data.validate import validate_dataset
+    from threadx.dataset.validate import validate_dataset
 except ImportError:  # pragma: no cover - script execution fallback
     from pathlib import Path
     import importlib.util
@@ -58,10 +58,10 @@ except ImportError:  # pragma: no cover - script execution fallback
 
     data_access = _load("threadx_ui_data_access", "ui/data_access.py")
     # Load data validation module early so UI modules using relative imports
-    # like `from ..data.validate import ...` can resolve successfully.
+    # like `from ..dataset.validate import ...` can resolve successfully.
     try:
         # Ensure package entries for 'threadx' and 'threadx.data' exist so
-        # relative imports inside UI modules (eg. `from ..data.validate`) can
+        # relative imports inside UI modules (eg. `from ..dataset.validate`) can
         # be resolved by the import machinery.
         import types
 
@@ -202,7 +202,7 @@ def render_sidebar() -> None:
         selected_key = next(k for k, v in PAGE_TITLES.items() if v == selected_label)
         if selected_key != current_key:
             st.session_state.page = selected_key
-            st.experimental_rerun()
+            st.rerun()
 
         st.divider()
         st.markdown("### Systeme")
@@ -412,3 +412,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
+

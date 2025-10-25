@@ -38,3 +38,6 @@ def enrich_indicators(
 def get_available_indicators():
     """Retourne la liste des indicateurs disponibles."""
     return ["SMA", "EMA", "RSI"]
+
+
+

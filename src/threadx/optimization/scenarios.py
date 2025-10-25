@@ -88,3 +88,6 @@ if __name__ == "__main__":
     print(f"Grille initiale: {len(combos)} combinaisons")
     for i, combo in enumerate(combos[:3], 1):
         print(f"  Combo {i}: {combo}")
+
+
+

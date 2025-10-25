@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from .backtest_bridge import run_backtest, BacktestResult
-from .data_access import load_ohlcv
+from ..data_access import load_ohlcv
 
 
 def _require_selection() -> Dict[str, Any]:
@@ -153,3 +153,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+

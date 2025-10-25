@@ -226,3 +226,6 @@ def setup_logging(log_file: Optional[Path] = None, level: str = "INFO") -> None:
 
 # Logger par défaut pour ce module
 logger = get_logger(__name__)
+
+
+

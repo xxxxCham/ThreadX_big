@@ -31,3 +31,6 @@ def indicators_for(strategy: str) -> Dict[str, Any]:
 
 def base_params_for(strategy: str) -> Dict[str, Any]:
     return REGISTRY[strategy]["params"].copy()
+
+
+

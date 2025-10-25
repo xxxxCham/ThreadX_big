@@ -864,3 +864,6 @@ def get_default_manager() -> MultiGPUManager:
         logger.info("Gestionnaire multi-GPU par défaut créé")
 
     return _default_manager
+
+
+

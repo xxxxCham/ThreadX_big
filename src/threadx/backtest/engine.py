@@ -1270,3 +1270,6 @@ logger.info(f"ThreadX Backtest Engine v10 loaded")
 logger.debug(f"   GPU utils: {'✅' if GPU_UTILS_AVAILABLE else '❌'}")
 logger.debug(f"   XP utils: {'✅' if XP_AVAILABLE else '❌'}")
 logger.debug(f"   Timing utils: {'✅' if 'measure_throughput' in globals() else '❌'}")
+
+
+

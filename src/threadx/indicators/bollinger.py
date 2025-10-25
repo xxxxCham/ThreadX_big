@@ -708,3 +708,6 @@ if __name__ == "__main__":
         bench = benchmark_bollinger_performance([1000], n_runs=2)
         if bench["speedups"][1000]:
             print(f"   Speedup GPU: {bench['speedups'][1000]:.2f}x")
+
+
+

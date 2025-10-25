@@ -290,7 +290,7 @@ class IndicatorController:
                 data_path = Path(request.data_path)
             else:
                 # Auto-detect path depuis registry
-                from threadx.data.registry import get_data_path
+                from threadx.dataset.registry import get_data_path
 
                 data_path = get_data_path(request.symbol, request.timeframe)
 
@@ -305,7 +305,7 @@ class IndicatorController:
 
             # Charger les données OHLCV en DataFrame
             try:
-                from threadx.data.io import read_frame
+                from threadx.dataset.io import read_frame
 
                 data_frame = read_frame(data_path)
             except Exception as e:
@@ -463,7 +463,7 @@ class SweepController:
 class DataController:
     """Controller pour chargement et validation de données.
 
-    Wrapper synchrone autour de threadx.data.io et threadx.data.registry.
+    Wrapper synchrone autour de threadx.dataset.io et threadx.dataset.registry.
     Gère chargement, validation qualité, et exports.
 
     Attributes:
@@ -513,8 +513,8 @@ class DataController:
 
         try:
             # Lazy import data modules
-            from threadx.data.io import load_parquet
-            from threadx.data.registry import get_data_path
+            from threadx.dataset.io import load_parquet
+            from threadx.dataset.registry import get_data_path
 
             # Résolution path
             if request.data_path:
@@ -820,7 +820,7 @@ class DataIngestionController:
     Contrôleur pour ingestion de données crypto.
 
     Délègue toutes les opérations d'ingestion à l'Engine.
-    L'UI ne doit JAMAIS importer threadx.data.ingest directement.
+    L'UI ne doit JAMAIS importer threadx.dataset.ingest directement.
 
     Fonctions:
         - Ingest batch (plusieurs symboles/timeframes)
@@ -862,7 +862,7 @@ class DataIngestionController:
         """
         try:
             # Import dynamique pour isoler dépendance
-            from threadx.data.ingest import ingest_batch
+            from threadx.dataset.ingest import ingest_batch
 
             results = ingest_batch(
                 symbols=symbols,
@@ -901,7 +901,7 @@ class DataIngestionController:
             Dict avec 'success', 'file_path', 'rows_count'
         """
         try:
-            from threadx.data.ingest import ingest_binance
+            from threadx.dataset.ingest import ingest_binance
 
             result = ingest_binance(
                 symbol=symbol,
@@ -928,7 +928,7 @@ class DataIngestionController:
             Liste symboles disponibles (ex: ['BTCUSDT', 'ETHUSDT'])
         """
         try:
-            from threadx.data.registry import scan_symbols
+            from threadx.dataset.registry import scan_symbols
 
             symbols = scan_symbols()
             return symbols
@@ -951,7 +951,7 @@ class DataIngestionController:
             Chemin absolu vers dataset
         """
         try:
-            from threadx.data.registry import _build_dataset_path
+            from threadx.dataset.registry import _build_dataset_path
 
             path = _build_dataset_path(
                 symbol=symbol, timeframe=timeframe, dataset_type=dataset_type
@@ -1093,7 +1093,7 @@ class DiversityPipelineController:
         """
         try:
             # Import dynamique pour isoler dépendance
-            from threadx.data.unified_diversity_pipeline import UnifiedDiversityPipeline
+            from threadx.dataset.unified_diversity_pipeline import UnifiedDiversityPipeline
 
             pipeline = UnifiedDiversityPipeline(enable_persistence=enable_persistence)
 
@@ -1136,7 +1136,7 @@ class DiversityPipelineController:
             Dict avec 'success', 'cache_size', 'expiry'
         """
         try:
-            from threadx.data.unified_diversity_pipeline import UnifiedDiversityPipeline
+            from threadx.dataset.unified_diversity_pipeline import UnifiedDiversityPipeline
 
             pipeline = UnifiedDiversityPipeline(enable_persistence=True)
 
@@ -1152,3 +1152,6 @@ class DiversityPipelineController:
 
         except Exception as e:
             raise IndicatorError(f"Cache update failed: {e}") from e
+
+
+

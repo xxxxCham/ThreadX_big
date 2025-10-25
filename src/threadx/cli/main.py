@@ -24,7 +24,7 @@ import sys
 
 import typer
 
-from .commands import backtest_cmd, data_cmd, indicators_cmd, optimize_cmd
+from . import backtest_cmd, data_cmd, indicators_cmd, optimize_cmd
 from .utils import setup_logger
 
 # Create main Typer app
@@ -137,3 +137,6 @@ def cli_entry() -> None:
 
 if __name__ == "__main__":
     app()
+
+
+

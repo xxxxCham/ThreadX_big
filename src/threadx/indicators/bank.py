@@ -74,8 +74,8 @@ from .xatr import ATR, ATRSettings
 
 # Import Phase 2 Data
 try:
-    from ..data.registry import quick_inventory
-    from ..data.io import write_frame, read_frame
+    from ..dataset.registry import quick_inventory
+    from ..dataset.io import write_frame, read_frame
 
     HAS_THREADX_DATA = True
 except ImportError:
@@ -1535,3 +1535,6 @@ if __name__ == "__main__":
     print(f"   Computations: {stats['computations']}")
 
     print("\n✅ Tests terminés!")
+
+
+
