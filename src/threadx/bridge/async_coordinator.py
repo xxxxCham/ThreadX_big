@@ -1,3 +1,4 @@
-from threadx.ui.threadx_streamlit.pages.page_backtest_results import ThreadXBridge
-
-__all__ = ["ThreadXBridge"]
+class ThreadXBridge:
+    """Stub minimal pour compat CLI sans UI."""
+    def __init__(self, *args, **kwargs):
+        pass
