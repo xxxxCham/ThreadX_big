@@ -49,7 +49,7 @@ data/**
 *.db
 !data/sample/*.*
 !src/threadx/dataset/*.*
-!src/threadx/échantillon_representatif_de_la_base_de_données/README*
+!src/threadx/échantillon_representatif_de_la_base_de_donnees/README*
 
 # === CONFIGURATIONS LOCALES ===
 *.env
@@ -77,6 +77,6 @@ poetry.lock
 
 # === SYSTEME THREADX SPECIFIQUE ===
 # Exclure les anciens jeux de données internes
-src/threadx/échantillon_representatif_de_la_base_de_données/**
-!src/threadx/échantillon_representatif_de_la_base_de_données/README*
+src/threadx/échantillon_representatif_de_la_base_de_donnees/**
+!src/threadx/échantillon_representatif_de_la_base_de_donnees/README*
 src/threadx/archive/
