@@ -1,0 +1,20 @@
+# ThreadX - Configuration par défaut
+[paths]
+data = "data"
+cache = "data/cache"
+logs = "logs"
+
+[performance]
+workers = 4
+gpu = false
+
+[data]
+source = "stub"
+
+[udi]
+json_root = 'D:\\TradXPro\\crypto_data_json'
+parquet_root = 'D:\\TradXPro\\crypto_data_parquet'
+indicators_db_root = 'I:\\indicators_db'
+output_dir = 'D:\\TradXPro\\best_token_DataFrame'
+rate_limit_per_sec = 10
+request_timeout_sec = 30

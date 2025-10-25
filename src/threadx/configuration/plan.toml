@@ -1,0 +1,23 @@
+# ---------- ThreadX sweep plan (minimal & compatible) ----------
+[run]
+type = "grid"
+seed = 42
+n_scenarios = 100
+sampler = "grid"
+verbose = true
+
+[run.params]
+timeframe = { value = "1h" }
+lookback_hours = { values = [24, 48, 72] }
+symbols = { values = ["BTCUSDC", "ETHUSDC", "SOLUSDC", "ADAUSDC"] }
+
+[run.constraints]
+# exemple: pas de contrainte obligatoire pour l'instant
+
+[scoring]
+primary = "sharpe"
+constraints = { max_drawdown = 0.25 }
+
+[output]
+dir = "artifacts/sweeps/minimal"
+format = "parquet"

@@ -1,0 +1,38 @@
+# ThreadX Configuration Settings
+# ===============================
+
+[general]
+debug = false
+log_level = "INFO"
+timezone = "UTC"
+
+[data]
+# Paramètres de données
+default_symbols = ["BTCUSDT", "ETHUSDT"]
+default_timeframes = ["1h", "4h", "1d"]
+max_history_days = 365
+
+[performance]
+# Optimisations
+use_gpu = false
+max_workers = 4
+cache_enabled = true
+cache_ttl_seconds = 900
+
+[paths]
+# Structure de dossiers 
+data_dir = "data"
+cache_dir = "data/cache"
+logs_dir = "logs"
+
+[sources]
+# Sources de données
+primary = "stub"
+fallback = "mock"
+
+[indicators]
+# Configuration des indicateurs
+enabled = ["rsi", "macd", "sma", "ema"]
+rsi_period = 14
+sma_period = 20
+ema_period = 50

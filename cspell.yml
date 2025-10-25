@@ -1,0 +1,309 @@
+version: "0.2"
+language: "fr,en"
+languageSettings:
+  - languageId: "*"
+    locale: "fr,en"
+dictionaries:
+  - fr-FR
+  - en-US
+  - technical-terms
+ignorePaths:
+  - "node_modules/**"
+  - ".git/**"
+  - "**/*.min.js"
+  - "**/dist/**"
+  - "**/build/**"
+  - "**/*.log"
+words:
+  # Projet et structure
+  - root
+  - ThreadX
+  - threadx
+  - apps
+  - src
+  - benchmarks
+  - artifacts
+  - configs
+
+  # Packages Python standards
+  - numpy
+  - pandas
+  - matplotlib
+  - seaborn
+  - sklearn
+  - scipy
+  - pytest
+  - asyncio
+  - argparse
+  - pathlib
+  - datetime
+  - timedelta
+
+  # Domain specific terms
+  - Backtesting
+  - lookback
+  - CAGR
+  - levelname
+  - USDT
+  - USDC
+  - functools
+  - dataclasses
+  - asdict
+  - lru
+  - concurrent
+  - threading
+  - multiprocessing
+  - subprocess
+  - json
+  - pickle
+  - hashlib
+  - logging
+  - traceback
+  - platform
+  - shutil
+
+  # Packages spécialisés finance/crypto
+  - ccxt
+  - binance
+  - talib
+  - yfinance
+
+  # GPU et calcul haute performance
+  - cupy
+  - cuda
+  - gpu
+  - cpu
+  - xp
+  - ndarray
+  - asarray
+  - asnumpy
+  - ascupy
+  - astype
+  - dtype
+  - float64
+  - int64
+  - convolve
+  - concatenate
+  - zeros
+  - ones
+  - full
+  - sqrt
+  - exp
+  - abs
+  - maximum
+  - std
+  - ddof
+
+  # Interface utilisateur
+  - streamlit
+  - tkinter
+  - ttk
+  - messagebox
+  - filedialog
+  - scrolledtext
+  - plotly
+  - dash
+  - altair
+  - fastapi
+  - pydantic
+
+  # Base de données et stockage
+  - sqlalchemy
+  - parquet
+  - hdf5
+  - csv
+  - toml
+  - yaml
+  - dotenv
+
+  # Machine Learning et AI
+  - tensorflow
+  - pytorch
+  - transformers
+  - huggingface
+  - sklearn
+
+  # Finance et trading
+  - ohlcv
+  - crypto
+  - forex
+  - bollinger
+  - bbands
+  - atr
+  - rsi
+  - ema
+  - sma
+  - macd
+  - stochastic
+  - indicators
+  - backtests
+  - backtest
+  - equity
+  - drawdown
+  - sharpe
+  - sortino
+  - expectancy
+  - winrate
+  - profitfactor
+  - resampling
+  - timeframes
+  - timeframe
+  - candlestick
+  - candlesticks
+  - ticks
+
+  # Termes ThreadX spécifiques
+  - dataframe
+  - dataframes
+  - dispatch
+  - dispatcher
+  - engine
+  - bank
+  - cache
+  - registry
+  - synth
+  - resample
+  - normalization
+  - validation
+  - settings
+  - config
+  - configurations
+  - params
+  - kwargs
+  - args
+  - metadata
+  - checksum
+  - inventory
+  - ttl
+  - lru
+  - mocks
+  - mockery
+  - fallback
+  - fallbacks
+
+  # Développement et debug
+  - profiling
+  - refactoring
+  - debug
+  - debugger
+  - linting
+  - formatting
+  - pytest
+  - unittest
+  - benchmark
+  - benchmarks
+  - micro
+  - macro
+  - perf
+  - performance
+  - optimization
+  - optimizations
+
+  # Gestion de projet
+  - migration
+  - livraison
+  - etape
+  - tradxpro
+  - diversité
+  - gestion
+  - réduction
+  - erreurs
+  - synthèse
+  - corrections
+  - implémentation
+  - arborescence
+  - redondances
+  - pipeline
+  - workflow
+  - cleanup
+  - session
+  - sessions
+
+  # Termes techniques divers
+  - api
+  - sdk
+  - cli
+  - gui
+  - ui
+  - ux
+  - url
+  - uri
+  - http
+  - https
+  - json
+  - xml
+  - html
+  - css
+  - js
+  - ts
+  - jsx
+  - tsx
+  - md
+  - txt
+  - log
+  - logs
+  - tmp
+  - temp
+  - cache
+  - dist
+  - build
+  - node
+  - modules
+  - venv
+  - env
+  - requirements
+  - setup
+  - install
+  - uninstall
+  - upgrade
+  - downgrade
+
+  # Acronymes et abbréviations
+  - OHLCV
+  - API
+  - SDK
+  - CLI
+  - GUI
+  - UI
+  - UX
+  - GPU
+  - CPU
+  - RAM
+  - SSD
+  - HDD
+  - OS
+  - WSL
+  - CUDA
+  - ATR
+  - RSI
+  - EMA
+  - SMA
+  - MACD
+  - BB
+  - TTL
+  - LRU
+  - JSON
+  - XML
+  - HTML
+  - CSS
+  - JS
+  - TS
+  - MD
+  - YAML
+  - TOML
+  - CSV
+  - SQL
+  - NoSQL
+  - REST
+  - GraphQL
+  - WebSocket
+  - HTTP
+  - HTTPS
+  - SSL
+  - TLS
+  - SSH
+  - FTP
+  - SMTP
+  - TCP
+  - UDP
+  - IP

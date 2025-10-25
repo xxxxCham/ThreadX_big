@@ -1,0 +1,34 @@
+/* Force text color to black across the app */
+html, body, div, p, span, label, input, select, textarea,
+button, a, h1, h2, h3, h4, h5, h6,
+.card, .card-header, .card-body,
+.form-control, .dash-table-container, .dash-table-container *,
+.Select, .Select-control, .Select-value, .Select-value-label,
+.dropdown-menu, .dropdown-item,
+.dbc, .dbc-row, .dbc-col {
+  color: #000 !important;
+}
+
+/* Ensure inputs and common surfaces remain readable */
+.form-control, input, select, textarea,
+.Select-control, .Select-menu-outer,
+.dropdown-menu,
+.dash-table-container .dash-spreadsheet-container,
+.card, .card-body, .card-header,
+.modal-content {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+}
+
+/* DataTable headers and cells */
+.dash-table-container .dash-header, 
+.dash-table-container .dash-header th,
+.dash-table-container .cell {
+  color: #000 !important;
+}
+
+/* Buttons keep readable text */
+.btn, .btn * {
+  color: #000 !important;
+}
+

@@ -1,0 +1,16 @@
+[MASTER]
+# Disable all checks
+disable=all
+
+[MESSAGES CONTROL]
+# Disable everything
+disable=all
+
+[FORMAT]
+max-line-length=88
+
+[BASIC]
+# No checks
+
+[DESIGN]
+# No checks

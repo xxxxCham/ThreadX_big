@@ -1,0 +1,89 @@
+# Core Dependencies (nécessaires pour l'application Streamlit et l'orchestration)
+streamlit==1.49.1  # Interface utilisateur interactive
+pandas==2.3.2  # Manipulation des DataFrames OHLCV
+numpy==2.3.3  # Calculs vectorisés rapides pour indicateurs
+pydantic==2.9.2  # Validation type-safe pour configs et requêtes
+pydantic-settings==2.6.1  # Support pour configs TOML avec Pydantic
+toml==0.10.2  # Parsing des fichiers de configuration TOML
+pandera==0.20.4  # Validation des schémas de DataFrames
+pyarrow==21.0.0  # Lecture/écriture de fichiers Parquet pour persistance
+
+# Visualisation Dependencies (pour graphs interactifs et statiques)
+plotly==6.3.0  # Graphiques interactifs (candlesticks, heatmaps)
+matplotlib==3.9.2  # Visualisations supplémentaires (equity/drawdown)
+altair==5.5.0  # Visualisations interactives optionnelles (charts.py)
+pydeck==0.9.1  # Support pour visualisations avancées Streamlit
+contourpy==1.3.3  # Dépendance Matplotlib pour contours
+cycler==0.12.1  # Cycles de couleurs pour Matplotlib
+fonttools==4.59.0  # Gestion des polices dans Matplotlib
+kiwisolver==1.4.8  # Résolution de layout pour Matplotlib
+pillow==11.3.0  # Traitement d'images pour Matplotlib
+pyparsing==3.2.3  # Parsing pour Matplotlib
+
+# Data Access and API Dependencies
+binance-connector==3.12.0  # Connexion à l'API Binance pour données OHLCV
+requests==2.32.5  # Requêtes HTTP pour API
+certifi==2025.8.3  # Certificats SSL pour requêtes
+charset-normalizer==3.4.3  # Normalisation des encodages
+idna==3.10  # Support pour noms de domaine internationaux
+urllib3==2.5.0  # Gestion des connexions HTTP
+websocket-client==1.8.0  # Support pour connexions WebSocket
+pycryptodome==3.23.0  # Chiffrement pour API sécurisées
+
+# Optimisation and GPU Dependencies
+cupy-cuda12x==13.6.0  # Calculs GPU pour indicateurs rapides
+torch==2.5.1+cu121  # Support ML/GPU optionnel
+torchvision==0.20.1+cu121  # Dépendance Torch pour vision
+torchaudio==2.5.1+cu121  # Dépendance Torch pour audio
+fastrlock==0.8.3  # Verrouillage rapide pour parallélisation
+threadpoolctl==3.6.0  # Gestion des threads pour scikit-learn
+scikit-learn==1.7.2  # Algorithmes ML pour stratégies avancées
+scipy==1.16.2  # Calculs scientifiques pour optimisations
+
+# Configuration and Development Tools
+click==8.3.0  # CLI pour interface ligne de commande
+GitPython==3.1.45  # Gestion Git pour scripts utilitaires
+gitdb==4.0.12  # Dépendance GitPython
+smmap==5.0.2  # Dépendance gitdb
+python-dotenv==1.1.1  # Gestion des variables d'environnement
+tomli==2.0.2  # Parsing TOML alternatif (optionnel, non recommandé ici)
+build==1.3.0  # Construction de packages Python
+pip-tools==7.5.0  # Gestion des dépendances
+pipdeptree==2.28.0  # Vérification des dépendances
+pyproject_hooks==1.2.0  # Hooks pour pyproject.toml
+setuptools==80.9.0  # Installation de packages
+wheel==0.45.1  # Formatage des packages
+
+# Testing Dependencies
+pytest==8.4.2  # Framework de tests unitaires
+iniconfig==2.1.0  # Configuration pytest
+pluggy==1.6.0  # Gestion des plugins pytest
+narwhals==2.5.0  # Abstraction DataFrame pour tests
+psutil==7.1.0  # Surveillance des ressources pour tests
+
+# Miscellaneous Dependencies
+attrs==25.3.0  # Attributs dynamiques pour Pydantic
+blinker==1.9.0  # Signaux pour Streamlit
+cachetools==6.2.0  # Caching pour performances
+filelock==3.19.1  # Verrouillage de fichiers
+Jinja2==3.1.6  # Templating pour Streamlit
+MarkupSafe==3.0.2  # Sécurité pour Jinja2
+mpmath==1.3.0  # Calculs mathématiques pour sympy
+networkx==3.5  # Graphes pour analyses avancées
+packaging==25.0  # Gestion des versions de packages
+protobuf==6.32.1  # Sérialisation pour API
+Pygments==2.19.2  # Mise en forme du code
+python-dateutil==2.9.0.post0  # Gestion des dates
+pytz==2025.2  # Gestion des fuseaux horaires
+referencing==0.36.2  # Référencement JSON pour jsonschema
+jsonschema==4.25.1  # Validation JSON
+jsonschema-specifications==2025.9.1  # Spécifications jsonschema
+rpds-py==0.27.1  # Structures de données pour jsonschema
+six==1.17.0  # Compatibilité Python 2/3
+sympy==1.13.1  # Calculs symboliques
+tenacity==9.1.2  # Réessais pour robustesse
+tornado==6.5.2  # Serveur web pour Streamlit
+tqdm==4.67.1  # Barres de progression pour CLI
+typing_extensions==4.15.0  # Extensions de typage
+tzdata==2025.2  # Données de fuseaux horaires
+watchdog==6.0.0  # Surveillance des fichiers pour dev

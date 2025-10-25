@@ -1,0 +1,82 @@
+# === ENVIRONNEMENTS ===
+.venv/
+venv/
+env/
+ENV/
+.ipynb_checkpoints/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# === FICHIERS TEMPORAIRES ===
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+*.DS_Store
+desktop.ini
+Thumbs.db
+
+# === BUILD & DISTRIBUTION ===
+build/
+dist/
+*.egg-info/
+*.egg
+*.whl
+*.tar.gz
+
+# === CACHES ET ARTEFACTS LOCAUX ===
+cache/
+indicators_cache/
+artifacts/
+tmp/
+logs/
+
+# === DONNÉES ===
+# Ignorer tout sauf l'échantillon public
+data/**
+!data/sample/
+!data/sample/**
+
+# === BACKUP / EXPORTS ===
+*.csv
+*.parquet
+*.gz
+*.zip
+*.json
+*.sqlite
+*.db
+!data/sample/*.*
+!src/threadx/dataset/*.*
+!src/threadx/échantillon_representatif_de_la_base_de_données/README*
+
+# === CONFIGURATIONS LOCALES ===
+*.env
+.env.*
+secrets.*
+*.code-workspace
+.vscode/
+.idea/
+
+# === TESTS TEMPORAIRES ===
+.tox/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+nosetests.xml
+.junit/
+
+# === OUTILS ===
+.mypy_cache/
+.pyre/
+.pytype/
+Pipfile.lock
+poetry.lock
+
+# === SYSTEME THREADX SPECIFIQUE ===
+# Exclure les anciens jeux de données internes
+src/threadx/échantillon_representatif_de_la_base_de_données/**
+!src/threadx/échantillon_representatif_de_la_base_de_données/README*
+src/threadx/archive/
