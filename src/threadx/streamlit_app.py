@@ -164,6 +164,12 @@ def _available_strategies() -> List[str]:
 
 @st.cache_resource
 def init_session() -> None:
+    # IMPORTANT: Invalider le cache LRU des fonctions de découverte de données
+    # pour s'assurer que les nouveaux fichiers sont détectés au démarrage
+    import threadx.data_access
+    threadx.data_access._iter_data_files.cache_clear()
+    threadx.data_access.discover_tokens_and_timeframes.cache_clear()
+
     defaults = {
         "page": "selection",
         "symbol": "BTC",
@@ -215,8 +221,14 @@ def render_sidebar() -> None:
         st.divider()
         st.markdown("### Actions")
         if st.button("Rafraichir cache", use_container_width=True):
+            # Invalider le cache Streamlit
             st.cache_data.clear()
-            st.success("Cache vide.")
+            # Invalider le cache LRU des données
+            import threadx.data_access
+            threadx.data_access._iter_data_files.cache_clear()
+            threadx.data_access.discover_tokens_and_timeframes.cache_clear()
+            st.success("Cache vide (Streamlit + LRU data).")
+            st.info("Rafraîchissez la page (F5) pour recharger les tokens.")
         if st.button("Valider datasets", use_container_width=True):
             report = validate_dataset(str(DATA_ROOT))
             if report.get("ok"):

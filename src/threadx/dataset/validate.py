@@ -101,7 +101,8 @@ def validate_dataset(path: str) -> Dict[str, Any]:
 
     candidates = []
     if p.is_dir():
-        for f in sorted(p.iterdir()):
+        # Chercher récursivement dans les sous-dossiers (crypto_data_parquet/, crypto_data_json/, etc.)
+        for f in sorted(p.rglob("*")):  # ← Changé de iterdir() à rglob("*") pour recherche récursive
             if f.is_file() and f.suffix.lower() in (".parquet", ".json", ".csv"):
                 candidates.append(f)
     elif p.is_file():
