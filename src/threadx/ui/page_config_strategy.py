@@ -12,7 +12,7 @@ Version: 2.0.0 - UI Redesign
 from __future__ import annotations
 
 from datetime import date
-from typing import List, Dict, Any
+from typing import Dict, Any, List, Optional, Tuple
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -25,11 +25,7 @@ from ..data_access import (
     load_ohlcv,
 )
 from ..dataset.validate import validate_dataset
-from .strategy_registry import (
-    base_params_for,
-    indicators_for,
-    list_strategies,
-)
+from .strategy_registry import indicator_specs_for, list_strategies, parameter_specs_for
 
 DEFAULT_SYMBOL = "BTC"
 DEFAULT_TIMEFRAME = "1h"
@@ -186,46 +182,239 @@ def _render_data_section() -> None:
         )
 
 
-def _render_indicator_inputs(name: str, defaults: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_spec(spec: Any) -> Dict[str, Any]:
+    if isinstance(spec, dict):
+        normalized = dict(spec)
+        if "type" not in normalized:
+            default = normalized.get("default")
+            if isinstance(default, bool):
+                normalized["type"] = "bool"
+            elif isinstance(default, int) and not isinstance(default, bool):
+                normalized["type"] = "int"
+            elif isinstance(default, float):
+                normalized["type"] = "float"
+            elif "options" in normalized:
+                normalized["type"] = "select"
+            else:
+                normalized["type"] = "text"
+        return normalized
+
+    default = spec
+    if isinstance(default, bool):
+        inferred_type = "bool"
+    elif isinstance(default, int) and not isinstance(default, bool):
+        inferred_type = "int"
+    elif isinstance(default, float):
+        inferred_type = "float"
+    else:
+        inferred_type = "text"
+
+    return {
+        "default": default,
+        "type": inferred_type,
+    }
+
+
+
+
+
+def _render_param_control(
+    label: str,
+    widget_key: str,
+    spec: Dict[str, Any],
+    prefill: Any,
+    range_store: Optional[Dict[str, Tuple[Any, Any]]] = None,
+    store_key: Optional[str] = None,
+) -> Any:
+    normalized = _normalize_spec(spec)
+    param_type = normalized.get("type", "text")
+    default = normalized.get("default")
+    min_value = normalized.get("min")
+    max_value = normalized.get("max")
+    step = normalized.get("step")
+    options = normalized.get("options")
+    control = normalized.get("control")
+    opt_range = normalized.get("opt_range")
+
+    if prefill is None:
+        prefill = default
+
+    # Gestion des sliders de plage pour les paramètres numériques
+    if (
+        range_store is not None
+        and store_key
+        and param_type in {"int", "float"}
+        and normalized.get("range_slider", True)
+    ):
+        if opt_range and min_value is None:
+            min_value = opt_range[0]
+        if opt_range and max_value is None:
+            max_value = opt_range[1]
+
+        if param_type == "int":
+            step_val = int(step or 1)
+            if min_value is None:
+                min_value = int(prefill) if prefill is not None else 0
+            else:
+                min_value = int(min_value)
+            if max_value is None:
+                max_value = int(prefill + step_val * 10) if prefill is not None else min_value + step_val * 10
+            else:
+                max_value = int(max_value)
+
+            stored_range = range_store.get(store_key) or opt_range
+            if stored_range:
+                low, high = map(int, stored_range)
+            else:
+                center = int(prefill) if prefill is not None else (min_value + max_value) // 2
+                low = center - step_val * 5
+                high = center + step_val * 5
+
+            low = max(min_value, low)
+            high = min(max_value, high)
+            if low > high:
+                low, high = min_value, max_value
+
+            slider_value = st.slider(
+                label,
+                min_value=min_value,
+                max_value=max_value,
+                value=(int(low), int(high)),
+                step=step_val,
+                key=widget_key,
+            )
+            slider_value = (int(slider_value[0]), int(slider_value[1]))
+            range_store[store_key] = slider_value
+            return int(round((slider_value[0] + slider_value[1]) / 2))
+
+        if param_type == "float":
+            step_val = float(step or 0.05)
+            if min_value is None:
+                min_value = float(prefill) - step_val * 10 if prefill is not None else 0.0
+            else:
+                min_value = float(min_value)
+            if max_value is None:
+                if prefill is not None:
+                    max_value = float(prefill) + step_val * 10
+                else:
+                    max_value = min_value + step_val * 20
+            else:
+                max_value = float(max_value)
+
+            stored_range = range_store.get(store_key) or opt_range
+            if stored_range:
+                low, high = map(float, stored_range)
+            else:
+                center = float(prefill) if prefill is not None else (min_value + max_value) / 2.0
+                span = step_val * 5
+                low = center - span
+                high = center + span
+
+            low = max(min_value, low)
+            high = min(max_value, high)
+            if low > high:
+                low, high = min_value, max_value
+
+            slider_value = st.slider(
+                label,
+                min_value=float(min_value),
+                max_value=float(max_value),
+                value=(float(low), float(high)),
+                step=step_val,
+                key=widget_key,
+            )
+            slider_value = (float(slider_value[0]), float(slider_value[1]))
+            range_store[store_key] = slider_value
+            return float((slider_value[0] + slider_value[1]) / 2.0)
+
+    if min_value is not None and prefill is not None:
+        prefill = max(prefill, min_value)
+    if max_value is not None and prefill is not None:
+        prefill = min(prefill, max_value)
+
+    if param_type == "bool":
+        return st.checkbox(label, value=bool(prefill), key=widget_key)
+
+    if options:
+        try:
+            index = options.index(prefill)
+        except ValueError:
+            index = 0
+        return st.selectbox(label, options=options, index=index, key=widget_key)
+
+    if param_type == "int":
+        step_val = int(step or 1)
+        if control == "number_input" or min_value is None or max_value is None:
+            return st.number_input(
+                label,
+                value=int(prefill) if prefill is not None else int(default or 0),
+                step=step_val,
+                key=widget_key,
+            )
+
+        min_int = int(min_value)
+        max_int = int(max_value)
+        value = int(prefill) if prefill is not None else int(default or min_int)
+        value = min(max(value, min_int), max_int)
+        return st.slider(
+            label,
+            min_value=min_int,
+            max_value=max_int,
+            value=value,
+            step=step_val,
+            key=widget_key,
+        )
+
+    if param_type == "float":
+        step_val = float(step or 0.1)
+        if control == "number_input" or min_value is None or max_value is None:
+            return st.number_input(
+                label,
+                value=float(prefill) if prefill is not None else float(default or 0.0),
+                step=step_val,
+                key=widget_key,
+            )
+
+        min_float = float(min_value)
+        max_float = float(max_value)
+        value = float(prefill) if prefill is not None else float(default or min_float)
+        value = min(max(value, min_float), max_float)
+        return st.slider(
+            label,
+            min_value=min_float,
+            max_value=max_float,
+            value=value,
+            step=step_val,
+            key=widget_key,
+        )
+
+    return st.text_input(label, value=str(prefill) if prefill is not None else "", key=widget_key)
+
+
+def _render_indicator_inputs(name: str, specs: Dict[str, Any], range_store: Dict[str, Tuple[Any, Any]]) -> Dict[str, Any]:
     """Rendu des inputs pour un indicateur."""
     prev_indicators = st.session_state.get("indicators", {})
     saved = prev_indicators.get(name, {})
     result: Dict[str, Any] = {}
 
-    for key, default in defaults.items():
-        prefill = saved.get(key, default)
-        label = f"{key}"
+    for key, spec in specs.items():
+        normalized = _normalize_spec(spec)
+        prefill = saved.get(key, normalized.get("default"))
+        label = normalized.get("label") or f"{key}".replace("_", " ").title()
         col_key = f"{name}_{key}"
-
-        if isinstance(default, bool):
-            result[key] = st.checkbox(label, value=bool(prefill), key=col_key)
-        elif isinstance(default, float):
-            max_val = max(float(default) * 5, float(default) + 10, 10.0)
-            result[key] = st.slider(
-                label,
-                min_value=0.0,
-                max_value=max_val,
-                value=float(prefill),
-                step=0.1,
-                key=col_key,
-            )
-        elif isinstance(default, int):
-            result[key] = st.number_input(
-                label, value=int(prefill), min_value=1, step=1, key=col_key
-            )
-        else:
-            result[key] = st.text_input(label, value=str(prefill), key=col_key)
+        store_key = f"{name}.{key}"
+        result[key] = _render_param_control(label, col_key, normalized, prefill, range_store, store_key)
 
     return result
 
 
 def _render_strategy_section() -> None:
     """Section de configuration de la stratégie."""
-    st.markdown("### ⚙️ Configuration de la Stratégie")
+    st.markdown("### ?? Configuration de la Stratégie")
 
     strategies = list_strategies()
     if not strategies:
-        st.error("❌ Aucune stratégie disponible dans le registre.")
+        st.error("? Aucune stratégie disponible dans le registre.")
         return
 
     default_strat = st.session_state.get("strategy", strategies[0])
@@ -240,81 +429,55 @@ def _render_strategy_section() -> None:
     )
 
     try:
-        indicator_defs = indicators_for(strategy)
-        strategy_defaults = base_params_for(strategy)
+        indicator_specs = indicator_specs_for(strategy)
+        param_specs = parameter_specs_for(strategy)
     except KeyError:
-        st.error(f"❌ Stratégie inconnue: {strategy}")
+        st.error(f"? Stratégie inconnue: {strategy}")
         return
 
-    # Tabs pour organisation
-    tab1, tab2 = st.tabs(["📊 Indicateurs", "🎯 Paramètres de Stratégie"])
+    # Initialiser valeurs d'indicateurs avec leurs défauts (onglet supprimé)
+    if indicator_specs:
+        indicator_values = {
+            ind_name: {
+                key: _normalize_spec(spec).get("default")
+                for key, spec in ind_spec.items()
+            }
+            for ind_name, ind_spec in indicator_specs.items()
+        }
+    else:
+        indicator_values = {}
 
-    with tab1:
-        if not indicator_defs:
-            st.info("ℹ️ Cette stratégie n'a pas d'indicateurs configurables.")
-            indicator_values = {}
-        else:
-            indicator_values = {}
-            for ind_name, ind_defaults in indicator_defs.items():
-                with st.expander(f"📈 {ind_name}", expanded=True):
-                    indicator_values[ind_name] = _render_indicator_inputs(ind_name, ind_defaults)
+    range_store = st.session_state.get("strategy_param_ranges", {}).copy()
 
-    with tab2:
-        if not strategy_defaults:
-            st.info("ℹ️ Cette stratégie n'a pas de paramètres configurables.")
-            strategy_params = {}
-        else:
-            strategy_params = {}
-            prev_params = st.session_state.get("strategy_params", {})
-
-            # Afficher en colonnes si peu de paramètres
-            if len(strategy_defaults) <= 4:
-                cols = st.columns(2)
-                items = list(strategy_defaults.items())
-                for idx, (key, default) in enumerate(items):
-                    with cols[idx % 2]:
-                        prefill = prev_params.get(key, default)
-                        param_key = f"strat_param_{key}"
-
-                        if isinstance(default, bool):
-                            strategy_params[key] = st.checkbox(key, value=bool(prefill), key=param_key)
-                        elif isinstance(default, float):
-                            max_val = max(float(default) * 5, float(default) + 10, 10.0)
-                            strategy_params[key] = st.slider(
-                                key, 0.0, max_val, float(prefill), 0.1, key=param_key
-                            )
-                        elif isinstance(default, int):
-                            strategy_params[key] = st.number_input(
-                                key, value=int(prefill), step=1, key=param_key
-                            )
-                        else:
-                            strategy_params[key] = st.text_input(key, value=str(prefill), key=param_key)
+    st.markdown("#### ?? Paramètres de Stratégie")
+    prev_params = st.session_state.get("strategy_params", {})
+    if not param_specs:
+        st.info("?? Cette stratégie n'a pas de paramètres configurables.")
+        strategy_params = {}
+    else:
+        items = list(param_specs.items())
+        columns = st.columns(2) if 1 <= len(items) <= 4 else None
+        strategy_params = {}
+        for idx, (key, spec) in enumerate(items):
+            normalized = _normalize_spec(spec)
+            label = normalized.get("label") or key.replace("_", " ").title()
+            prefill = prev_params.get(key, normalized.get("default"))
+            param_key = f"strat_param_{key}"
+            if columns:
+                container = columns[idx % len(columns)]
+                with container:
+                    strategy_params[key] = _render_param_control(label, param_key, normalized, prefill, range_store, key)
             else:
-                # Beaucoup de paramètres : affichage vertical
-                for key, default in strategy_defaults.items():
-                    prefill = prev_params.get(key, default)
-                    param_key = f"strat_param_{key}"
+                strategy_params[key] = _render_param_control(label, param_key, normalized, prefill, range_store, key)
 
-                    if isinstance(default, bool):
-                        strategy_params[key] = st.checkbox(key, value=bool(prefill), key=param_key)
-                    elif isinstance(default, float):
-                        max_val = max(float(default) * 5, float(default) + 10, 10.0)
-                        strategy_params[key] = st.slider(
-                            key, 0.0, max_val, float(prefill), 0.1, key=param_key
-                        )
-                    elif isinstance(default, int):
-                        strategy_params[key] = st.number_input(
-                            key, value=int(prefill), step=1, key=param_key
-                        )
-                    else:
-                        strategy_params[key] = st.text_input(key, value=str(prefill), key=param_key)
-
-    # Sauvegarder configuration
     st.session_state.strategy = strategy
     st.session_state.indicators = indicator_values
     st.session_state.strategy_params = strategy_params
+    st.session_state["strategy_param_ranges"] = range_store
 
-    st.success(f"✅ Configuration enregistrée : **{strategy}**")
+    st.success(f"? Configuration enregistrée : **{strategy}**")
+
+
 
 
 def main() -> None:

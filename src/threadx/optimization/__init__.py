@@ -5,10 +5,10 @@ ThreadX Optimization Module
 Module d'optimisation paramétrique unifié pour ThreadX.
 
 Centralise tous les calculs via IndicatorBank (Phase 3) pour:
-- Éviter la duplication de code
-- Garantir la cohérence entre UI, optimisation et backtesting
-- Utiliser le cache GPU intelligent existant
-- Bénéficier de l'orchestration multi-GPU
+- éviter la duplication de code
+- garantir la cohérence entre UI, optimisation et backtesting
+- utiliser le cache GPU intelligent existant
+- bénéficier de l'orchestration multi-GPU
 
 Components:
 - UnifiedOptimizationEngine: Moteur principal utilisant uniquement IndicatorBank
@@ -36,6 +36,3 @@ __all__ = [
 
 __version__ = "1.0.0"
 __author__ = "ThreadX Framework"
-
-
-
