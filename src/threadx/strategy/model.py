@@ -27,7 +27,7 @@ from pathlib import Path
 from datetime import datetime
 import logging
 
-from threadx.config.settings import S
+from threadx.configuration.settings import S
 from threadx.utils.log import get_logger
 
 logger = get_logger(__name__)

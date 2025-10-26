@@ -259,7 +259,7 @@ def _render_monte_carlo_tab() -> None:
     _render_config_badge(context)
 
     st.markdown("#### Configuration Monte-Carlo")
-    col_strategy, col_gpu, col_workers = st.columns(3)
+    col_strategy, col_gpu, col_multigpu, col_workers = st.columns(4)
 
     with col_strategy:
         strategy = st.selectbox(
@@ -274,8 +274,19 @@ def _render_monte_carlo_tab() -> None:
                                value=st.session_state.get("mc_use_gpu", True),
                                key="mc_use_gpu")
 
+    with col_multigpu:
+        use_multigpu = st.checkbox("Multi-GPU (5090+2060)",
+                                    value=st.session_state.get("mc_use_multigpu", True),
+                                    key="mc_use_multigpu")
+
     with col_workers:
-        max_workers = st.slider("Workers", 1, 8, st.session_state.get("mc_workers", 4), key="mc_workers")
+        workers_mode = st.selectbox("Workers", ["Auto (Dynamique)", "Manuel"],
+                                     index=0,
+                                     key="mc_workers_mode")
+        if workers_mode == "Manuel":
+            max_workers = st.number_input("Nb Workers", min_value=2, max_value=32, value=30, step=1, key="mc_manual_workers")
+        else:
+            max_workers = None
 
     tunable_specs = tunable_parameters_for(strategy)
     if not tunable_specs:
@@ -354,7 +365,7 @@ def _render_monte_carlo_tab() -> None:
         with st.spinner("🎲 Génération des scénarios Monte-Carlo..."):
             indicator_settings = IndicatorSettings(use_gpu=use_gpu)
             indicator_bank = IndicatorBank(indicator_settings)
-            runner = SweepRunner(indicator_bank=indicator_bank, max_workers=max_workers)
+            runner = SweepRunner(indicator_bank=indicator_bank, max_workers=max_workers, use_multigpu=use_multigpu)
 
             scenario_params: Dict[str, Any] = {}
             for key, (min_v, max_v) in param_ranges.items():
@@ -369,15 +380,44 @@ def _render_monte_carlo_tab() -> None:
                     scenario_params[key] = {"value": value}
 
             spec = ScenarioSpec(type="monte_carlo", params=scenario_params, n_scenarios=int(n_scenarios), seed=int(seed))
+
+            # Récupérer les données réelles pour le backtest
+            real_data = st.session_state.get("data")
+            symbol = st.session_state.get("symbol", "BTC")
+            timeframe = st.session_state.get("timeframe", "1h")
+
             try:
-                results = runner.run_monte_carlo(spec, reuse_cache=True)
+                results = runner.run_monte_carlo(spec, real_data, symbol, timeframe, strategy_name=strategy, reuse_cache=True)
                 st.session_state["monte_carlo_results"] = results
+
+                # Afficher les informations de configuration
                 st.success("✅ Monte-Carlo terminé !")
+                col_info1, col_info2, col_info3 = st.columns(3)
+                with col_info1:
+                    st.metric("Mode Multi-GPU", "Activé" if use_multigpu else "Désactivé")
+                with col_info2:
+                    actual_workers = runner.max_workers if runner.max_workers else "Auto"
+                    st.metric("Workers utilisés", str(actual_workers))
+                with col_info3:
+                    st.metric("Scénarios testés", len(results) if isinstance(results, pd.DataFrame) else 0)
             except Exception as exc:
                 st.error(f"❌ Erreur Monte-Carlo: {exc}")
+                import traceback
+                st.code(traceback.format_exc())
                 return
 
     results_df = st.session_state.get("monte_carlo_results")
+
+    # Debug: vérifier ce qui est stocké
+    if results_df is not None:
+        st.write(f"DEBUG: Type des résultats = {type(results_df)}")
+        if isinstance(results_df, pd.DataFrame):
+            st.write(f"DEBUG: DataFrame shape = {results_df.shape}")
+            st.write(f"DEBUG: DataFrame columns = {list(results_df.columns)}")
+            st.write(f"DEBUG: DataFrame empty? = {results_df.empty}")
+    else:
+        st.write("DEBUG: Aucun résultat dans session_state")
+
     if isinstance(results_df, pd.DataFrame) and not results_df.empty:
         st.markdown("---")
         st.markdown("### 📈 Résultats Monte-Carlo")
@@ -607,14 +647,14 @@ def _render_backtest_tab() -> None:
 
 
 def _render_optimization_tab() -> None:
-    """Onglet Optimisation Sweep."""
-    st.markdown("### 🔬 Optimisation des Paramètres (Sweep)")
+    """Onglet d'optimisation par balayage exhaustif de paramètres (Sweep)."""
+    st.markdown("### 🔬 Optimisation par Sweep (Grille Exhaustive)")
 
     context = _require_configuration()
     data = st.session_state.get("data")
 
     if not isinstance(data, pd.DataFrame) or data.empty:
-        st.warning("⚠️ Chargez d'abord des données.")
+        st.warning("⚠️ Chargez d'abord des données sur la page 'Chargement des Données'.")
         return
 
     strategies = list_strategies()
@@ -625,16 +665,34 @@ def _render_optimization_tab() -> None:
     _render_config_badge(context)
 
     st.markdown("#### Configuration du Sweep")
+    col_strategy, col_gpu, col_multigpu, col_workers = st.columns(4)
 
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
+    with col_strategy:
         strategy = st.selectbox(
             "Stratégie à optimiser",
             strategies,
             index=strategies.index(context["strategy"]) if context["strategy"] in strategies else 0,
             key="sweep_strategy"
         )
+
+    with col_gpu:
+        use_gpu = st.checkbox("Activer GPU",
+                               value=st.session_state.get("sweep_use_gpu", True),
+                               key="sweep_use_gpu")
+
+    with col_multigpu:
+        use_multigpu = st.checkbox("Multi-GPU (5090+2060)",
+                                    value=st.session_state.get("sweep_use_multigpu", True),
+                                    key="sweep_use_multigpu")
+
+    with col_workers:
+        workers_mode = st.selectbox("Workers", ["Auto (Dynamique)", "Manuel"],
+                                     index=0,
+                                     key="sweep_workers_mode")
+        if workers_mode == "Manuel":
+            max_workers = st.number_input("Nb Workers", min_value=2, max_value=32, value=30, step=1, key="sweep_manual_workers")
+        else:
+            max_workers = None
 
     try:
         tunable_specs = tunable_parameters_for(strategy)
@@ -643,451 +701,220 @@ def _render_optimization_tab() -> None:
         return
 
     if not tunable_specs:
-        st.info("ℹ️ Aucun paramètre numérique optimisable pour cette stratégie.")
+        st.info("ℹ️ Aucun paramètre optimisable pour cette stratégie.")
         return
 
-    param_options = list(tunable_specs.keys())
-
-    def _option_label(key: str) -> str:
-        spec = tunable_specs[key]
-        return spec.get('label') or key.replace('_', ' ').title()
-
-    default_param = st.session_state.get("sweep_selected_param")
-    if default_param not in param_options:
-        default_param = param_options[0]
-
-    with col2:
-        param_name = st.selectbox(
-            "Paramètre à optimiser",
-            param_options,
-            index=param_options.index(default_param),
-            format_func=_option_label,
-            key="sweep_param"
-        )
-    st.session_state["sweep_selected_param"] = param_name
-
-    with col3:
-        capital_initial = st.number_input(
-            "Capital initial (€)",
-            min_value=100,
-            max_value=1_000_000,
-            value=int(st.session_state.get("sweep_capital", 10000)),
-            step=1000,
-            key="sweep_capital",
-            help="Capital de départ pour calculer le PnL en euros"
-        )
-
-    param_spec = tunable_specs[param_name]
-    param_label = param_spec.get('label') or param_name.replace('_', ' ').title()
-    param_type = param_spec.get('type') or ('float' if isinstance(param_spec.get('default'), float) else 'int')
-
     configured_params = st.session_state.get("strategy_params", {}) or {}
-    range_preferences = dict(st.session_state.get("strategy_param_ranges", {}) or {})
     base_strategy_params = base_params_for(strategy)
 
-    default_value = configured_params.get(param_name, param_spec.get("default"))
-    stored_range = range_preferences.get(param_name)
-    if default_value is None:
-        default_value = base_strategy_params.get(param_name)
-    if default_value is None:
-        default_value = 0 if param_type == 'int' else 0.0
+    # Configuration des plages pour TOUS les paramètres
+    range_preferences = st.session_state.get("strategy_param_ranges", {}).copy()
+    st.markdown("##### Plages de paramètres à optimiser")
 
-    slider_min = param_spec.get("min")
-    slider_max = param_spec.get("max")
-    opt_min, opt_max = resolve_range(param_spec)
+    param_ranges: Dict[str, Tuple[float, float]] = {}
+    param_types: Dict[str, str] = {}
+    param_steps: Dict[str, float] = {}
 
-    if slider_min is None:
-        slider_min = opt_min if opt_min is not None else default_value
-    if slider_max is None:
-        slider_max = opt_max if opt_max is not None else default_value
+    for key, spec in tunable_specs.items():
+        label = spec.get('label') or key.replace('_', ' ').title()
+        param_type = spec.get('type') or ('float' if isinstance(spec.get('default'), float) else 'int')
+        param_types[key] = param_type
 
-    if slider_min is None:
-        slider_min = 0 if param_type == 'int' else 0.0
-    if slider_max is None or slider_max <= slider_min:
-        slider_max = slider_min + (param_spec.get('step') or (1 if param_type == 'int' else 0.1))
+        default_val = configured_params.get(key, spec.get('default'))
+        if default_val is None:
+            default_val = base_strategy_params.get(key, 0 if param_type == 'int' else 0.0)
 
-    default_min = max(slider_min, opt_min) if opt_min is not None else max(slider_min, default_value)
-    default_max = min(slider_max, opt_max) if opt_max is not None else min(slider_max, default_value)
-    if default_max < default_min:
-        default_max = default_min
+        min_val = spec.get('min')
+        max_val = spec.get('max')
+        step_val = spec.get('step') or (1 if param_type == 'int' else 0.1)
+        opt_min, opt_max = resolve_range(spec)
 
-    if stored_range:
-        stored_low, stored_high = stored_range
-        if param_type == 'int':
-            stored_low = int(round(stored_low))
-            stored_high = int(round(stored_high))
-        else:
-            stored_low = float(stored_low)
-            stored_high = float(stored_high)
-        default_min = max(default_min, stored_low)
-        default_max = min(default_max, stored_high)
-        if default_max < default_min:
-            default_min, default_max = stored_low, stored_high
+        if min_val is None:
+            min_val = opt_min if opt_min is not None else default_val
+        if max_val is None:
+            max_val = opt_max if opt_max is not None else default_val
+        if min_val is None:
+            min_val = 0 if param_type == 'int' else 0.0
+        if max_val is None or max_val <= min_val:
+            max_val = min_val + (step_val * 10)
 
-    step_default = param_spec.get('step') or (1 if param_type == 'int' else 0.05)
-    if step_default <= 0:
-        step_default = 1 if param_type == 'int' else 0.05
+        stored_range = range_preferences.get(key)
 
-    col4, col5 = st.columns(2)
+        # Créer 2 colonnes: plage + step
+        col_range, col_step = st.columns([3, 1])
 
-    if param_type == 'int':
-        slider_min_int = int(round(slider_min))
-        slider_max_int = int(round(slider_max))
-        default_min_int = int(round(default_min))
-        default_max_int = int(round(default_max))
-        step_default_int = max(1, int(round(step_default)))
+        with col_range:
+            if param_type == 'int':
+                min_val = int(round(min_val))
+                max_val = int(round(max_val))
+                step_val = max(1, int(round(step_val)))
 
-        with col4:
-            min_val, max_val = st.slider(
-                "Plage de valeurs",
-                min_value=slider_min_int,
-                max_value=slider_max_int,
-                value=(default_min_int, default_max_int),
-                step=step_default_int,
-                key="sweep_range"
-            )
+                if stored_range:
+                    stored_low, stored_high = map(int, stored_range)
+                    default_tuple = (max(min_val, stored_low), min(max_val, stored_high))
+                else:
+                    default_tuple = (min_val, max_val)
 
-        with col5:
-            max_step = max(1, max_val - min_val)
-            step = st.number_input(
-                "Pas d'incrémentation",
-                min_value=1,
-                max_value=max_step,
-                value=step_default_int,
-                step=1,
-                key="sweep_step"
-            )
-
-        decimals = 0
-    else:
-        slider_min_float = float(slider_min)
-        slider_max_float = float(slider_max)
-        default_min_float = float(default_min)
-        default_max_float = float(default_max)
-        step_default_float = float(step_default)
-
-        with col4:
-            min_val, max_val = st.slider(
-                "Plage de valeurs",
-                min_value=slider_min_float,
-                max_value=slider_max_float,
-                value=(default_min_float, default_max_float),
-                step=step_default_float,
-                key="sweep_range"
-            )
-
-        with col5:
-            step = st.number_input(
-                "Pas d'incrémentation",
-                min_value=max(step_default_float / 10, 0.0001),
-                value=float(step_default_float),
-                step=float(step_default_float),
-                format="%.4f",
-                key="sweep_step"
-            )
-
-        step_str = f"{float(step):.8f}".rstrip("0")
-        decimals = len(step_str.split(".")[1]) if "." in step_str else 2
-        decimals = min(max(decimals, 1), 6)
-
-    if param_type == 'int':
-        step = int(step) if step else 1
-        if step <= 0:
-            step = 1
-    else:
-        step = float(step) if step else step_default
-        if step <= 0:
-            step = step_default
-
-    grid = _build_sweep_grid(min_val, max_val, step, param_type)
-    if param_type == 'int':
-        range_preferences[param_name] = (int(min_val), int(max_val))
-    else:
-        range_preferences[param_name] = (float(min_val), float(max_val))
-    st.session_state["strategy_param_ranges"] = range_preferences
-    test_count = len(grid)
-
-    st.caption(f"{test_count} combinaisons à tester pour {param_label}")
-
-    if st.button("🔬 Lancer l'Optimisation", type="primary", use_container_width=True, key="run_sweep_btn"):
-        configured_params = st.session_state.get("strategy_params", {}) or {}
-
-        # Préparer les valeurs de la grille
-        param_values = [int(v) if param_type == 'int' else float(v) for v in grid]
-
-        with st.spinner(f"⚡ Optimisation RAPIDE en cours... {test_count} tests"):
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            start_time = time.time()
-
-            # Récupérer la fonction de stratégie optimisée
-            strategy_func = get_strategy_function(strategy)
-
-            # Callback pour mise à jour UI (seulement tous les 50 runs)
-            def update_ui(current_idx, total, _result):
-                progress = current_idx / total
-                progress_bar.progress(progress)
-
-                elapsed = time.time() - start_time
-                rate = current_idx / elapsed if elapsed > 0 else 0
-                eta = (total - current_idx) / rate if rate > 0 else 0
-
-                status_text.text(
-                    f"⚡ {current_idx}/{total} tests "
-                    f"({rate:.0f} runs/sec, ETA: {eta:.1f}s)"
+                selected_range = st.slider(
+                    label,
+                    min_value=min_val,
+                    max_value=max_val,
+                    value=(int(default_tuple[0]), int(default_tuple[1])),
+                    step=1,
+                    key=f"sweep_range_{key}"
                 )
+            else:
+                min_val = float(min_val)
+                max_val = float(max_val)
+                step_val = float(step_val)
+
+                if stored_range:
+                    stored_low = float(stored_range[0])
+                    stored_high = float(stored_range[1])
+                    default_tuple = (max(min_val, stored_low), min(max_val, stored_high))
+                else:
+                    default_tuple = (min_val, max_val)
+
+                selected_range = st.slider(
+                    label,
+                    min_value=min_val,
+                    max_value=max_val,
+                    value=(float(default_tuple[0]), float(default_tuple[1])),
+                    step=step_val,
+                    key=f"sweep_range_{key}"
+                )
+
+        with col_step:
+            if param_type == 'int':
+                step_input = st.number_input(
+                    "Step",
+                    min_value=1,
+                    max_value=max(1, int(selected_range[1] - selected_range[0])),
+                    value=step_val,
+                    step=1,
+                    key=f"sweep_step_{key}",
+                    label_visibility="collapsed"
+                )
+            else:
+                step_input = st.number_input(
+                    "Step",
+                    min_value=step_val / 10,
+                    max_value=float(selected_range[1] - selected_range[0]),
+                    value=step_val,
+                    step=step_val / 10,
+                    format="%.4f",
+                    key=f"sweep_step_{key}",
+                    label_visibility="collapsed"
+                )
+
+        range_preferences[key] = (selected_range[0], selected_range[1])
+        param_ranges[key] = (selected_range[0], selected_range[1])
+        param_steps[key] = step_input
+
+    st.session_state["strategy_param_ranges"] = range_preferences
+
+    # Calculer le nombre total de combinaisons
+    total_combinations = 1
+    for key, (min_v, max_v) in param_ranges.items():
+        step = param_steps[key]
+        if param_types[key] == 'int':
+            n_values = len(range(int(min_v), int(max_v) + 1, max(1, int(step))))
+        else:
+            n_values = int((max_v - min_v) / step) + 1
+        total_combinations *= n_values
+
+    st.info(f"📊 **{total_combinations} combinaisons** à tester (grille exhaustive)")
+
+    if total_combinations > 10000:
+        st.warning(f"⚠️ Attention: {total_combinations} tests peuvent prendre du temps. Considérez Monte-Carlo pour une exploration plus rapide.")
+
+    # Bouton de lancement
+    if st.button("🔬 Lancer le Sweep", type="primary", use_container_width=True, key="run_sweep_btn"):
+        with st.spinner(f"🔬 Sweep en cours... {total_combinations} tests"):
+            indicator_settings = IndicatorSettings(use_gpu=use_gpu)
+            indicator_bank = IndicatorBank(indicator_settings)
+            runner = SweepRunner(indicator_bank=indicator_bank, max_workers=max_workers, use_multigpu=use_multigpu)
+
+            # Construire les paramètres pour le sweep
+            scenario_params: Dict[str, Any] = {}
+            for key, (min_v, max_v) in param_ranges.items():
+                step = param_steps[key]
+                if param_types[key] == 'int':
+                    values = list(range(int(min_v), int(max_v) + 1, max(1, int(step))))
+                else:
+                    values = np.linspace(min_v, max_v, num=max(2, int((max_v - min_v) / step) + 1)).tolist()
+                scenario_params[key] = {"values": values}
+
+            # Ajouter les paramètres non-optimisés
+            for key, value in configured_params.items():
+                if key not in scenario_params:
+                    scenario_params[key] = {"value": value}
+
+            # Utiliser run_grid pour explorer toutes les combinaisons
+            spec = ScenarioSpec(type="grid", params=scenario_params)
+
+            # Récupérer les données réelles pour le backtest
+            real_data = st.session_state.get("data")
+            symbol = st.session_state.get("symbol", "BTC")
+            timeframe = st.session_state.get("timeframe", "1h")
 
             try:
-                # FAST SWEEP - Utilise calculs vectorisés numpy
-                results_df = fast_parameter_sweep(
-                    data=data,
-                    param_name=param_name,
-                    param_values=param_values,
-                    strategy_func=strategy_func,
-                    capital_initial=capital_initial,
-                    update_callback=update_ui,
-                    update_frequency=50,  # Mise à jour UI tous les 50 runs
-                )
+                results = runner.run_grid(spec, real_data, symbol, timeframe, strategy_name=strategy, reuse_cache=True)
+                st.session_state["sweep_results"] = results
 
-                # Ajouter les colonnes de formatage
-                if param_type == 'int':
-                    results_df["param_display"] = results_df["param"].apply(
-                        lambda x: str(int(x))
-                    )
-                else:
-                    results_df["param_display"] = results_df["param"].apply(
-                        lambda x: _format_param_value(x, param_type, decimals)
-                    )
-
-                # Stocker résultats
-                st.session_state.sweep_results = results_df
-                st.session_state["sweep_capital_used"] = capital_initial
-                st.session_state["sweep_param_label"] = param_label
-                st.session_state["sweep_param_type"] = param_type
-                st.session_state["sweep_param_decimals"] = decimals
-
-                # Stats finales
-                total_time = time.time() - start_time
-                throughput = test_count / total_time if total_time > 0 else 0
-
-                status_text.text(
-                    f"✅ Optimisation terminée ! "
-                    f"{test_count} tests en {total_time:.2f}s "
-                    f"({throughput:.0f} runs/sec)"
-                )
-                progress_bar.empty()
-
-                st.success(f"🚀 Performance: **{throughput:.0f} runs/seconde** !")
-
+                # Afficher les informations de configuration
+                st.success(f"✅ Sweep terminé ! {len(results)} résultats")
+                col_info1, col_info2, col_info3 = st.columns(3)
+                with col_info1:
+                    st.metric("Mode Multi-GPU", "Activé" if use_multigpu else "Désactivé")
+                with col_info2:
+                    actual_workers = runner.max_workers if runner.max_workers else "Auto"
+                    st.metric("Workers utilisés", str(actual_workers))
+                with col_info3:
+                    st.metric("Combinaisons testées", len(results) if isinstance(results, pd.DataFrame) else 0)
             except Exception as exc:
-                status_text.text("❌ Optimisation interrompue")
-                st.error(f"❌ Sweep interrompu: {exc}")
+                st.error(f"❌ Erreur Sweep: {exc}")
                 import traceback
                 st.code(traceback.format_exc())
                 return
 
-    sweep_df = st.session_state.get("sweep_results")
-    capital = st.session_state.get("sweep_capital_used", capital_initial)
-    stored_param_label = st.session_state.get("sweep_param_label", param_label)
-    stored_param_type = st.session_state.get("sweep_param_type", param_type)
-    stored_param_decimals = st.session_state.get("sweep_param_decimals", decimals)
+    # Affichage des résultats
+    results_df = st.session_state.get("sweep_results")
 
-    if isinstance(sweep_df, pd.DataFrame) and not sweep_df.empty:
+    # Debug: vérifier ce qui est stocké
+    if results_df is not None:
+        st.write(f"DEBUG: Type des résultats = {type(results_df)}")
+        if isinstance(results_df, pd.DataFrame):
+            st.write(f"DEBUG: DataFrame shape = {results_df.shape}")
+            st.write(f"DEBUG: DataFrame columns = {list(results_df.columns)}")
+            st.write(f"DEBUG: DataFrame empty? = {results_df.empty}")
+    else:
+        st.write("DEBUG: Aucun résultat dans session_state")
+
+    if isinstance(results_df, pd.DataFrame) and not results_df.empty:
         st.markdown("---")
-        st.markdown("### 📊 Résultats de l'Optimisation")
+        st.markdown("### 📊 Résultats du Sweep")
 
-        best_idx = sweep_df["sharpe"].idxmax()
-        best_param = sweep_df.loc[best_idx, "param"]
-        best_param_display = sweep_df.loc[best_idx, "param_display"] if "param_display" in sweep_df.columns else _format_param_value(best_param, stored_param_type, stored_param_decimals)
-        best_sharpe = sweep_df.loc[best_idx, "sharpe"]
-        best_pnl = sweep_df.loc[best_idx, "pnl_euros"]
+        score_col = None
+        for candidate in ["score", "objective", "sharpe", "total_return", "pnl"]:
+            if candidate in results_df.columns:
+                score_col = candidate
+                break
 
-        col_sum1, col_sum2, col_sum3, col_sum4 = st.columns(4)
-        with col_sum1:
-            st.metric("🏆 Meilleur Paramètre", best_param_display)
-        with col_sum2:
-            st.metric("📈 Sharpe Ratio", f"{best_sharpe:.3f}")
-        with col_sum3:
-            st.metric("💶 PnL", f"{best_pnl:.2f} €", delta=f"{best_pnl/capital*100:.1f}%")
-        with col_sum4:
-            best_equity = sweep_df.loc[best_idx, "equity_final"]
-            st.metric("💰 Capital Final", f"{best_equity:.2f} €")
-
-        st.markdown("---")
-
-        st.markdown("#### 📈 Visualisations")
-
-        fig_sharpe = go.Figure()
-        fig_sharpe.add_trace(go.Scatter(
-            x=sweep_df["param"],
-            y=sweep_df["sharpe"],
-            mode="lines+markers",
-            name="Sharpe Ratio",
-            line=dict(color='#26a69a', width=3),
-            marker=dict(size=10, line=dict(width=2, color='#1e5c4f'))
-        ))
-        fig_sharpe.add_vline(
-            x=best_param,
-            line_dash="dash",
-            line_color="#ffd700",
-            line_width=2,
-            annotation_text=f"⭐ Optimal: {best_param_display}",
-            annotation_position="top"
-        )
-        fig_sharpe.update_layout(
-            xaxis_title=f"Paramètre: {stored_param_label}",
-            yaxis_title="Sharpe Ratio",
-            template="plotly_dark",
-            height=450,
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            font=dict(size=12, color='#a8b2d1'),
-            hovermode='x unified',
-        )
-        if stored_param_type == "float":
-            fig_sharpe.update_xaxes(tickformat=f".{stored_param_decimals}f")
+        if score_col:
+            results_sorted = results_df.sort_values(by=score_col, ascending=False)
         else:
-            fig_sharpe.update_xaxes(tickformat="d")
-        st.plotly_chart(fig_sharpe, use_container_width=True, key="sweep_sharpe_main")
+            results_sorted = results_df
 
-        col_g1, col_g2 = st.columns(2)
-        with col_g1:
-            st.markdown("##### 💶 PnL en Euros")
-            fig_pnl = go.Figure()
-            colors = ['#26a69a' if x >= 0 else '#ef5350' for x in sweep_df["pnl_euros"]]
-            fig_pnl.add_trace(go.Bar(
-                x=sweep_df["param"],
-                y=sweep_df["pnl_euros"],
-                name="PnL (€)",
-                marker=dict(color=colors, line=dict(width=1, color='#ffffff'))
-            ))
-            fig_pnl.add_hline(y=0, line_dash="solid", line_color="gray", opacity=0.5)
-            fig_pnl.update_layout(
-                xaxis_title=stored_param_label,
-                yaxis_title="PnL (€)",
-                template="plotly_dark",
-                height=350,
-                plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)',
-                font=dict(size=11, color='#a8b2d1'),
-            )
-            if stored_param_type == "float":
-                fig_pnl.update_xaxes(tickformat=f".{stored_param_decimals}f")
-            else:
-                fig_pnl.update_xaxes(tickformat="d")
-            st.plotly_chart(fig_pnl, use_container_width=True, key="sweep_pnl")
+        st.dataframe(results_sorted.head(100), use_container_width=True, height=400)
 
-        with col_g2:
-            st.markdown("##### 📉 Max Drawdown")
-            fig_dd = go.Figure()
-            fig_dd.add_trace(go.Scatter(
-                x=sweep_df["param"],
-                y=sweep_df["max_dd"],
-                mode="lines+markers",
-                name="Max DD (%)",
-                line=dict(color='#ef5350', width=2),
-                marker=dict(size=8),
-                fill='tozeroy',
-                fillcolor='rgba(239, 83, 80, 0.1)',
-            ))
-            fig_dd.update_layout(
-                xaxis_title=stored_param_label,
-                yaxis_title="Max Drawdown (%)",
-                template="plotly_dark",
-                height=350,
-                plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)',
-                font=dict(size=11, color='#a8b2d1'),
-            )
-            if stored_param_type == "float":
-                fig_dd.update_xaxes(tickformat=f".{stored_param_decimals}f")
-            else:
-                fig_dd.update_xaxes(tickformat="d")
-            st.plotly_chart(fig_dd, use_container_width=True, key="sweep_dd")
+        best_row = results_sorted.iloc[0]
+        st.markdown("#### 🏆 Meilleure configuration")
+        st.json(best_row.to_dict())
 
-        st.markdown("##### 🔍 Analyse des Trades: Nombre vs Taille Moyenne")
-        fig_scatter = go.Figure()
-        fig_scatter.add_trace(go.Scatter(
-            x=sweep_df["nb_trades"],
-            y=sweep_df["avg_trade_size"],
-            mode="markers",
-            name="Tests",
-            marker=dict(
-                size=12,
-                color=sweep_df["sharpe"],
-                colorscale='Viridis',
-                showscale=True,
-                colorbar=dict(title="Sharpe"),
-                line=dict(width=1, color='white')
-            ),
-            text=[f"{stored_param_label}={label}" for label in sweep_df.get("param_display", sweep_df["param"])],
-            hovertemplate="<b>%{text}</b><br>Trades: %{x}<br>Taille moy: %{y:.2f}<extra></extra>"
-        ))
-        best_nb_trades = sweep_df.loc[best_idx, "nb_trades"]
-        best_avg_size = sweep_df.loc[best_idx, "avg_trade_size"]
-        fig_scatter.add_trace(go.Scatter(
-            x=[best_nb_trades],
-            y=[best_avg_size],
-            mode="markers",
-            name="Optimal",
-            marker=dict(size=20, color='#ffd700', symbol='star', line=dict(width=2, color='white'))
-        ))
-        fig_scatter.update_layout(
-            xaxis_title="Nombre de Trades",
-            yaxis_title="Taille Moyenne du Trade",
-            template="plotly_dark",
-            height=400,
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            font=dict(size=11, color='#a8b2d1'),
-            hovermode='closest',
-        )
-        st.plotly_chart(fig_scatter, use_container_width=True, key="sweep_scatter")
-
-        st.markdown("#### 📋 Tableau Détail")
-        display_df = sweep_df.copy()
-        if "param_display" in display_df.columns:
-            display_df["param"] = display_df["param_display"]
-            display_df.drop(columns=["param_display"], inplace=True, errors="ignore")
-
-        display_df = display_df.rename(columns={
-            "param": stored_param_label,
-            "sharpe": "Sharpe Ratio",
-            "return_pct": "Rendement (%)",
-            "pnl_euros": f"PnL (€) - Capital: {capital}€",
-            "equity_final": "Capital Final (€)",
-            "max_dd": "Max DD (%)",
-            "nb_trades": "Nb Trades",
-            "avg_trade_size": "Taille Moy Trade",
-        })
-
-        display_df["Sharpe Ratio"] = display_df["Sharpe Ratio"].apply(lambda x: f"{x:.3f}")
-        display_df["Rendement (%)"] = display_df["Rendement (%)"].apply(lambda x: f"{x:.2f}%")
-        display_df[f"PnL (€) - Capital: {capital}€"] = display_df[f"PnL (€) - Capital: {capital}€"].apply(lambda x: f"{x:.2f} €")
-        display_df["Capital Final (€)"] = display_df["Capital Final (€)"].apply(lambda x: f"{x:.2f} €")
-        display_df["Max DD (%)"] = display_df["Max DD (%)"].apply(lambda x: f"{x:.2f}%")
-        display_df["Taille Moy Trade"] = display_df["Taille Moy Trade"].apply(lambda x: f"{x:.2f}")
-
-        st.dataframe(display_df, use_container_width=True, height=400)
-
-        st.markdown("---")
-        st.markdown(f"#### 💡 Simulation avec {capital}€ de capital")
-        best_return = sweep_df.loc[best_idx, "return_pct"] / 100
-        pnl_capital = capital * best_return
-        equity_capital = capital * (1 + best_return)
-
-        col_cap1, col_cap2, col_cap3 = st.columns(3)
-        with col_cap1:
-            st.metric("Capital Initial", f"{capital:.0f} €")
-        with col_cap2:
-            st.metric("PnL", f"{pnl_capital:.2f} €", delta=f"{best_return*100:.2f}%")
-        with col_cap3:
-            st.metric("Capital Final", f"{equity_capital:.2f} €")
-
-        st.markdown("---")
-        csv = sweep_df.to_csv(index=False).encode("utf-8")
+        csv = results_df.to_csv(index=False).encode("utf-8")
         st.download_button(
-            "💾 Exporter les résultats (CSV)",
+            "💾 Exporter les résultats Sweep (CSV)",
             csv,
             "sweep_results.csv",
             "text/csv",
@@ -1214,21 +1041,38 @@ def _render_monitoring_section(metadata: Optional[Dict[str, Any]], history: Opti
 
 
 def main() -> None:
-    """Point d'entrée de la page Backtest & Optimisation."""
-    st.title("📊 Backtest & Optimisation")
-    st.markdown("*Testez et optimisez vos stratégies de trading*")
+    """Point d'entrée de la page Optimisation."""
+    st.title("🔬 Optimisation de Stratégies")
+    # Unified run-state across UI
+    if "run_active" not in st.session_state:
+        st.session_state.run_active = False
+    if "run_kind" not in st.session_state:
+        st.session_state.run_kind = None
+    if "run_stop_requested" not in st.session_state:
+        st.session_state.run_stop_requested = False
+    if "current_runner" not in st.session_state:
+        st.session_state.current_runner = None
+
+    # Global Stop control in sidebar
+    with st.sidebar:
+        if st.button("⏹ Arrêter l'exécution", use_container_width=True, key="global_stop_btn"):
+            st.session_state.run_stop_requested = True
+            try:
+                from threadx.optimization.engine import request_global_stop
+                request_global_stop()
+            except Exception:
+                pass
+            st.warning("Arrêt demandé — tentative d'interruption des tâches en cours.")
+    st.markdown("*Optimisez vos paramètres de trading avec Sweep ou Monte-Carlo*")
     st.markdown("---")
 
-    # Onglets principaux
-    tab1, tab2, tab3 = st.tabs(["🎯 Backtest Simple", "🔬 Optimisation Sweep", "🎲 Monte-Carlo"])
+    # Onglets principaux (Backtest Simple supprimé)
+    tab1, tab2 = st.tabs(["🔬 Sweep", "🎲 Monte-Carlo"])
 
     with tab1:
-        _render_backtest_tab()
-
-    with tab2:
         _render_optimization_tab()
 
-    with tab3:
+    with tab2:
         _render_monte_carlo_tab()
 
 

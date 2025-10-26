@@ -327,15 +327,35 @@ def main() -> None:
     """Page 3 : chargement des donnees, execution et affichage des resultats."""
     st.title("Backtest & Resultats")
 
+    # Unified run-state across pages
+    if "run_active" not in st.session_state:
+        st.session_state.run_active = False
+    if "run_kind" not in st.session_state:
+        st.session_state.run_kind = None
+    if "run_stop_requested" not in st.session_state:
+        st.session_state.run_stop_requested = False
+
     context = _require_selection()
     indicators = st.session_state.get("indicators", {})
     params = st.session_state.get("strategy_params", {})
 
     _render_selection_badge(context)
 
-    run_clicked = st.button("Lancer le backtest", type="primary", use_container_width=True)
+    # Toggle Start/Stop button
+    if st.session_state.run_active and st.session_state.run_kind == "backtest":
+        stop_clicked = st.button("⏹ Arrêter", type="secondary", use_container_width=True, key="stop_backtest_btn")
+        if stop_clicked:
+            st.session_state.run_stop_requested = True
+            st.warning("Arrêt demandé. Le backtest va s'interrompre dès que possible.")
+    else:
+        run_clicked = st.button("Lancer le backtest", type="primary", use_container_width=True, key="start_backtest_btn")
+        if run_clicked:
+            st.session_state.run_active = True
+            st.session_state.run_kind = "backtest"
+            st.session_state.run_stop_requested = False
 
-    if run_clicked:
+    # Start run when requested and not already processing
+    if st.session_state.run_active and st.session_state.run_kind == "backtest" and not st.session_state.run_stop_requested:
         try:
             df = load_ohlcv(
                 context["symbol"],
@@ -345,23 +365,34 @@ def main() -> None:
             )
         except FileNotFoundError as exc:
             st.error(str(exc))
+            st.session_state.run_active = False
+            st.session_state.run_kind = None
             return
         except Exception as exc:  # pragma: no cover - defensive UI safeguard
             st.error(f"Impossible de charger les donnees: {exc}")
+            st.session_state.run_active = False
+            st.session_state.run_kind = None
             return
 
         if df.empty:
             st.warning("Dataset vide pour cette plage.")
+            st.session_state.run_active = False
+            st.session_state.run_kind = None
             return
 
         try:
             result = run_backtest(df=df, strategy=context["strategy"], params=params)
         except Exception as exc:
             st.error(f"Backtest interrompu: {exc}")
+            st.session_state.run_active = False
+            st.session_state.run_kind = None
             return
 
         st.session_state.backtest_results = result
         st.session_state.data = df
+        # Reset run state after completion
+        st.session_state.run_active = False
+        st.session_state.run_kind = None
 
     stored_result = st.session_state.get("backtest_results")
     stored_df = st.session_state.get("data")

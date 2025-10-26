@@ -481,18 +481,13 @@ def _render_strategy_section() -> None:
 
 
 def main() -> None:
-    """Point d'entrée de la page Configuration & Stratégie."""
-    st.title("🎯 Configuration & Stratégie")
-    st.markdown("*Configurez vos données de marché et votre stratégie de trading*")
+    """Point d'entrée de la page Chargement & Visualisation."""
+    st.title("📊 Chargement des Données")
+    st.markdown("*Sélectionnez et prévisualisez vos données de marché*")
     st.markdown("---")
 
-    # Section 1 : Données
+    # Section unique : Chargement et visualisation
     _render_data_section()
-
-    st.markdown("---")
-
-    # Section 2 : Stratégie
-    _render_strategy_section()
 
 
 if __name__ == "__main__":

@@ -59,7 +59,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-PAGE_TITLES = {"config": "🎯 Configuration & Stratégie", "backtest": "📊 Backtest & Optimisation"}
+PAGE_TITLES = {"config": "📊 Chargement des Données", "backtest": "🔬 Optimisation"}
 PAGE_RENDERERS = {"config": config_page_main, "backtest": backtest_page_main}
 
 @st.cache_resource

@@ -33,7 +33,41 @@ from .scenarios import ScenarioSpec, generate_param_grid, generate_monte_carlo
 from .pruning import pareto_soft_prune
 from .reporting import write_reports, summarize_distribution
 
+# Multi-GPU support
+try:
+    from threadx.gpu.multi_gpu import get_default_manager, MultiGPUManager
+    MULTIGPU_AVAILABLE = True
+except ImportError:
+    MULTIGPU_AVAILABLE = False
+
+# Monitoring système pour workers dynamiques
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+
 logger = get_logger(__name__)
+
+# Global stop flag to allow UI-triggered cancellation without direct runner reference
+_GLOBAL_STOP_FLAG = False
+
+
+def request_global_stop() -> None:
+    """Request cancellation for any running optimization."""
+    global _GLOBAL_STOP_FLAG
+    _GLOBAL_STOP_FLAG = True
+
+
+def clear_global_stop() -> None:
+    """Clear the global stop flag."""
+    global _GLOBAL_STOP_FLAG
+    _GLOBAL_STOP_FLAG = False
+
+
+def is_global_stop_requested() -> bool:
+    """Return True if a global stop has been requested."""
+    return bool(_GLOBAL_STOP_FLAG)
 
 
 class SweepRunner:
@@ -45,18 +79,41 @@ class SweepRunner:
     """
 
     def __init__(
-        self, indicator_bank: Optional[IndicatorBank] = None, max_workers: int = 4
+        self,
+        indicator_bank: Optional[IndicatorBank] = None,
+        max_workers: Optional[int] = None,
+        use_multigpu: bool = True
     ):
         """
-        Initialise le runner de sweeps.
+        Initialise le runner de sweeps avec support Multi-GPU.
 
         Args:
             indicator_bank: Instance IndicatorBank pour cache partagé
-            max_workers: Nombre de workers pour parallélisme
+            max_workers: Nombre de workers (None = auto-détection dynamique)
+            use_multigpu: Activer distribution Multi-GPU si disponible
         """
         self.indicator_bank = indicator_bank or IndicatorBank()
-        self.max_workers = max_workers
         self.logger = get_logger(__name__)
+
+        # Multi-GPU Manager
+        self.use_multigpu = use_multigpu and MULTIGPU_AVAILABLE
+        self.gpu_manager = None
+
+        if self.use_multigpu:
+            try:
+                self.gpu_manager = get_default_manager()
+                self.logger.info("✅ Multi-GPU activé")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Multi-GPU non disponible: {e}")
+                self.use_multigpu = False
+
+        # Workers dynamiques
+        if max_workers is None:
+            self.max_workers = self._calculate_optimal_workers()
+            self.logger.info(f"Workers calculés automatiquement: {self.max_workers}")
+        else:
+            self.max_workers = max_workers
+            self.logger.info(f"Workers configurés manuellement: {self.max_workers}")
 
         # État d'exécution
         self.is_running = False
@@ -67,23 +124,138 @@ class SweepRunner:
         # Hooks de performance
         self.stage_timings = {}
         self.start_time = None
+        self._last_worker_adjustment = 0
 
         self.logger.info("🚀 SweepRunner initialisé avec IndicatorBank centralisé")
 
+    def _calculate_optimal_workers(self) -> int:
+        """
+        Calcule dynamiquement le nombre optimal de workers.
+
+        Basé sur:
+        - Nombre de GPUs disponibles
+        - VRAM disponible
+        - RAM système disponible
+        """
+        # Base: nombre de CPU cores (physiques)
+        if PSUTIL_AVAILABLE:
+            base_workers = psutil.cpu_count(logical=False) or 4
+        else:
+            base_workers = 4
+
+        if self.gpu_manager and self.use_multigpu:
+            # Mode Multi-GPU: limiter les workers pour éviter goulots
+            gpu_devices = [d for d in self.gpu_manager.available_devices if d.device_id != -1]
+
+            if len(gpu_devices) >= 2:
+                # 2 GPUs: 4 workers par GPU = 8 total
+                optimal = len(gpu_devices) * 4
+            elif len(gpu_devices) == 1:
+                # 1 GPU: 6 workers
+                optimal = 6
+            else:
+                # Pas de GPU: utiliser CPU
+                optimal = base_workers
+        else:
+            # Mode CPU-only: plus de workers
+            optimal = min(base_workers * 2, 16)
+
+        # Vérifier RAM disponible
+        if PSUTIL_AVAILABLE:
+            ram_gb = psutil.virtual_memory().available / (1024**3)
+
+            if ram_gb < 16:
+                # RAM limitée: réduire workers
+                optimal = min(optimal, 4)
+            elif ram_gb < 32:
+                optimal = min(optimal, 8)
+
+        return max(optimal, 2)  # Minimum 2 workers
+
+    def _adjust_workers_dynamically(self, current_batch: int, total_batches: int) -> int:
+        """
+        Ajuste le nombre de workers en temps réel selon:
+        - Utilisation GPU actuelle
+        - Utilisation RAM
+        - Performance observée
+        """
+        # Ajustement toutes les 5 batchs minimum
+        if current_batch - self._last_worker_adjustment < 5:
+            return self.max_workers
+
+        if not PSUTIL_AVAILABLE:
+            return self.max_workers
+
+        # Monitoring ressources
+        ram_used_pct = psutil.virtual_memory().percent
+
+        current_workers = self.max_workers
+
+        if self.gpu_manager and self.use_multigpu:
+            try:
+                # Récupérer stats GPU
+                gpu_stats = self.gpu_manager.get_device_stats()
+
+                # Moyenne utilisation GPU
+                gpu_usage_values = [
+                    stats.get('memory_used_pct', 0)
+                    for stats in gpu_stats.values()
+                    if stats.get('device_id', -1) != -1
+                ]
+
+                if gpu_usage_values:
+                    gpu_usage_avg = np.mean(gpu_usage_values)
+
+                    # Ajustement adaptatif
+                    if gpu_usage_avg < 50 and ram_used_pct < 70:
+                        # GPU sous-utilisé et RAM OK: augmenter workers
+                        new_workers = min(current_workers + 2, 16)
+                        self.logger.info(f"↑ Augmentation workers: {current_workers} → {new_workers} (GPU: {gpu_usage_avg:.0f}%, RAM: {ram_used_pct:.0f}%)")
+                        self._last_worker_adjustment = current_batch
+                        return new_workers
+
+                    elif gpu_usage_avg > 85 or ram_used_pct > 85:
+                        # Saturation: réduire workers
+                        new_workers = max(current_workers - 2, 2)
+                        self.logger.warning(f"↓ Réduction workers: {current_workers} → {new_workers} (GPU: {gpu_usage_avg:.0f}%, RAM: {ram_used_pct:.0f}%)")
+                        self._last_worker_adjustment = current_batch
+                        return new_workers
+            except Exception as e:
+                self.logger.debug(f"Erreur ajustement workers: {e}")
+
+        return current_workers
+
     def run_grid(
-        self, grid_spec: ScenarioSpec, *, reuse_cache: bool = True
+        self,
+        grid_spec: ScenarioSpec,
+        real_data: pd.DataFrame,
+        symbol: str,
+        timeframe: str,
+        strategy_name: str = "Bollinger_Breakout",
+        *,
+        reuse_cache: bool = True
     ) -> pd.DataFrame:
         """
-        Exécute un sweep de grille paramétrique.
+        Exécute un sweep de grille paramétrique avec vraies données.
 
         Args:
             grid_spec: Spécification de la grille
+            real_data: DataFrame OHLCV avec vraies données de marché
+            symbol: Symbole tradé (ex: "BTC", "ETH")
+            timeframe: Timeframe des données (ex: "1h", "15m")
+            strategy_name: Nom de la stratégie à utiliser
             reuse_cache: Réutilise le cache IndicatorBank
 
         Returns:
             DataFrame des résultats classés
+
+        Raises:
+            ValueError: Si real_data est None ou vide
         """
-        self.logger.info(f"Début sweep grille: {grid_spec}")
+        if real_data is None or real_data.empty:
+            raise ValueError("Données OHLCV requises pour run_grid()")
+
+        self.logger.info(f"Début sweep grille: {grid_spec} avec {len(real_data)} barres")
 
         # Génération des combinaisons
         with self._time_stage("scenario_generation"):
@@ -97,24 +269,43 @@ class SweepRunner:
         self.logger.info(f"Grille générée: {self.total_scenarios} combinaisons")
 
         # Exécution batch
-        results_df = self._execute_combinations(combinations, reuse_cache=reuse_cache)
+        results_df = self._execute_combinations(
+            combinations, real_data, symbol, timeframe, strategy_name, reuse_cache=reuse_cache
+        )
 
         return results_df
 
     def run_monte_carlo(
-        self, mc_spec: ScenarioSpec, *, reuse_cache: bool = True
+        self,
+        mc_spec: ScenarioSpec,
+        real_data: pd.DataFrame,
+        symbol: str,
+        timeframe: str,
+        strategy_name: str = "Bollinger_Breakout",
+        *,
+        reuse_cache: bool = True
     ) -> pd.DataFrame:
         """
-        Exécute un sweep Monte Carlo.
+        Exécute un sweep Monte Carlo avec vraies données.
 
         Args:
             mc_spec: Spécification Monte Carlo
+            real_data: DataFrame OHLCV avec vraies données de marché
+            symbol: Symbole tradé (ex: "BTC", "ETH")
+            timeframe: Timeframe des données (ex: "1h", "15m")
+            strategy_name: Nom de la stratégie à utiliser
             reuse_cache: Réutilise le cache IndicatorBank
 
         Returns:
             DataFrame des résultats avec pruning Pareto
+
+        Raises:
+            ValueError: Si real_data est None ou vide
         """
-        self.logger.info(f"Début sweep Monte Carlo: {mc_spec}")
+        if real_data is None or real_data.empty:
+            raise ValueError("Données OHLCV requises pour run_monte_carlo()")
+
+        self.logger.info(f"Début sweep Monte Carlo: {mc_spec} avec {len(real_data)} barres")
 
         # Génération des scénarios
         with self._time_stage("scenario_generation"):
@@ -135,15 +326,22 @@ class SweepRunner:
 
         # Exécution avec pruning adaptatif
         results_df = self._execute_combinations_with_pruning(
-            scenarios, reuse_cache=reuse_cache
+            scenarios, real_data, symbol, timeframe, strategy_name, reuse_cache=reuse_cache
         )
 
         return results_df
 
     def _execute_combinations(
-        self, combinations: List[Dict], *, reuse_cache: bool = True
+        self,
+        combinations: List[Dict],
+        real_data: pd.DataFrame,
+        symbol: str,
+        timeframe: str,
+        strategy_name: str = "Bollinger_Breakout",
+        *,
+        reuse_cache: bool = True
     ) -> pd.DataFrame:
-        """Exécute les combinaisons en mode batch."""
+        """Exécute les combinaisons en mode batch avec vraies données."""
         self.is_running = True
         self.start_time = time.time()
 
@@ -157,18 +355,18 @@ class SweepRunner:
             # Calcul batch des indicateurs via IndicatorBank
             with self._time_stage("batch_indicators"):
                 computed_indicators = self._compute_batch_indicators(
-                    unique_indicators, reuse_cache=reuse_cache
+                    unique_indicators, real_data, symbol, timeframe, reuse_cache=reuse_cache
                 )
 
             # Évaluation des stratégies
             with self._time_stage("strategy_evaluation"):
                 for i, combo in enumerate(combinations):
-                    if self.should_pause:
+                    if self.should_pause or is_global_stop_requested():
                         break
 
                     self.current_scenario = i + 1
                     result = self._evaluate_single_combination(
-                        combo, computed_indicators
+                        combo, computed_indicators, real_data, symbol, timeframe, strategy_name
                     )
                     results.append(result)
 
@@ -181,14 +379,22 @@ class SweepRunner:
 
         finally:
             self.is_running = False
+            clear_global_stop()
             self._log_final_stats()
 
         return results_df
 
     def _execute_combinations_with_pruning(
-        self, combinations: List[Dict], *, reuse_cache: bool = True
+        self,
+        combinations: List[Dict],
+        real_data: pd.DataFrame,
+        symbol: str,
+        timeframe: str,
+        strategy_name: str = "Bollinger_Breakout",
+        *,
+        reuse_cache: bool = True
     ) -> pd.DataFrame:
-        """Exécute avec pruning Pareto adaptatif."""
+        """Exécute avec pruning Pareto adaptatif et vraies données."""
         self.is_running = True
         self.start_time = time.time()
 
@@ -202,7 +408,7 @@ class SweepRunner:
 
             with self._time_stage("batch_indicators"):
                 computed_indicators = self._compute_batch_indicators(
-                    unique_indicators, reuse_cache=reuse_cache
+                    unique_indicators, real_data, symbol, timeframe, reuse_cache=reuse_cache
                 )
 
             # Évaluation avec pruning progressif
@@ -210,7 +416,7 @@ class SweepRunner:
                 batch_size = 50  # Taille de batch pour pruning
 
                 for batch_start in range(0, len(combinations), batch_size):
-                    if self.should_pause:
+                    if self.should_pause or is_global_stop_requested():
                         break
 
                     batch_end = min(batch_start + batch_size, len(combinations))
@@ -220,7 +426,7 @@ class SweepRunner:
                     batch_results = []
                     for combo in batch_combos:
                         result = self._evaluate_single_combination(
-                            combo, computed_indicators
+                            combo, computed_indicators, real_data, symbol, timeframe, strategy_name
                         )
                         batch_results.append(result)
 
@@ -254,6 +460,7 @@ class SweepRunner:
 
         finally:
             self.is_running = False
+            clear_global_stop()
             self._log_final_stats(pruning_metadata)
 
         return results_df
@@ -299,31 +506,39 @@ class SweepRunner:
         return indicators_by_type
 
     def _compute_batch_indicators(
-        self, unique_indicators: Dict[str, List[Dict]], *, reuse_cache: bool = True
+        self,
+        unique_indicators: Dict[str, List[Dict]],
+        real_data: pd.DataFrame,
+        symbol: str,
+        timeframe: str,
+        *,
+        reuse_cache: bool = True
     ) -> Dict[str, Dict]:
-        """Calcule les indicateurs en mode batch via IndicatorBank."""
+        """Calcule les indicateurs en batch avec VRAIES données."""
         computed = {}
 
-        # TODO: Intégration avec données réelles
-        # Pour l'instant, simulation des calculs
-        dummy_data = pd.Series(np.random.randn(1000))
+        # ✅ Validation données réelles
+        if real_data is None or real_data.empty:
+            raise ValueError("Données OHLCV requises pour le sweep")
+
+        close_data = real_data["close"]
+        self.logger.info(f"Calcul batch indicateurs avec {len(real_data)} barres")
 
         for indicator_type, params_list in unique_indicators.items():
             computed[indicator_type] = {}
 
             if reuse_cache:
-                # Utilisation du batch_ensure de IndicatorBank
+                # ✅ Utilisation du batch_ensure avec vraies données
                 batch_results = self.indicator_bank.batch_ensure(
                     indicator_type,
                     params_list,
-                    dummy_data,
-                    symbol="BTCUSDC",
-                    timeframe="1h",
+                    close_data,
+                    symbol=symbol,
+                    timeframe=timeframe,
                 )
 
                 # Mapping des résultats
-                for params, result in zip(params_list, batch_results.values()):
-                    params_key = self._params_to_key(params)
+                for params_key, result in batch_results.items():
                     computed[indicator_type][params_key] = result
             else:
                 # Calcul direct sans cache
@@ -332,117 +547,84 @@ class SweepRunner:
                     result = self.indicator_bank.ensure(
                         indicator_type,
                         params,
-                        dummy_data,
-                        symbol="BTCUSDC",
-                        timeframe="1h",
+                        close_data,
+                        symbol=symbol,
+                        timeframe=timeframe,
                     )
                     computed[indicator_type][params_key] = result
 
         return computed
 
     def _evaluate_single_combination(
-        self, combo: Dict, computed_indicators: Dict
+        self,
+        combo: Dict,
+        computed_indicators: Dict,
+        real_data: pd.DataFrame,
+        symbol: str,
+        timeframe: str,
+        strategy_name: str = "Bollinger_Breakout"
     ) -> Dict:
-        """Évalue une combinaison paramétrique."""
-        # Extraction des indicateurs pour cette combinaison
-        combo_indicators = {}
+        """
+        Évaluation avec VRAI backtest de stratégie.
 
-        for param_name, param_value in combo.items():
-            if param_name.startswith("bb_"):
-                indicator_type = "bollinger"
-                bb_params = {
-                    name[3:]: value
-                    for name, value in combo.items()
-                    if name.startswith("bb_")
-                }
-                params_key = self._params_to_key(bb_params)
-                combo_indicators["bollinger"] = computed_indicators.get(
-                    indicator_type, {}
-                ).get(params_key)
+        Utilise les vraies stratégies implementées dans threadx.strategy
+        au lieu de simuler les résultats.
+        """
+        try:
+            # ✅ Import des stratégies disponibles
+            from threadx.strategy import BBAtrStrategy, BollingerDualStrategy
 
-            elif param_name.startswith("atr_"):
-                indicator_type = "atr"
-                atr_params = {
-                    name[4:]: value
-                    for name, value in combo.items()
-                    if name.startswith("atr_")
-                }
-                params_key = self._params_to_key(atr_params)
-                combo_indicators["atr"] = computed_indicators.get(
-                    indicator_type, {}
-                ).get(params_key)
+            # Mapping stratégie → classe
+            strategy_classes = {
+                "Bollinger_Breakout": BBAtrStrategy,
+                "Bollinger_Dual": BollingerDualStrategy,
+            }
 
-        # Génération des signaux (stratégie simple)
-        signals = self._generate_strategy_signals(combo_indicators, combo)
+            # Déterminer quelle stratégie utiliser
+            # Priorité: param "strategy" dans combo, sinon stratégie par défaut
+            strat_name = combo.get("strategy", strategy_name)
 
-        # Calcul des métriques de performance
-        metrics = self._calculate_performance_metrics(signals, combo)
+            StrategyClass = strategy_classes.get(strat_name, BBAtrStrategy)
 
-        # Résultat final
-        result = combo.copy()
-        result.update(metrics)
+            # Instancier la stratégie
+            strategy = StrategyClass(symbol=symbol, timeframe=timeframe)
 
-        return result
+            # ✅ VRAI backtest avec vraies données
+            equity_curve, run_stats = strategy.backtest(
+                df=real_data,
+                params=combo,
+                initial_capital=10000.0,
+                fee_bps=4.5,
+                slippage_bps=0.0
+            )
 
-    def _generate_strategy_signals(self, indicators: Dict, params: Dict) -> np.ndarray:
-        """Génère les signaux de trading."""
-        # Stratégie Bollinger + ATR simplifiée
-        n_points = 1000
-        signals = np.zeros(n_points)
+            # Retourner métriques réelles
+            result = combo.copy()
+            result.update({
+                "pnl": run_stats.total_pnl,
+                "pnl_pct": run_stats.total_pnl_pct,
+                "sharpe": run_stats.sharpe_ratio if hasattr(run_stats, 'sharpe_ratio') else 0.0,
+                "max_drawdown": run_stats.max_drawdown if hasattr(run_stats, 'max_drawdown') else 0.0,
+                "win_rate": run_stats.win_rate if hasattr(run_stats, 'win_rate') else 0.0,
+                "total_trades": run_stats.total_trades,
+            })
 
-        # Simulation de signaux basés sur les paramètres
-        if "bollinger" in indicators and "atr" in indicators:
-            # Stratégie mean reversion avec filtrage ATR
-            bb_period = params.get("bb_period", 20)
-            bb_std = params.get("bb_std", 2.0)
-            atr_period = params.get("atr_period", 14)
+            return result
 
-            # Simulation des signaux
-            noise = np.random.randn(n_points) * 0.1
-            trend = np.sin(np.linspace(0, 4 * np.pi, n_points)) * 0.5
-
-            # Signaux d'entrée/sortie basés sur BB
-            bb_signals = (noise > bb_std * 0.5).astype(int) - (
-                noise < -bb_std * 0.5
-            ).astype(int)
-
-            # Filtrage ATR
-            atr_filter = np.abs(noise) > (1.0 / atr_period)
-
-            signals = bb_signals * atr_filter.astype(int)
-
-        return signals
-
-    def _calculate_performance_metrics(self, signals: np.ndarray, params: Dict) -> Dict:
-        """Calcule les métriques de performance."""
-        # Simulation des retours
-        returns = np.random.randn(len(signals)) * 0.02
-        strategy_returns = signals * returns
-
-        # Métriques de base
-        total_return = np.sum(strategy_returns)
-        volatility = np.std(strategy_returns) if len(strategy_returns) > 1 else 0.0
-        sharpe = total_return / volatility if volatility > 0 else 0.0
-
-        # Drawdown
-        cumulative = np.cumsum(strategy_returns)
-        running_max = np.maximum.accumulate(cumulative)
-        drawdown = running_max - cumulative
-        max_drawdown = np.max(drawdown) if len(drawdown) > 0 else 0.0
-
-        # Win rate
-        winning_trades = np.sum(strategy_returns > 0)
-        total_trades = np.sum(np.abs(signals) > 0)
-        win_rate = winning_trades / total_trades if total_trades > 0 else 0.0
-
-        return {
-            "pnl": total_return,
-            "sharpe": sharpe,
-            "max_drawdown": max_drawdown,
-            "volatility": volatility,
-            "win_rate": win_rate,
-            "total_trades": int(total_trades),
-        }
+        except Exception as e:
+            # Fallback en cas d'erreur: retourner résultats neutres
+            self.logger.error(f"Erreur évaluation combo {combo}: {e}")
+            result = combo.copy()
+            result.update({
+                "pnl": 0.0,
+                "pnl_pct": 0.0,
+                "sharpe": 0.0,
+                "max_drawdown": 0.0,
+                "win_rate": 0.0,
+                "total_trades": 0,
+                "error": str(e)
+            })
+            return result
 
     def _params_to_key(self, params: Dict) -> str:
         """Convertit des paramètres en clé de cache."""
@@ -572,7 +754,7 @@ class UnifiedOptimizationEngine:
                 # Soumission des tâches
                 futures = []
                 for combo in combinations:
-                    if self.should_pause:
+                    if self.should_pause or is_global_stop_requested():
                         break
 
                     future = executor.submit(
@@ -582,7 +764,7 @@ class UnifiedOptimizationEngine:
 
                 # Collecte des résultats
                 for future in as_completed(futures):
-                    if self.should_pause:
+                    if self.should_pause or is_global_stop_requested():
                         break
 
                     try:
@@ -620,6 +802,7 @@ class UnifiedOptimizationEngine:
 
         finally:
             self.is_running = False
+            clear_global_stop()
 
     def _expand_parameter_grid(self, grid_config: Dict) -> List[Dict]:
         """Expanse la configuration de grille en combinaisons."""

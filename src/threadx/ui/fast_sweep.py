@@ -22,6 +22,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Optional global cancel hook from optimization engine
+try:
+    from threadx.optimization.engine import is_global_stop_requested  # type: ignore
+except Exception:
+    def is_global_stop_requested() -> bool:  # type: ignore
+        return False
+
 
 def fast_parameter_sweep(
     data: pd.DataFrame,
@@ -32,6 +39,7 @@ def fast_parameter_sweep(
     capital_initial: float = 10000.0,
     update_callback: Optional[Callable] = None,
     update_frequency: int = 50,
+    should_cancel: Optional[Callable[[], bool]] = None,
 ) -> pd.DataFrame:
     """
     Sweep ultra-rapide avec batch processing.
@@ -78,6 +86,10 @@ def fast_parameter_sweep(
 
     # === ÉTAPE 2: Boucle sur les paramètres (vectorisée autant que possible) ===
     for idx, param_value in enumerate(param_values):
+        # Cooperative cancellation: allow UI to request stop
+        if (should_cancel and should_cancel()) or is_global_stop_requested():
+            logger.info("⏹️  Fast Sweep cancellation requested by user")
+            break
         iter_start = time.time()
 
         # Appliquer stratégie pour ce paramètre

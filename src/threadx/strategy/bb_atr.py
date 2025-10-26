@@ -26,7 +26,7 @@ import numpy as np
 import logging
 from pathlib import Path
 
-from threadx.config.settings import S
+from threadx.configuration.settings import S
 from threadx.utils.log import get_logger
 from threadx.strategy.model import (
     Strategy,

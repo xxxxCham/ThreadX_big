@@ -43,10 +43,18 @@ from .bb_atr import (
     # Paramètres et implémentation
     BBAtrParams,
     BBAtrStrategy,
+    # Fonctions de convenance (préfixées pour éviter les conflits)
+    generate_signals as bb_atr_generate_signals,
+    backtest as bb_atr_backtest,
+    create_default_params as bb_atr_create_default_params,
+)
+
+from .bollinger_dual import (
+    # Paramètres et implémentation
+    BollingerDualParams,
+    BollingerDualStrategy,
     # Fonctions de convenance
-    generate_signals,
-    backtest,
-    create_default_params,
+    create_default_params as bollinger_dual_create_default_params,
 )
 
 __version__ = "4.0.0"
@@ -66,9 +74,13 @@ __all__ = [
     # BB+ATR Strategy exports
     "BBAtrParams",
     "BBAtrStrategy",
-    "generate_signals",
-    "backtest",
-    "create_default_params",
+    "bb_atr_generate_signals",
+    "bb_atr_backtest",
+    "bb_atr_create_default_params",
+    # Bollinger Dual Strategy exports
+    "BollingerDualParams",
+    "BollingerDualStrategy",
+    "bollinger_dual_create_default_params",
 ]
 
 
