@@ -100,22 +100,44 @@ def _read_any(path: Path) -> pd.DataFrame:
 
 
 def _find_ohlcv_file(symbol: str, timeframe: str) -> Optional[Path]:
+    """
+    Trouve un fichier OHLCV en priorisant Parquet > Feather > CSV > JSON.
+    Cette priorité assure les meilleures performances de lecture.
+    """
     symbol = symbol.upper()
     target_prefix = f"{symbol}_{timeframe}"
-    for file_path in _iter_data_files():
-        if file_path.stem == target_prefix:
-            return file_path
+
+    # Ordre de priorité pour les performances : Parquet est le plus rapide
+    priority_extensions = [".parquet", ".feather", ".csv", ".json"]
+
+    # Chercher d'abord par ordre de priorité
+    for ext in priority_extensions:
+        for file_path in _iter_data_files():
+            if file_path.stem == target_prefix and file_path.suffix == ext:
+                return file_path
+
     return None
 
 
 def load_ohlcv(symbol: str, timeframe: str, start=None, end=None) -> pd.DataFrame:
     file_path = _find_ohlcv_file(symbol, timeframe)
     if not file_path:
+        # Message d'erreur détaillé pour faciliter le débogage
+        available_files = list(_iter_data_files())
         raise FileNotFoundError(
-            f"Fichier OHLCV introuvable pour {symbol}/{timeframe} dans {DATA_DIR}"
+            f"Fichier OHLCV introuvable pour {symbol}/{timeframe}\n"
+            f"Dossier de recherche : {DATA_DIR}\n"
+            f"Sous-dossiers cherchés : {DATA_FOLDERS}\n"
+            f"Formats supportés (par ordre de priorité) : .parquet > .feather > .csv > .json\n"
+            f"Nombre de fichiers trouvés : {len(available_files)}\n"
+            f"Nommage attendu : {symbol}_{timeframe}.[parquet|json|csv|feather]"
         )
 
+    # Charger les données (Parquet est prioritaire pour les performances)
     df = _read_any(file_path)
+
+    # Log pour confirmation du format utilisé (visible dans les logs Streamlit)
+    print(f"✅ Chargé : {file_path.name} (format: {file_path.suffix}) - {len(df)} lignes")
 
     if "time" in df.columns:
         df["time"] = pd.to_datetime(df["time"], utc=True, errors="coerce")
