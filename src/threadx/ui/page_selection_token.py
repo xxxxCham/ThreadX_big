@@ -3,15 +3,22 @@ from __future__ import annotations
 from datetime import date
 from typing import List
 
+import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
-from ..data_access import DATA_DIR, discover_tokens_and_timeframes, load_ohlcv
+from ..data_access import (
+    DATA_DIR,
+    discover_tokens_and_timeframes,
+    get_available_timeframes_for_token,
+    load_ohlcv,
+)
 from ..dataset.validate import validate_dataset
 
 DEFAULT_SYMBOL = "BTC"
 DEFAULT_TIMEFRAME = "1h"
-DEFAULT_START_DATE = date(2025, 1, 1)
-DEFAULT_END_DATE = date(2025, 1, 15)
+DEFAULT_START_DATE = date(2024, 9, 1)
+DEFAULT_END_DATE = date(2024, 9, 10)
 
 
 def _ensure_option(options: List[str], value: str) -> List[str]:
@@ -32,6 +39,29 @@ def _sync_session_state(
     st.session_state.timeframe = timeframe
     st.session_state.start_date = start_date
     st.session_state.end_date = end_date
+
+
+def _render_ohlcv_chart(df: pd.DataFrame) -> None:
+    """Affiche un graphique en chandelier des donnees OHLCV."""
+    fig = go.Figure()
+    fig.add_trace(
+        go.Candlestick(
+            x=df.index,
+            open=df["open"],
+            high=df["high"],
+            low=df["low"],
+            close=df["close"],
+            name="OHLC",
+        )
+    )
+    fig.update_layout(
+        height=500,
+        margin=dict(l=10, r=10, t=30, b=10),
+        template="plotly_dark",
+        xaxis_title="Date",
+        yaxis_title="Prix",
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
 
 def _show_validation_widget(data_dir: str) -> None:
@@ -65,30 +95,37 @@ def main() -> None:
     st.title("Selection - Token & Plage temporelle")
     st.caption(f"Donnees exploitees depuis: `{DATA_DIR}`")
 
-    tokens, timeframes = discover_tokens_and_timeframes()
+    tokens, _ = discover_tokens_and_timeframes()
     if not tokens:
         st.error(
             "Aucun dataset exploitable n'a ete trouve dans ce dossier. "
             "Ajoutez vos fichiers Parquet/CSV avant de poursuivre."
         )
         tokens = [DEFAULT_SYMBOL]
-    if not timeframes:
-        timeframes = [DEFAULT_TIMEFRAME]
 
     default_symbol = st.session_state.get("symbol", tokens[0])
-    default_timeframe = st.session_state.get("timeframe", timeframes[0])
     default_start = st.session_state.get("start_date", DEFAULT_START_DATE)
     default_end = st.session_state.get("end_date", DEFAULT_END_DATE)
 
     tokens = _ensure_option(tokens, default_symbol)
-    timeframes = _ensure_option(timeframes, default_timeframe)
-
     symbol_index = tokens.index(default_symbol) if default_symbol in tokens else 0
+
+    symbol = st.selectbox("Token", options=tokens, index=symbol_index)
+
+    # Obtenir les timeframes disponibles pour le token selectionne
+    timeframes = get_available_timeframes_for_token(symbol)
+    if not timeframes:
+        timeframes = [DEFAULT_TIMEFRAME]
+
+    # Verifier si le timeframe actuel est disponible pour ce token
+    default_timeframe = st.session_state.get("timeframe", timeframes[0])
+    if default_timeframe not in timeframes:
+        default_timeframe = timeframes[0]
+
     timeframe_index = (
         timeframes.index(default_timeframe) if default_timeframe in timeframes else 0
     )
 
-    symbol = st.selectbox("Token", options=tokens, index=symbol_index)
     timeframe = st.selectbox("Timeframe", options=timeframes, index=timeframe_index)
 
     col_start, col_end = st.columns(2)
@@ -119,15 +156,14 @@ def main() -> None:
                 st.warning("Aucune donnee disponible pour cette plage.")
                 return
 
+            st.success(f"{len(preview)} lignes chargees | Periode: {preview.index.min()} -> {preview.index.max()}")
+
+            st.subheader("Graphique OHLCV")
+            _render_ohlcv_chart(preview)
+
+            st.subheader("Apercu des donnees")
             st.dataframe(preview.head(10), use_container_width=True)
-            st.caption(
-                f"Lignes affichees: {len(preview)} | "
-                f"Periode: {preview.index.min()} -> {preview.index.max()}"
-            )
 
 
 if __name__ == "__main__":  # pragma: no cover - manual execution helper
     main()
-
-
-

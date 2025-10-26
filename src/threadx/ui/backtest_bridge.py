@@ -51,7 +51,7 @@ def _build_placeholder_trades(close: pd.Series) -> List[Dict[str, Any]]:
     for timestamp, is_long in signal.items():
         price = float(close.loc[timestamp])
         if is_long and current is None:
-            current = {"entry_time": timestamp, "entry_price": price}
+            current = {"entry_time": timestamp, "entry_price": price, "side": "LONG"}
         elif not is_long and current is not None:
             current["exit_time"] = timestamp
             current["exit_price"] = price

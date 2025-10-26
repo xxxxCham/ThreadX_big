@@ -3,6 +3,17 @@ from pathlib import Path
 from typing import List, Tuple, Optional
 import pandas as pd
 from functools import lru_cache
+import logging
+
+# Import du module de normalisation
+try:
+    from threadx.data.normalize import normalize_ohlcv
+    from threadx.data.schemas import DEFAULT_NORMALIZATION_CONFIG
+    NORMALIZATION_AVAILABLE = True
+except ImportError:
+    NORMALIZATION_AVAILABLE = False
+
+logger = logging.getLogger(__name__)
 
 
 # Localisation robuste du dossier data
@@ -86,6 +97,34 @@ def discover_tokens_and_timeframes() -> Tuple[List[str], List[str]]:
     return sorted(tokens), sorted(timeframes, key=_tf_key)
 
 
+def get_available_timeframes_for_token(symbol: str) -> List[str]:
+    """Retourne les timeframes disponibles pour un token specifique."""
+    symbol = symbol.upper()
+    timeframes = set()
+
+    for file_path in _iter_data_files():
+        parts = file_path.stem.split("_", 1)
+        if len(parts) != 2:
+            continue
+        file_symbol, timeframe = parts
+        if file_symbol.upper() == symbol:
+            timeframes.add(timeframe)
+
+    def _tf_key(value: str) -> Tuple[int, int, str]:
+        if not value:
+            return (5, 0, value)
+        unit = value[-1]
+        amount_text = value[:-1]
+        order = {"m": 0, "h": 1, "d": 2, "w": 3}.get(unit, 4)
+        try:
+            amount = int(amount_text)
+        except ValueError:
+            amount = 0
+        return (order, amount, value)
+
+    return sorted(timeframes, key=_tf_key)
+
+
 def _read_any(path: Path) -> pd.DataFrame:
     suffix = path.suffix.lower()
     if suffix == ".parquet":
@@ -117,22 +156,47 @@ def load_ohlcv(symbol: str, timeframe: str, start=None, end=None) -> pd.DataFram
 
     df = _read_any(file_path)
 
-    if "time" in df.columns:
-        df["time"] = pd.to_datetime(df["time"], utc=True, errors="coerce")
-        df = df.set_index("time")
-    if df.index.dtype != "datetime64[ns, UTC]":
-        df.index = pd.to_datetime(df.index, utc=True, errors="coerce")
+    # NORMALISATION AUTOMATIQUE
+    if NORMALIZATION_AVAILABLE:
+        # Utiliser le module de normalisation moderne
+        df, report = normalize_ohlcv(df, config=DEFAULT_NORMALIZATION_CONFIG)
 
-    rename_map = {column: column.lower() for column in df.columns}
-    df = df.rename(columns=rename_map).sort_index()
+        if not report.success:
+            logger.warning(
+                f"Normalisation partielle pour {symbol}/{timeframe}: "
+                f"{len(report.errors)} erreurs"
+            )
+            if report.errors:
+                for error in report.errors:
+                    logger.error(f"  - {error}")
+        else:
+            logger.debug(
+                f"Normalisation réussie pour {symbol}/{timeframe}: "
+                f"{len(report.transformations)} transformations"
+            )
+    else:
+        # Fallback: ancienne méthode (compatibilité)
+        logger.warning("Module de normalisation non disponible, utilisation du fallback")
 
+        # Gerer differentes structures de fichiers
+        if "time" in df.columns:
+            df["time"] = pd.to_datetime(df["time"], utc=True, errors="coerce")
+            df = df.set_index("time")
+        elif "timestamp" in df.columns:
+            df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
+            df = df.set_index("timestamp")
+
+        # Assurer que l'index est datetime avec timezone UTC
+        if df.index.dtype != "datetime64[ns, UTC]":
+            df.index = pd.to_datetime(df.index, utc=True, errors="coerce")
+
+        rename_map = {column: column.lower() for column in df.columns}
+        df = df.rename(columns=rename_map).sort_index()
+
+    # Filtrage par dates
     if start is not None:
-        df = df[df.index >= pd.to_datetime(start)]
+        df = df[df.index >= pd.to_datetime(start, utc=True)]
     if end is not None:
-        df = df[df.index <= pd.to_datetime(end)]
+        df = df[df.index <= pd.to_datetime(end, utc=True)]
 
     return df
-
-
-
-
