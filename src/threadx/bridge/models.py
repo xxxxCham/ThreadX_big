@@ -8,12 +8,17 @@ Aucune logique métier, uniquement structures de données.
 Usage:
     >>> from threadx.bridge.models import BacktestRequest, BacktestResult
     >>> req = BacktestRequest(
-    ...     symbol='BTCUSDT',
+    ...     symbol='BTCUSDC',
     ...     timeframe='1h',
     ...     strategy='bollinger_reversion',
     ...     params={'period': 20, 'std': 2.0}
     ... )
     >>> # Controller consommera req et retournera BacktestResult
+
+Data Paths (nouvelle architecture):
+    - OHLCV JSON:    D:\\ThreadX_big\\src\\threadx\\data\\crypto_data_json\\
+    - OHLCV Parquet: D:\\ThreadX_big\\src\\threadx\\data\\crypto_data_parquet\\
+    - Indicateurs:   D:\\ThreadX_big\\src\\threadx\\data\\indicateurs_data_parquet\\{TOKEN}\\{TF}\\
 
 Author: ThreadX Framework
 Version: Prompt 2 - Bridge Foundation
@@ -31,7 +36,7 @@ class BacktestRequest:
     nécessaires à l'exécution d'un backtest via BacktestController.
 
     Attributes:
-        symbol: Paire de trading (ex. 'BTCUSDT', 'BNBUSDT').
+        symbol: Paire de trading (ex. 'BTCUSDC', 'BNBUSDC').
         timeframe: Timeframe OHLCV (ex. '1h', '15m', '1d').
         strategy: Nom stratégie enregistrée (ex. 'bollinger_reversion').
         params: Paramètres stratégie {key: value} (ex. {'period': 20}).
@@ -39,6 +44,13 @@ class BacktestRequest:
         end_date: Date fin ISO 8601 ou None.
         initial_cash: Capital initial en USD (default: 10000.0).
         use_gpu: Activer accélération GPU si disponible (default: False).
+
+    Note:
+        Les données OHLCV sont chargées depuis:
+        D:\\ThreadX_big\\src\\threadx\\data\\crypto_data_parquet\\{symbol}_{timeframe}.parquet
+
+        Les indicateurs sont chargés depuis:
+        D:\\ThreadX_big\\src\\threadx\\data\\indicateurs_data_parquet\\{TOKEN}\\{TF}\\*.parquet
     """
 
     symbol: str
@@ -104,13 +116,18 @@ class IndicatorRequest:
     avec support cache automatique.
 
     Attributes:
-        symbol: Paire de trading (ex. 'BTCUSDT').
+        symbol: Paire de trading (ex. 'BTCUSDC').
         timeframe: Timeframe des données (ex. '1h').
         indicators: Dict d'indicateurs {nom: params}
                    (ex. {'ema': {'period': 50}}).
         data_path: Chemin vers données Parquet ou None (auto-detect).
         force_recompute: Ignorer cache et recalculer (default: False).
         use_gpu: Utiliser GPU pour calculs si disponible (default: False).
+
+    Note:
+        Format de fichier indicateur attendu:
+        {TOKEN}_{TIMEFRAME}_{indicator_name}.parquet
+        Ex: BTC_1h_ema_period50.parquet
     """
 
     symbol: str
@@ -164,7 +181,7 @@ class SweepRequest:
     Explore une grille de paramètres et retourne les meilleures combinaisons.
 
     Attributes:
-        symbol: Paire de trading (ex. 'BTCUSDT').
+        symbol: Paire de trading (ex. 'BTCUSDC').
         timeframe: Timeframe des données (ex. '1h').
         strategy: Stratégie à optimiser (ex. 'bollinger_reversion').
         param_grid: Grille de paramètres {param: [val1, val2, ...]} ou
@@ -237,13 +254,18 @@ class DataRequest:
     Utilisée par DataController pour charger et valider des données OHLCV.
 
     Attributes:
-        symbol: Paire de trading (ex. 'BTCUSDT').
+        symbol: Paire de trading (ex. 'BTCUSDC').
         timeframe: Timeframe des données (ex. '1h').
         data_path: Chemin vers fichier Parquet ou None (auto-detect).
         validate: Activer validation qualité données (default: True).
         required_columns: Colonnes obligatoires à vérifier.
         start_date: Date début ou None (tout le dataset).
         end_date: Date fin ou None.
+
+    Note:
+        Auto-detection cherche dans cet ordre:
+        1. D:\\ThreadX_big\\src\\threadx\\data\\crypto_data_parquet\\{symbol}_{timeframe}.parquet
+        2. D:\\ThreadX_big\\src\\threadx\\data\\crypto_data_json\\{symbol}_{timeframe}.json
     """
 
     symbol: str
@@ -334,6 +356,3 @@ class Configuration:
         if self.max_workers < 1:
             raise ValueError(f"max_workers must be >= 1, got {self.max_workers}")
         return True
-
-
-

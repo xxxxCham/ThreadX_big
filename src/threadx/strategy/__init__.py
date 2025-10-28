@@ -57,6 +57,16 @@ from .bollinger_dual import (
     create_default_params as bollinger_dual_create_default_params,
 )
 
+from .amplitude_hunter import (
+    # Paramètres et implémentation
+    AmplitudeHunterParams,
+    AmplitudeHunterStrategy,
+    # Fonctions de convenance
+    generate_signals as amplitude_hunter_generate_signals,
+    backtest as amplitude_hunter_backtest,
+    create_default_params as amplitude_hunter_create_default_params,
+)
+
 __version__ = "4.0.0"
 
 __all__ = [
@@ -81,6 +91,12 @@ __all__ = [
     "BollingerDualParams",
     "BollingerDualStrategy",
     "bollinger_dual_create_default_params",
+    # AmplitudeHunter Strategy exports
+    "AmplitudeHunterParams",
+    "AmplitudeHunterStrategy",
+    "amplitude_hunter_generate_signals",
+    "amplitude_hunter_backtest",
+    "amplitude_hunter_create_default_params",
 ]
 
 

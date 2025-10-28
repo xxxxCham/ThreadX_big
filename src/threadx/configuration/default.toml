@@ -12,9 +12,9 @@ gpu = false
 source = "stub"
 
 [udi]
-json_root = 'D:\\TradXPro\\crypto_data_json'
-parquet_root = 'D:\\TradXPro\\crypto_data_parquet'
-indicators_db_root = 'I:\\indicators_db'
-output_dir = 'D:\\TradXPro\\best_token_DataFrame'
+json_root = 'D:\\ThreadX_big\\src\\threadx\\data\\crypto_data_json'
+parquet_root = 'D:\\ThreadX_big\\src\\threadx\\data\\crypto_data_parquet'
+indicators_db_root = 'D:\\ThreadX_big\\src\\threadx\\data\\indicateurs_data_parquet'
+output_dir = 'D:\\ThreadX_big\\src\\threadx\\data'
 rate_limit_per_sec = 10
 request_timeout_sec = 30

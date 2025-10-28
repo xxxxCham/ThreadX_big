@@ -1,0 +1,486 @@
+# ThreadX - Plages d'Optimisation "Classiques" pour Indicateurs Techniques
+# ==========================================================================
+#
+# Ce fichier définit les plages de test et pas d'optimisation recommandés
+# pour les indicateurs techniques couramment utilisés en trading algorithmique.
+#
+# Format: [category.indicator]
+#   min = valeur minimale
+#   max = valeur maximale
+#   step = pas d'incrémentation
+#   default = valeur par défaut (optionnel)
+#
+# Source: Tableau de référence backtesting classique
+# Date: 2025
+
+# ==========================================================================
+# BOLLINGER BANDS
+# ==========================================================================
+
+[bollinger.period]
+min = 10
+max = 50
+step = 1
+default = 20
+description = "Période de la moyenne mobile (SMA)"
+
+[bollinger.std_dev]
+min = 1.5
+max = 3.0
+step = 0.1
+default = 2.0
+description = "Multiplicateur d'écart-type (K)"
+
+[bollinger.bandwidth_threshold]
+min = 0.02
+max = 0.15
+step = 0.005
+default = 0.05
+description = "Seuil de largeur BBWidth (ratio)"
+
+[bollinger.width_filter]
+type = "boolean"
+default = false
+description = "Activer filtre de largeur"
+
+[bollinger.opposite_breakout]
+type = "boolean"
+default = false
+description = "Confirmer par cassure opposée"
+
+[bollinger.smoothing_bars]
+min = 3
+max = 10
+step = 1
+default = 5
+description = "Barres de lissage du signal"
+
+# ==========================================================================
+# MOVING AVERAGES (SMA/EMA)
+# ==========================================================================
+
+[sma.short_period]
+min = 5
+max = 50
+step = 1
+default = 20
+description = "SMA courte (trend-following)"
+
+[sma.long_period]
+min = 100
+max = 200
+step = 5
+default = 150
+description = "SMA longue (trend-following)"
+
+[ema.short_period]
+min = 5
+max = 30
+step = 1
+default = 12
+description = "EMA courte"
+
+# ==========================================================================
+# MACD (Moving Average Convergence Divergence)
+# ==========================================================================
+
+[macd.fast_period]
+min = 8
+max = 15
+step = 1
+default = 12
+description = "MACD EMA rapide"
+
+[macd.slow_period]
+min = 20
+max = 35
+step = 1
+default = 26
+description = "MACD EMA lente"
+
+[macd.signal_period]
+min = 6
+max = 12
+step = 1
+default = 9
+description = "MACD Signal (EMA)"
+
+# ==========================================================================
+# ICHIMOKU
+# ==========================================================================
+
+[ichimoku.tenkan]
+min = 7
+max = 12
+step = 1
+default = 9
+description = "Tenkan-sen (Conversion Line)"
+
+[ichimoku.kijun]
+min = 22
+max = 30
+step = 1
+default = 26
+description = "Kijun-sen (Base Line)"
+
+[ichimoku.senkou_b]
+min = 44
+max = 60
+step = 2
+default = 52
+description = "Senkou Span B"
+
+# ==========================================================================
+# PARABOLIC SAR
+# ==========================================================================
+
+[parabolic_sar.step]
+min = 0.01
+max = 0.035
+step = 0.005
+default = 0.02
+description = "Step (Acceleration Factor)"
+
+[parabolic_sar.max_af]
+min = 0.10
+max = 0.30
+step = 0.05
+default = 0.20
+description = "Maximum Acceleration Factor"
+
+# ==========================================================================
+# ADX (Average Directional Index)
+# ==========================================================================
+
+[adx.period]
+min = 7
+max = 20
+step = 1
+default = 14
+description = "Période ADX"
+
+[adx.trend_threshold]
+min = 20
+max = 30
+step = 1
+default = 25
+description = "Seuil de tendance ADX"
+
+# ==========================================================================
+# RSI (Relative Strength Index)
+# ==========================================================================
+
+[rsi.period]
+min = 7
+max = 21
+step = 1
+default = 14
+description = "Période RSI"
+
+[rsi.overbought]
+min = 70
+max = 80
+step = 5
+default = 70
+description = "Niveau de surachat"
+
+[rsi.oversold]
+min = 20
+max = 30
+step = 5
+default = 30
+description = "Niveau de survente"
+
+# ==========================================================================
+# STOCHASTIC
+# ==========================================================================
+
+[stochastic.k_period]
+min = 5
+max = 20
+step = 1
+default = 14
+description = "%K Period"
+
+[stochastic.d_period]
+min = 3
+max = 5
+step = 1
+default = 3
+description = "%D Period"
+
+[stochastic.smoothing]
+min = 1
+max = 3
+step = 1
+default = 3
+description = "Smoothing"
+
+# ==========================================================================
+# CCI (Commodity Channel Index)
+# ==========================================================================
+
+[cci.period]
+min = 14
+max = 30
+step = 2
+default = 20
+description = "Période CCI"
+
+[cci.threshold_positive]
+min = 75
+max = 150
+step = 25
+default = 100
+description = "Seuil positif"
+
+[cci.threshold_negative]
+min = -150
+max = -75
+step = 25
+default = -100
+description = "Seuil négatif"
+
+# ==========================================================================
+# MOMENTUM
+# ==========================================================================
+
+[momentum.period]
+min = 5
+max = 20
+step = 1
+default = 10
+description = "Période Momentum"
+
+# ==========================================================================
+# OBV (On Balance Volume)
+# ==========================================================================
+
+[obv.ma_period]
+min = 10
+max = 30
+step = 5
+default = 20
+description = "Période MA optionnelle pour OBV"
+
+# ==========================================================================
+# MFI (Money Flow Index)
+# ==========================================================================
+
+[mfi.period]
+min = 7
+max = 21
+step = 1
+default = 14
+description = "Période MFI"
+
+[mfi.overbought]
+min = 80
+max = 90
+step = 5
+default = 80
+description = "Niveau de surachat"
+
+[mfi.oversold]
+min = 10
+max = 20
+step = 5
+default = 20
+description = "Niveau de survente"
+
+# ==========================================================================
+# VOLUME OSCILLATOR / PVO
+# ==========================================================================
+
+[volume_oscillator.fast_period]
+min = 5
+max = 14
+step = 1
+default = 12
+description = "Période rapide"
+
+[volume_oscillator.slow_period]
+min = 10
+max = 28
+step = 2
+default = 26
+description = "Période lente"
+
+[volume_oscillator.signal_period]
+min = 5
+max = 12
+step = 1
+default = 9
+description = "Période signal"
+
+# ==========================================================================
+# ATR (Average True Range)
+# ==========================================================================
+
+[atr.period]
+min = 7
+max = 21
+step = 1
+default = 14
+description = "Période ATR"
+
+[atr.stop_multiplier]
+min = 1.0
+max = 3.0
+step = 0.25
+default = 2.0
+description = "Multiplicateur pour stops"
+
+# ==========================================================================
+# STANDARD DEVIATION (Écart-type)
+# ==========================================================================
+
+[stddev.period]
+min = 10
+max = 30
+step = 1
+default = 20
+description = "Période écart-type"
+
+[stddev.envelope_multiplier]
+min = 1.0
+max = 3.0
+step = 0.1
+default = 2.0
+description = "Multiplicateur pour enveloppes"
+
+# ==========================================================================
+# FIBONACCI & PIVOT POINTS
+# ==========================================================================
+
+[fibonacci.levels]
+type = "fixed"
+values = [0.236, 0.382, 0.5, 0.618, 0.786]
+description = "Niveaux de retracement Fibonacci fixes"
+
+[pivot.timeframe]
+type = "categorical"
+values = ["daily", "weekly", "monthly"]
+default = "daily"
+description = "Cadre temporel pour Pivot Points"
+
+# ==========================================================================
+# ON-CHAIN METRICS (Crypto)
+# ==========================================================================
+
+[onchain.smoothing_days]
+min = 7
+max = 30
+step = 7
+default = 7
+description = "Lissage métriques on-chain (jours)"
+
+[crypto_fear_greed.smoothing_days]
+min = 1
+max = 7
+step = 1
+default = 7
+description = "Lissage Fear & Greed Index"
+
+# ==========================================================================
+# BITCOIN SPECIFIC
+# ==========================================================================
+
+[pi_cycle.dma_111]
+type = "fixed"
+value = 111
+description = "Pi Cycle Top - 111 DMA"
+
+[pi_cycle.dma_350]
+type = "fixed"
+value = 350
+description = "Pi Cycle Top - 350 DMA x2"
+
+# ==========================================================================
+# AMPLITUDE HUNTER SPECIFIC PARAMETERS
+# ==========================================================================
+# Paramètres spécifiques à la stratégie AmplitudeHunter
+# qui ne sont pas des indicateurs standards
+
+[amplitude_hunter.bbwidth_percentile_threshold]
+min = 30
+max = 70
+step = 5
+default = 50
+description = "Seuil percentile BBWidth"
+
+[amplitude_hunter.volume_zscore_threshold]
+min = 0.0
+max = 2.0
+step = 0.25
+default = 0.5
+description = "Seuil z-score volume"
+
+[amplitude_hunter.spring_lookback]
+min = 10
+max = 30
+step = 5
+default = 20
+description = "Lookback pour détection spring"
+
+[amplitude_hunter.pb_entry_threshold_min]
+min = 0.1
+max = 0.4
+step = 0.05
+default = 0.2
+description = "%B minimum pour entrée"
+
+[amplitude_hunter.pb_entry_threshold_max]
+min = 0.4
+max = 0.7
+step = 0.05
+default = 0.5
+description = "%B maximum pour entrée"
+
+[amplitude_hunter.amplitude_score_threshold]
+min = 0.4
+max = 0.8
+step = 0.05
+default = 0.6
+description = "Score d'amplitude minimum"
+
+[amplitude_hunter.trailing_activation_gain_r]
+min = 0.5
+max = 2.0
+step = 0.25
+default = 1.0
+description = "Gain en R pour activer trailing"
+
+[amplitude_hunter.trailing_chandelier_atr_mult]
+min = 2.0
+max = 4.0
+step = 0.5
+default = 2.5
+description = "Multiplicateur ATR pour chandelier trailing"
+
+[amplitude_hunter.bip_partial_exit_pct]
+min = 0.3
+max = 0.7
+step = 0.1
+default = 0.5
+description = "Pourcentage sortie partielle BIP"
+
+[amplitude_hunter.risk_per_trade]
+min = 0.01
+max = 0.05
+step = 0.005
+default = 0.02
+description = "Risque par trade (%)"
+
+[amplitude_hunter.max_hold_bars]
+min = 50
+max = 200
+step = 25
+default = 100
+description = "Durée maximale position (barres)"
+
+[amplitude_hunter.pyramiding_max_adds]
+type = "categorical"
+values = [0, 1, 2]
+default = 1
+description = "Nombre maximum d'adds pyramiding"

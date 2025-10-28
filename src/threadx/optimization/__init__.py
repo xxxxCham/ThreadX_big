@@ -26,12 +26,31 @@ from .engine import (
 )
 from .ui import ParametricOptimizationUI, create_optimization_ui
 
+# Presets for optimization
+from .presets import (
+    IndicatorRangePreset,
+    StrategyPresetMapper,
+    get_indicator_range,
+    get_strategy_preset,
+    list_available_indicators,
+    load_all_presets,
+)
+
 __all__ = [
+    # Engine
     "UnifiedOptimizationEngine",
     "create_unified_engine",
+    "DEFAULT_SWEEP_CONFIG",
+    # UI
     "ParametricOptimizationUI",
     "create_optimization_ui",
-    "DEFAULT_SWEEP_CONFIG",
+    # Presets
+    "IndicatorRangePreset",
+    "StrategyPresetMapper",
+    "get_indicator_range",
+    "get_strategy_preset",
+    "list_available_indicators",
+    "load_all_presets",
 ]
 
 __version__ = "1.0.0"
