@@ -370,23 +370,48 @@ class SweepRunner:
                 completed_count = [0]  # Mutable counter pour tracking progress
 
                 with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                    # Soumettre tous les travaux
                     futures = {}
-                    for i, combo in enumerate(combinations):
-                        future = executor.submit(
-                            self._evaluate_single_combination,
-                            combo, computed_indicators, real_data, symbol, timeframe, strategy_name
-                        )
-                        futures[future] = i
+                    batch_size = 1000  # Soumettre par batch pour éviter une queue géante
+                    stop_requested = False
 
-                    # Collecter les résultats au fur et à mesure (résiste aux interruptions)
+                    # Soumettre les futures par BATCH, en vérifiant le stop entre chaque
+                    self.logger.info(f"Début soumission {len(combinations)} combos par batch de {batch_size}")
+                    for batch_idx in range(0, len(combinations), batch_size):
+                        # Vérifier le stop AVANT de soumettre chaque batch
+                        if self.should_pause or is_global_stop_requested():
+                            stop_requested = True
+                            self.logger.warning(f"⏹️ Arrêt détecté avant soumission batch {batch_idx // batch_size}")
+                            break
+
+                        # Soumettre le batch
+                        batch_end = min(batch_idx + batch_size, len(combinations))
+                        for i in range(batch_idx, batch_end):
+                            combo = combinations[i]
+                            future = executor.submit(
+                                self._evaluate_single_combination,
+                                combo, computed_indicators, real_data, symbol, timeframe, strategy_name
+                            )
+                            futures[future] = i
+
+                        self.logger.debug(f"Batch {batch_idx // batch_size}: {batch_end - batch_idx} futures soumises (total: {len(futures)})")
+
+                    # Collecter les résultats au fur et à mesure
                     try:
                         for future in as_completed(futures):
+                            # Vérifier le stop régulièrement
                             if self.should_pause or is_global_stop_requested():
-                                self.logger.warning(f"⏹️ Arrêt demandé après {completed_count[0]} combos")
-                                # Cancel remaining futures
+                                if not stop_requested:
+                                    self.logger.warning(f"⏹️ Arrêt demandé après {completed_count[0]} combos terminés")
+                                    stop_requested = True
+
+                                # Annuler les futures restantes en queue
+                                cancelled_count = 0
                                 for f in futures:
-                                    f.cancel()
+                                    if f.cancel():
+                                        cancelled_count += 1
+
+                                if cancelled_count > 0:
+                                    self.logger.warning(f"⏹️ {cancelled_count} futures annulées en queue")
                                 break
 
                             try:
@@ -415,9 +440,12 @@ class SweepRunner:
                                     "total_trades": 0,
                                 })
                     finally:
-                        # Ensure all futures are cancelled
-                        for f in futures:
-                            f.cancel()
+                        # Cleanup: cancel any remaining futures
+                        remaining = sum(1 for f in futures if not f.done())
+                        if remaining > 0:
+                            for f in futures:
+                                f.cancel()
+                            self.logger.info(f"Cleanup: {remaining} futures restantes annulées")
 
             # Construction du DataFrame final
             with self._time_stage("results_compilation"):
@@ -797,32 +825,59 @@ class UnifiedOptimizationEngine:
             results = []
 
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                # Soumission des tâches
-                futures = []
-                for combo in combinations:
+                futures = {}
+                batch_size = 1000
+                stop_requested = False
+
+                # Soumission des tâches par BATCH
+                self.logger.info(f"Soumission {len(combinations)} combos par batch de {batch_size}")
+                for batch_idx in range(0, len(combinations), batch_size):
                     if self.should_pause or is_global_stop_requested():
+                        stop_requested = True
+                        self.logger.warning(f"⏹️ Arrêt avant batch {batch_idx // batch_size}")
                         break
 
-                    future = executor.submit(
-                        self._execute_single_combination, data, combo, config
-                    )
-                    futures.append(future)
+                    batch_end = min(batch_idx + batch_size, len(combinations))
+                    for i in range(batch_idx, batch_end):
+                        combo = combinations[i]
+                        future = executor.submit(
+                            self._execute_single_combination, data, combo, config
+                        )
+                        futures[future] = i
+
+                    self.logger.debug(f"Batch: {batch_end - batch_idx} soumises (total: {len(futures)})")
 
                 # Collecte des résultats
-                for future in as_completed(futures):
-                    if self.should_pause or is_global_stop_requested():
-                        break
+                try:
+                    for future in as_completed(futures):
+                        if self.should_pause or is_global_stop_requested():
+                            if not stop_requested:
+                                self.logger.warning(f"⏹️ Arrêt après {self.completed_combos} combos")
+                                stop_requested = True
 
-                    try:
-                        result = future.result()
-                        results.append(result)
-                        self.completed_combos += 1
-                        self._update_progress()
+                            # Annuler les futures en queue
+                            cancelled = sum(1 for f in futures if f.cancel())
+                            if cancelled > 0:
+                                self.logger.warning(f"⏹️ {cancelled} futures annulées")
+                            break
 
-                    except Exception as e:
-                        self.logger.error(f"Erreur dans une combinaison: {e}")
-                        self.completed_combos += 1
-                        self._update_progress()
+                        try:
+                            result = future.result()
+                            results.append(result)
+                            self.completed_combos += 1
+                            self._update_progress()
+
+                        except Exception as e:
+                            self.logger.error(f"Erreur dans une combinaison: {e}")
+                            self.completed_combos += 1
+                            self._update_progress()
+                finally:
+                    # Cleanup
+                    remaining = sum(1 for f in futures if not f.done())
+                    if remaining > 0:
+                        for f in futures:
+                            f.cancel()
+                        self.logger.info(f"Cleanup: {remaining} futures annulées")
 
             # 3. Classement des résultats
             if results:
