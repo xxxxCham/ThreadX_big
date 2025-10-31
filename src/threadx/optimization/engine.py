@@ -358,20 +358,50 @@ class SweepRunner:
                     unique_indicators, real_data, symbol, timeframe, reuse_cache=reuse_cache
                 )
 
-            # Évaluation des stratégies
+            # Évaluation PARALLÈLE des stratégies avec ThreadPoolExecutor
             with self._time_stage("strategy_evaluation"):
-                for i, combo in enumerate(combinations):
-                    if self.should_pause or is_global_stop_requested():
-                        break
+                completed_count = [0]  # Mutable counter pour tracking progress
 
-                    self.current_scenario = i + 1
-                    result = self._evaluate_single_combination(
-                        combo, computed_indicators, real_data, symbol, timeframe, strategy_name
-                    )
-                    results.append(result)
+                with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                    # Soumettre tous les travaux
+                    futures = {}
+                    for i, combo in enumerate(combinations):
+                        future = executor.submit(
+                            self._evaluate_single_combination,
+                            combo, computed_indicators, real_data, symbol, timeframe, strategy_name
+                        )
+                        futures[future] = i
 
-                    if i % 100 == 0:
-                        self._log_progress()
+                    # Collecter les résultats au fur et à mesure (résiste aux interruptions)
+                    for future in as_completed(futures):
+                        if self.should_pause or is_global_stop_requested():
+                            break
+
+                        try:
+                            result = future.result()
+                            results.append(result)
+                            completed_count[0] += 1
+
+                            # Mise à jour du compteur de progression (thread-safe via GIL)
+                            self.current_scenario = completed_count[0]
+
+                            # Log de progression tous les 100 combos
+                            if completed_count[0] % 100 == 0:
+                                self._log_progress()
+
+                        except Exception as e:
+                            self.logger.error(f"Erreur exécution combo: {e}")
+                            # Continuer avec les autres combos
+                            completed_count[0] += 1
+                            results.append({
+                                "error": str(e),
+                                "pnl": 0.0,
+                                "pnl_pct": 0.0,
+                                "sharpe": 0.0,
+                                "max_drawdown": 0.0,
+                                "win_rate": 0.0,
+                                "total_trades": 0,
+                            })
 
             # Construction du DataFrame final
             with self._time_stage("results_compilation"):

@@ -503,11 +503,20 @@ class BBAtrStrategy:
 
         logger.debug(f"Backtest initialisé: {n_bars} barres, fee_rate={fee_rate:.6f}")
 
+        # Pré-extraction des colonnes en numpy arrays (3-4x plus rapide que iterrows)
+        close_vals = signals_df["close"].values
+        atr_vals = signals_df["atr"].values
+        signal_vals = signals_df["signal"].values
+        bb_middle_vals = signals_df["bb_middle"].values
+        bb_z_vals = signals_df["bb_z"].values
+        timestamps = signals_df.index.values
+
         # Boucle principale
-        for i, (timestamp, row) in enumerate(signals_df.iterrows()):
-            current_price = row["close"]
-            current_atr = row["atr"]
-            signal = row["signal"]
+        for i in range(n_bars):
+            current_price = close_vals[i]
+            current_atr = atr_vals[i]
+            signal = signal_vals[i]
+            timestamp = pd.Timestamp(timestamps[i], tz='UTC')
 
             # Skip si ATR invalide
             if np.isnan(current_atr) or current_atr <= 0:
@@ -530,11 +539,11 @@ class BBAtrStrategy:
                     exit_reason = "stop_loss"
 
                 # 2. Take profit (retour vers BB middle)
-                elif position.is_long() and current_price >= row["bb_middle"]:
+                elif position.is_long() and current_price >= bb_middle_vals[i]:
                     should_exit = True
                     exit_reason = "take_profit_bb_middle"
 
-                elif position.is_short() and current_price <= row["bb_middle"]:
+                elif position.is_short() and current_price <= bb_middle_vals[i]:
                     should_exit = True
                     exit_reason = "take_profit_bb_middle"
 
@@ -646,7 +655,7 @@ class BBAtrStrategy:
                             stop=stop_price,
                             fees_paid=entry_fees,
                             meta={
-                                "bb_z": row["bb_z"],
+                                "bb_z": bb_z_vals[i],
                                 "atr": current_atr,
                                 "atr_multiplier": strategy_params.atr_multiplier,
                                 "risk_per_trade": strategy_params.risk_per_trade,

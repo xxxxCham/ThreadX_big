@@ -26,12 +26,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from threadx.data_access import DATA_DIR
 from threadx.ui.page_config_strategy import main as config_page_main
 from threadx.ui.page_backtest_optimization import main as backtest_page_main
-from threadx.dataset.validate import validate_dataset
 
 # Configuration
 st.set_page_config(
     page_title="ThreadX v2.0 - Trading Quantitatif",
-    page_icon="📈",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -59,28 +58,64 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-PAGE_TITLES = {"config": "📊 Chargement des Données", "backtest": "🔬 Optimisation"}
+PAGE_TITLES = {"config": "📊 Chargement des Données", "backtest": "⚡ Optimisation"}
 PAGE_RENDERERS = {"config": config_page_main, "backtest": backtest_page_main}
 
-@st.cache_resource
 def init_session() -> None:
+    """
+    Initialise la session avec les réglages par défaut.
+    Force l'application des paramètres BTC préréglés à chaque ouverture.
+    """
     defaults = {
-        "page": "config", "symbol": "BTC", "timeframe": "1h",
-        "start_date": date(2024, 9, 1), "end_date": date(2024, 9, 10),
-        "strategy": None, "indicators": {}, "strategy_params": {},
-        "data": None, "backtest_results": None, "sweep_results": None,
+        "page": "config",
+        "symbol": "BTCUSDC",  # Bitcoin préréglé - OBLIGATOIRE
+        "timeframe": "15m",   # 15 minutes préréglé - OBLIGATOIRE
+        "start_date": date(2024, 12, 1),      # 1er décembre 2024 - OBLIGATOIRE
+        "end_date": date(2025, 1, 31),        # 31 janvier 2025 - OBLIGATOIRE
+        "strategy": "Bollinger_Breakout",     # Stratégie Bollinger+ATR préréglée
+        "indicators": {},
+        # Paramètres de stratégie préréglés selon le tableau classique
+        "strategy_params": {
+            "bb_period": 20,           # Milieu de la plage 10→50
+            "bb_std": 2.0,             # Milieu de la plage 1.5→3.0
+            "entry_z": 1.0,            # Seuil Z-score standard
+            "entry_logic": "AND",      # Logique d'entrée standard
+            "atr_period": 14,          # Milieu de la plage 7→21 (classique)
+            "atr_multiplier": 1.5,     # Milieu de la plage 1.0→3.0
+            "trailing_stop": True,     # Activer trailing stop
+            "risk_per_trade": 0.02,    # 2% de risque par trade (préréglé)
+            "min_pnl_pct": 0.01,       # Filtre minimum 0.01%
+            "leverage": 1.0,           # Sans levier
+            "max_hold_bars": 72,       # 3 jours en 1h (72 barres de 1h)
+            "spacing_bars": 6,         # 6 barres minimum entre trades
+            "trend_period": 0,         # Sans filtre tendance EMA
+        },
+        "data": None,
+        "backtest_results": None,
+        "sweep_results": None,
         "data_dir": str(DATA_DIR),
     }
+
+    # Initialiser les clés manquantes
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
+
+    # FORCER les paramètres BTC/15m/1dec-31jan à chaque ouverture (ne jamais les laisser changer)
+    st.session_state.symbol = "BTCUSDC"
+    st.session_state.timeframe = "15m"
+    st.session_state.start_date = date(2024, 12, 1)
+    st.session_state.end_date = date(2025, 1, 31)
+
+    # FORCER le risque par trade à 2% (0.02) - ne jamais le laisser à 0.01
+    st.session_state.strategy_params["risk_per_trade"] = 0.02
 
 def render_sidebar() -> None:
     with st.sidebar:
         st.markdown("# ThreadX v2.0")
         st.markdown("*Trading Quantitatif Haute Performance*")
         st.markdown("---")
-        st.markdown("### 📍 Navigation")
+        st.markdown("### 🧭 Navigation")
         labels = list(PAGE_TITLES.values())
         current_key = st.session_state.get("page", "config")
         current_label = PAGE_TITLES.get(current_key, labels[0])
@@ -100,9 +135,6 @@ def render_sidebar() -> None:
         if st.button("🔄 Rafraîchir Cache", use_container_width=True):
             st.cache_data.clear()
             st.success("✅ Cache vidé!")
-        if st.button("✅ Valider Datasets", use_container_width=True):
-            report = validate_dataset(str(DATA_DIR))
-            st.success(f"✅ OK") if report.get("ok") else st.error("❌ Erreur")
         st.markdown("---")
         st.caption("**ThreadX v2.0** | © 2025")
 

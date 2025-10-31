@@ -280,11 +280,17 @@ def _render_monte_carlo_tab() -> None:
                                     key="mc_use_multigpu")
 
     with col_workers:
+        # Récupérer la sélection précédente depuis session_state
+        current_mode = st.session_state.get("mc_workers_mode", "Auto (Dynamique)")
+        mode_index = 1 if current_mode == "Manuel" else 0
+
         workers_mode = st.selectbox("Workers", ["Auto (Dynamique)", "Manuel"],
-                                     index=0,
+                                     index=mode_index,
                                      key="mc_workers_mode")
         if workers_mode == "Manuel":
-            max_workers = st.number_input("Nb Workers", min_value=2, max_value=32, value=30, step=1, key="mc_manual_workers")
+            max_workers = st.number_input("Nb Workers", min_value=2, max_value=32,
+                                         value=st.session_state.get("mc_manual_workers", 8),
+                                         step=1, key="mc_manual_workers")
         else:
             max_workers = None
 
@@ -324,34 +330,82 @@ def _render_monte_carlo_tab() -> None:
 
         stored_range = range_preferences.get(key)
 
-        if param_type == 'int':
-            min_val = int(round(min_val))
-            max_val = int(round(max_val))
-            if stored_range:
-                stored_low, stored_high = map(int, stored_range)
-                default_tuple = (max(min_val, stored_low), min(max_val, stored_high))
-            else:
-                default_tuple = (min(int(default_val), max_val), max(int(default_val), min_val)) if isinstance(default_val, (int, float)) else (min_val, max_val)
-            selected_range = st.slider(label, min_value=min_val, max_value=max_val, value=(int(default_tuple[0]), int(default_tuple[1])), step=1, key=f"mc_range_{key}")
-        else:
-            min_val = float(min_val)
-            max_val = float(max_val)
-            float_step = float(spec.get('step') or 0.1)
-            if stored_range:
-                stored_low = float(stored_range[0])
-                stored_high = float(stored_range[1])
-                default_tuple = (max(min_val, stored_low), min(max_val, stored_high))
-            else:
-                if default_val is not None:
-                    default_min = float(default_val) - 0.1 * abs(float(default_val))
-                    default_max = float(default_val) + 0.1 * abs(float(default_val))
-                    default_tuple = (max(min_val, default_min), min(max_val, default_max))
+        # Créer 2 colonnes: plage + sensibilité (Monte-Carlo)
+        col_range, col_sense = st.columns([3, 1])
+
+        with col_range:
+            if param_type == 'int':
+                min_val = int(round(min_val))
+                max_val = int(round(max_val))
+                if stored_range:
+                    stored_low, stored_high = map(int, stored_range)
+                    default_tuple = (max(min_val, stored_low), min(max_val, stored_high))
                 else:
-                    default_tuple = (min_val, max_val)
-            selected_range = st.slider(label, min_value=min_val, max_value=max_val, value=(float(default_tuple[0]), float(default_tuple[1])), step=float_step, key=f"mc_range_{key}")
+                    default_tuple = (min(int(default_val), max_val), max(int(default_val), min_val)) if isinstance(default_val, (int, float)) else (min_val, max_val)
+                selected_range = st.slider(label, min_value=min_val, max_value=max_val, value=(int(default_tuple[0]), int(default_tuple[1])), step=1, key=f"mc_range_{key}")
+            else:
+                min_val = float(min_val)
+                max_val = float(max_val)
+                float_step = float(spec.get('step') or 0.1)
+                if stored_range:
+                    stored_low = float(stored_range[0])
+                    stored_high = float(stored_range[1])
+                    default_tuple = (max(min_val, stored_low), min(max_val, stored_high))
+                else:
+                    if default_val is not None:
+                        default_min = float(default_val) - 0.1 * abs(float(default_val))
+                        default_max = float(default_val) + 0.1 * abs(float(default_val))
+                        default_tuple = (max(min_val, default_min), min(max_val, default_max))
+                    else:
+                        default_tuple = (min_val, max_val)
+                selected_range = st.slider(label, min_value=min_val, max_value=max_val, value=(float(default_tuple[0]), float(default_tuple[1])), step=float_step, key=f"mc_range_{key}")
+
+        # Sensibilité : Slider de STEP (granularité d'exploration) - Monte-Carlo
+        with col_sense:
+            range_span = selected_range[1] - selected_range[0]
+            base_step = float(spec.get('step') or 0.1)
+
+            if param_type == 'int':
+                # Pour entiers : step de 1 à range_span
+                step_val_display = st.slider(
+                    "📊 Step",
+                    min_value=1,
+                    max_value=max(1, int(range_span)),
+                    value=1,
+                    step=1,
+                    key=f"mc_step_{key}",
+                    label_visibility="collapsed"
+                )
+            else:
+                # Pour floats : step de (base_step/10) à range_span
+                step_val_display = st.slider(
+                    "📊 Step",
+                    min_value=base_step / 10,
+                    max_value=range_span if range_span > 0 else base_step,
+                    value=base_step,
+                    step=base_step / 100,
+                    format="%.4f",
+                    key=f"mc_step_{key}",
+                    label_visibility="collapsed"
+                )
 
         range_preferences[key] = (selected_range[0], selected_range[1])
         param_ranges[key] = (selected_range[0], selected_range[1])
+
+        # Display combination count for this parameter (Monte-Carlo)
+        range_min, range_max = selected_range
+        span = range_max - range_min
+
+        if param_type == 'int':
+            # For integers: count the values in the range with this step
+            n_combinations = len(range(int(range_min), int(range_max) + 1, max(1, int(step_val_display))))
+        else:
+            # For floats: (span / step)
+            n_combinations = span / step_val_display if step_val_display > 0 else 1
+
+        # Show the combination count
+        comb_text = f"📊 Plage: {range_min} → {range_max} | Sensibilité: {step_val_display} | Combinaisons: {n_combinations:.1f}"
+        st.caption(comb_text)
 
     st.session_state["strategy_param_ranges"] = range_preferences
     st.markdown("##### Paramètres d'échantillonnage")
@@ -362,61 +416,53 @@ def _render_monte_carlo_tab() -> None:
         seed = st.number_input("Seed", min_value=0, max_value=999999, value=st.session_state.get("mc_seed", 42), step=1, key="mc_seed")
 
     if st.button("🎲 Lancer Monte-Carlo", type="primary", use_container_width=True, key="run_mc_btn"):
-        with st.spinner("🎲 Génération des scénarios Monte-Carlo..."):
-            indicator_settings = IndicatorSettings(use_gpu=use_gpu)
-            indicator_bank = IndicatorBank(indicator_settings)
-            runner = SweepRunner(indicator_bank=indicator_bank, max_workers=max_workers, use_multigpu=use_multigpu)
+        indicator_settings = IndicatorSettings(use_gpu=use_gpu)
+        indicator_bank = IndicatorBank(indicator_settings)
+        runner = SweepRunner(indicator_bank=indicator_bank, max_workers=max_workers, use_multigpu=use_multigpu)
 
-            scenario_params: Dict[str, Any] = {}
-            for key, (min_v, max_v) in param_ranges.items():
-                if param_types[key] == 'int':
-                    values = list(range(int(min_v), int(max_v) + 1))
-                else:
-                    values = np.linspace(min_v, max_v, num=50).tolist()
-                scenario_params[key] = {"values": values}
+        scenario_params: Dict[str, Any] = {}
+        for key, (min_v, max_v) in param_ranges.items():
+            if param_types[key] == 'int':
+                values = list(range(int(min_v), int(max_v) + 1))
+            else:
+                values = np.linspace(min_v, max_v, num=50).tolist()
+            scenario_params[key] = {"values": values}
 
-            for key, value in configured_params.items():
-                if key not in scenario_params:
-                    scenario_params[key] = {"value": value}
+        for key, value in configured_params.items():
+            if key not in scenario_params:
+                scenario_params[key] = {"value": value}
 
-            spec = ScenarioSpec(type="monte_carlo", params=scenario_params, n_scenarios=int(n_scenarios), seed=int(seed))
+        spec = ScenarioSpec(type="monte_carlo", params=scenario_params, n_scenarios=int(n_scenarios), seed=int(seed))
 
-            # Récupérer les données réelles pour le backtest
-            real_data = st.session_state.get("data")
-            symbol = st.session_state.get("symbol", "BTC")
-            timeframe = st.session_state.get("timeframe", "1h")
+        # Récupérer les données réelles pour le backtest
+        real_data = st.session_state.get("data")
+        symbol = st.session_state.get("symbol", "BTC")
+        timeframe = st.session_state.get("timeframe", "1h")
 
-            try:
-                results = runner.run_monte_carlo(spec, real_data, symbol, timeframe, strategy_name=strategy, reuse_cache=True)
-                st.session_state["monte_carlo_results"] = results
+        try:
+            # Lancer le Monte-Carlo avec barre de progression
+            st.markdown("### 🎲 Exécution du Monte-Carlo")
+            results = _run_monte_carlo_with_progress(runner, spec, real_data, symbol, timeframe, strategy, int(n_scenarios))
+            st.session_state["monte_carlo_results"] = results
 
-                # Afficher les informations de configuration
-                st.success("✅ Monte-Carlo terminé !")
-                col_info1, col_info2, col_info3 = st.columns(3)
-                with col_info1:
-                    st.metric("Mode Multi-GPU", "Activé" if use_multigpu else "Désactivé")
-                with col_info2:
-                    actual_workers = runner.max_workers if runner.max_workers else "Auto"
-                    st.metric("Workers utilisés", str(actual_workers))
-                with col_info3:
-                    st.metric("Scénarios testés", len(results) if isinstance(results, pd.DataFrame) else 0)
-            except Exception as exc:
-                st.error(f"❌ Erreur Monte-Carlo: {exc}")
-                import traceback
-                st.code(traceback.format_exc())
-                return
+            # Afficher les informations de configuration
+            st.markdown("---")
+            st.markdown("### ⚙️ Configuration d'exécution")
+            col_info1, col_info2, col_info3 = st.columns(3)
+            with col_info1:
+                st.metric("Mode Multi-GPU", "Activé ✅" if use_multigpu else "Désactivé ⊘")
+            with col_info2:
+                actual_workers = runner.max_workers if runner.max_workers else "Auto"
+                st.metric("Workers utilisés", str(actual_workers))
+            with col_info3:
+                st.metric("Total des résultats", len(results) if isinstance(results, pd.DataFrame) else 0)
+        except Exception as exc:
+            st.error(f"❌ Erreur Monte-Carlo: {exc}")
+            import traceback
+            st.code(traceback.format_exc())
+            return
 
     results_df = st.session_state.get("monte_carlo_results")
-
-    # Debug: vérifier ce qui est stocké
-    if results_df is not None:
-        st.write(f"DEBUG: Type des résultats = {type(results_df)}")
-        if isinstance(results_df, pd.DataFrame):
-            st.write(f"DEBUG: DataFrame shape = {results_df.shape}")
-            st.write(f"DEBUG: DataFrame columns = {list(results_df.columns)}")
-            st.write(f"DEBUG: DataFrame empty? = {results_df.empty}")
-    else:
-        st.write("DEBUG: Aucun résultat dans session_state")
 
     if isinstance(results_df, pd.DataFrame) and not results_df.empty:
         st.markdown("---")
@@ -447,6 +493,242 @@ def _render_monte_carlo_tab() -> None:
             "text/csv",
             use_container_width=True,
         )
+
+
+def _run_sweep_with_progress(runner, spec, real_data, symbol, timeframe, strategy, total_combinations):
+    """Lance un sweep avec barre de progression et statistiques de vitesse."""
+    import threading
+
+    # Créer les placeholders pour l'UI
+    progress_placeholder = st.empty()
+    stats_cols = st.columns(4)
+
+    # État partagé (thread-safe via GIL Python)
+    shared_state = {
+        "running": False,
+        "current": 0,
+        "total": 0,
+        "start_time": time.time(),
+        "should_stop": False,  # Signal d'arrêt
+    }
+
+    # Démarrer le sweep dans un thread pour ne pas bloquer Streamlit
+    def run_sweep_thread():
+        """Thread qui exécute le sweep (pas de Streamlit calls ici!)."""
+        try:
+            shared_state["running"] = True
+            shared_state["start_time"] = time.time()
+            results = runner.run_grid(spec, real_data, symbol, timeframe, strategy_name=strategy, reuse_cache=True)
+            shared_state["results"] = results
+            shared_state["error"] = None
+        except Exception as e:
+            # Ignorer les erreurs si arrêt demandé
+            if shared_state["should_stop"]:
+                shared_state["error"] = "Arrêt demandé par l'utilisateur"
+                shared_state["results"] = None
+            else:
+                shared_state["error"] = str(e)
+                shared_state["results"] = None
+        finally:
+            shared_state["running"] = False
+
+    # Démarrer le sweep
+    sweep_thread = threading.Thread(target=run_sweep_thread, daemon=True)
+    sweep_thread.start()
+
+    # Boucle de mise à jour UI (thread principal, synchrone avec Streamlit)
+    start_time = time.time()
+    status_placeholder = stats_cols[0].empty()
+    speed_placeholder = stats_cols[1].empty()
+    eta_placeholder = stats_cols[2].empty()
+    completed_placeholder = stats_cols[3].empty()
+
+    # Progress initial
+    progress_placeholder.progress(0, text="🚀 Initialisation du Sweep...")
+    status_placeholder.metric("📊 Status", "Initialisation...", delta=None)
+
+    # Boucle: mettre à jour l'UI jusqu'à fin du sweep
+    while shared_state["running"]:
+        try:
+            # Vérifier si l'utilisateur a demandé l'arrêt
+            if st.session_state.get("run_stop_requested", False):
+                shared_state["should_stop"] = True
+                st.session_state.run_stop_requested = False  # Réinitialiser le flag
+                progress_placeholder.progress(0, text="⏹️ Arrêt en cours...")
+                status_placeholder.metric("📊 Status", "Arrêt en cours...", delta=None)
+                break  # Quitter la boucle d'affichage
+
+            if runner.total_scenarios > 0:
+                current = runner.current_scenario
+                total = runner.total_scenarios
+                progress = min(current / total, 0.99)
+                elapsed = time.time() - start_time
+
+                if current > 0 and elapsed > 0:
+                    speed = current / elapsed
+                    remaining = total - current
+                    eta_seconds = remaining / speed if speed > 0 else 0
+                    eta_minutes, eta_secs = divmod(eta_seconds, 60)
+                    eta_str = f"{int(eta_minutes)}m {int(eta_secs)}s"
+
+                    # Mise à jour UI (thread principal)
+                    progress_placeholder.progress(progress, text=f"⏳ {current}/{total} ({progress*100:.0f}%)")
+                    status_placeholder.metric("📊 Status", "Exécution...", delta=None)
+                    speed_placeholder.metric("🚀 Vitesse", f"{speed:.1f} tests/sec")
+                    eta_placeholder.metric("⏱️ ETA", eta_str)
+                    completed_placeholder.metric("📈 Complétés", f"{current}")
+
+            time.sleep(0.1)  # Mettre à jour plus fréquemment (100ms) pour réactivité d'arrêt
+        except:
+            pass  # Ignorer erreurs de mise à jour
+
+    # Attendre fin du thread
+    sweep_thread.join(timeout=5)
+
+    # Afficher résultats final
+    elapsed_time = time.time() - start_time
+
+    if shared_state["error"]:
+        progress_placeholder.progress(0, text=f"❌ Erreur après {elapsed_time:.1f}s")
+        status_placeholder.metric("📊 Status", "Erreur ❌", delta=None)
+        st.error(f"Sweep échoué: {shared_state['error']}")
+        raise Exception(shared_state["error"])
+
+    results = shared_state.get("results")
+    if results is None:
+        results = pd.DataFrame()
+
+    completed = len(results) if isinstance(results, pd.DataFrame) else 0
+    tests_per_second = completed / elapsed_time if elapsed_time > 0 else 0
+    minutes, seconds = divmod(elapsed_time, 60)
+    time_str = f"{int(minutes)}m {int(seconds)}s"
+
+    # Stats finales
+    progress_placeholder.progress(1.0, text=f"✅ Sweep terminé en {time_str}")
+    status_placeholder.metric("📊 Status", "Complété ✅", delta=None)
+    speed_placeholder.metric("🚀 Vitesse", f"{tests_per_second:.1f} tests/sec")
+    eta_placeholder.metric("⏱️ Temps Total", time_str)
+    completed_placeholder.metric("📈 Résultats", f"{completed}")
+
+    return results
+
+
+def _run_monte_carlo_with_progress(runner, spec, real_data, symbol, timeframe, strategy, n_scenarios):
+    """Lance un Monte-Carlo avec barre de progression et statistiques de vitesse."""
+    import threading
+
+    # Créer les placeholders pour l'UI
+    progress_placeholder = st.empty()
+    stats_cols = st.columns(4)
+
+    # État partagé (thread-safe via GIL Python)
+    shared_state = {
+        "running": False,
+        "current": 0,
+        "total": 0,
+        "start_time": time.time(),
+        "should_stop": False,  # Signal d'arrêt
+    }
+
+    # Démarrer le Monte-Carlo dans un thread
+    def run_monte_carlo_thread():
+        """Thread qui exécute le Monte-Carlo (pas de Streamlit calls ici!)."""
+        try:
+            shared_state["running"] = True
+            shared_state["start_time"] = time.time()
+            results = runner.run_monte_carlo(spec, real_data, symbol, timeframe, strategy_name=strategy, reuse_cache=True)
+            shared_state["results"] = results
+            shared_state["error"] = None
+        except Exception as e:
+            # Ignorer les erreurs si arrêt demandé
+            if shared_state["should_stop"]:
+                shared_state["error"] = "Arrêt demandé par l'utilisateur"
+                shared_state["results"] = None
+            else:
+                shared_state["error"] = str(e)
+                shared_state["results"] = None
+        finally:
+            shared_state["running"] = False
+
+    # Démarrer le Monte-Carlo
+    mc_thread = threading.Thread(target=run_monte_carlo_thread, daemon=True)
+    mc_thread.start()
+
+    # Boucle de mise à jour UI (thread principal, synchrone avec Streamlit)
+    start_time = time.time()
+    status_placeholder = stats_cols[0].empty()
+    speed_placeholder = stats_cols[1].empty()
+    eta_placeholder = stats_cols[2].empty()
+    completed_placeholder = stats_cols[3].empty()
+
+    # Progress initial
+    progress_placeholder.progress(0, text="🎲 Initialisation du Monte-Carlo...")
+    status_placeholder.metric("📊 Status", "Initialisation...", delta=None)
+
+    # Boucle: mettre à jour l'UI jusqu'à fin du Monte-Carlo
+    while shared_state["running"]:
+        try:
+            # Vérifier si l'utilisateur a demandé l'arrêt
+            if st.session_state.get("run_stop_requested", False):
+                shared_state["should_stop"] = True
+                st.session_state.run_stop_requested = False  # Réinitialiser le flag
+                progress_placeholder.progress(0, text="⏹️ Arrêt en cours...")
+                status_placeholder.metric("📊 Status", "Arrêt en cours...", delta=None)
+                break  # Quitter la boucle d'affichage
+
+            if runner.total_scenarios > 0:
+                current = runner.current_scenario
+                total = runner.total_scenarios
+                progress = min(current / total, 0.99)
+                elapsed = time.time() - start_time
+
+                if current > 0 and elapsed > 0:
+                    speed = current / elapsed
+                    remaining = total - current
+                    eta_seconds = remaining / speed if speed > 0 else 0
+                    eta_minutes, eta_secs = divmod(eta_seconds, 60)
+                    eta_str = f"{int(eta_minutes)}m {int(eta_secs)}s"
+
+                    # Mise à jour UI (thread principal)
+                    progress_placeholder.progress(progress, text=f"⏳ {current}/{total} ({progress*100:.0f}%)")
+                    status_placeholder.metric("📊 Status", "Exécution...", delta=None)
+                    speed_placeholder.metric("🚀 Vitesse", f"{speed:.1f} scén/sec")
+                    eta_placeholder.metric("⏱️ ETA", eta_str)
+                    completed_placeholder.metric("📈 Complétés", f"{current}")
+
+            time.sleep(0.1)  # Mettre à jour plus fréquemment (100ms) pour réactivité d'arrêt
+        except:
+            pass  # Ignorer erreurs de mise à jour
+
+    # Attendre fin du thread
+    mc_thread.join(timeout=5)
+
+    # Afficher résultats final
+    elapsed_time = time.time() - start_time
+
+    if shared_state["error"]:
+        progress_placeholder.progress(0, text=f"❌ Erreur après {elapsed_time:.1f}s")
+        status_placeholder.metric("📊 Status", "Erreur ❌", delta=None)
+        st.error(f"Monte-Carlo échoué: {shared_state['error']}")
+        raise Exception(shared_state["error"])
+
+    results = shared_state.get("results")
+    if results is None:
+        results = pd.DataFrame()
+
+    completed = len(results) if isinstance(results, pd.DataFrame) else 0
+    scenarios_per_second = completed / elapsed_time if elapsed_time > 0 else 0
+    minutes, seconds = divmod(elapsed_time, 60)
+    time_str = f"{int(minutes)}m {int(seconds)}s"
+
+    # Stats finales
+    progress_placeholder.progress(1.0, text=f"✅ Monte-Carlo terminé en {time_str}")
+    status_placeholder.metric("📊 Status", "Complété ✅", delta=None)
+    speed_placeholder.metric("🚀 Vitesse", f"{scenarios_per_second:.1f} scén/sec")
+    eta_placeholder.metric("⏱️ Temps Total", time_str)
+    completed_placeholder.metric("📈 Résultats", f"{completed}")
+
+    return results
 
 
 def _format_param_value(value: float, value_type: str, decimals: int = 4) -> str:
@@ -686,11 +968,17 @@ def _render_optimization_tab() -> None:
                                     key="sweep_use_multigpu")
 
     with col_workers:
+        # Récupérer la sélection précédente depuis session_state
+        current_mode = st.session_state.get("sweep_workers_mode", "Auto (Dynamique)")
+        mode_index = 1 if current_mode == "Manuel" else 0
+
         workers_mode = st.selectbox("Workers", ["Auto (Dynamique)", "Manuel"],
-                                     index=0,
+                                     index=mode_index,
                                      key="sweep_workers_mode")
         if workers_mode == "Manuel":
-            max_workers = st.number_input("Nb Workers", min_value=2, max_value=32, value=30, step=1, key="sweep_manual_workers")
+            max_workers = st.number_input("Nb Workers", min_value=2, max_value=32,
+                                         value=st.session_state.get("sweep_manual_workers", 8),
+                                         step=1, key="sweep_manual_workers")
         else:
             max_workers = None
 
@@ -740,8 +1028,8 @@ def _render_optimization_tab() -> None:
 
         stored_range = range_preferences.get(key)
 
-        # Créer 2 colonnes: plage + step
-        col_range, col_step = st.columns([3, 1])
+        # Créer 2 colonnes: plage + sensibilité
+        col_range, col_sense = st.columns([3, 1])
 
         with col_range:
             if param_type == 'int':
@@ -784,24 +1072,29 @@ def _render_optimization_tab() -> None:
                     key=f"sweep_range_{key}"
                 )
 
-        with col_step:
+        # Sensibilité : Slider de STEP (granularité d'exploration)
+        with col_sense:
+            range_span = selected_range[1] - selected_range[0]
+
             if param_type == 'int':
-                step_input = st.number_input(
-                    "Step",
+                # Pour entiers : step de 1 à range_span
+                step_input = st.slider(
+                    "📊 Step",
                     min_value=1,
-                    max_value=max(1, int(selected_range[1] - selected_range[0])),
+                    max_value=max(1, int(range_span)),
                     value=step_val,
                     step=1,
                     key=f"sweep_step_{key}",
                     label_visibility="collapsed"
                 )
             else:
-                step_input = st.number_input(
-                    "Step",
+                # Pour floats : step de (step_val/10) à range_span
+                step_input = st.slider(
+                    "📊 Step",
                     min_value=step_val / 10,
-                    max_value=float(selected_range[1] - selected_range[0]),
+                    max_value=range_span if range_span > 0 else step_val,
                     value=step_val,
-                    step=step_val / 10,
+                    step=step_val / 100,
                     format="%.4f",
                     key=f"sweep_step_{key}",
                     label_visibility="collapsed"
@@ -810,6 +1103,22 @@ def _render_optimization_tab() -> None:
         range_preferences[key] = (selected_range[0], selected_range[1])
         param_ranges[key] = (selected_range[0], selected_range[1])
         param_steps[key] = step_input
+
+        # Display combination count for this parameter
+        range_min, range_max = selected_range
+        step = step_input
+        span = range_max - range_min
+
+        if param_type == 'int':
+            # For integers: count the values in the range with this step
+            n_combinations = len(range(int(range_min), int(range_max) + 1, max(1, int(step))))
+        else:
+            # For floats: (span / step)
+            n_combinations = span / step if step > 0 else 1
+
+        # Show the combination count
+        comb_text = f"📊 Plage: {range_min} → {range_max} | Sensibilité: {step} | Combinaisons: {n_combinations:.1f}"
+        st.caption(comb_text)
 
     st.session_state["strategy_param_ranges"] = range_preferences
 
@@ -820,76 +1129,78 @@ def _render_optimization_tab() -> None:
         if param_types[key] == 'int':
             n_values = len(range(int(min_v), int(max_v) + 1, max(1, int(step))))
         else:
-            n_values = int((max_v - min_v) / step) + 1
+            # Utiliser le même calcul que np.linspace pour cohérence
+            n_values = max(2, int((max_v - min_v) / step) + 1)
         total_combinations *= n_values
 
-    st.info(f"📊 **{total_combinations} combinaisons** à tester (grille exhaustive)")
+    # Affichage du nombre total de combinaisons
+    if total_combinations <= 100000:
+        st.success(f"✅ **{total_combinations} combinaisons** - Grille optimale (rapide)")
+    elif total_combinations <= 1000000:
+        st.info(f"📊 **{total_combinations} combinaisons** - Grille normale (quelques minutes)")
+    elif total_combinations <= 3000000:
+        st.warning(f"⚠️ **ATTENTION: {total_combinations} combinaisons** - Peut prendre 30-60 min avec GPU")
+        st.info("💡 **Note:** Grille large mais faisable avec multi-GPU et 30 workers")
+    else:
+        st.error(f"❌ **BLOKÉ: {total_combinations} combinaisons trop nombreuses!**")
+        st.error("🛑 Cette grille causera un MemoryError (>3M même avec GPU).")
+        st.info("✨ **Solutions:**\n1. Augmentez le step (sensibilité) pour tous les paramètres\n2. Réduisez les plages (min/max)\n3. Utilisez Monte-Carlo à la place")
 
-    if total_combinations > 10000:
-        st.warning(f"⚠️ Attention: {total_combinations} tests peuvent prendre du temps. Considérez Monte-Carlo pour une exploration plus rapide.")
+    # Bouton de lancement (désactivé si grille > 3 millions)
+    button_disabled = total_combinations > 3000000
+    if st.button("🔬 Lancer le Sweep", type="primary", use_container_width=True, key="run_sweep_btn", disabled=button_disabled):
+        indicator_settings = IndicatorSettings(use_gpu=use_gpu)
+        indicator_bank = IndicatorBank(indicator_settings)
+        runner = SweepRunner(indicator_bank=indicator_bank, max_workers=max_workers, use_multigpu=use_multigpu)
 
-    # Bouton de lancement
-    if st.button("🔬 Lancer le Sweep", type="primary", use_container_width=True, key="run_sweep_btn"):
-        with st.spinner(f"🔬 Sweep en cours... {total_combinations} tests"):
-            indicator_settings = IndicatorSettings(use_gpu=use_gpu)
-            indicator_bank = IndicatorBank(indicator_settings)
-            runner = SweepRunner(indicator_bank=indicator_bank, max_workers=max_workers, use_multigpu=use_multigpu)
+        # Construire les paramètres pour le sweep
+        scenario_params: Dict[str, Any] = {}
+        for key, (min_v, max_v) in param_ranges.items():
+            step = param_steps[key]
+            if param_types[key] == 'int':
+                values = list(range(int(min_v), int(max_v) + 1, max(1, int(step))))
+            else:
+                values = np.linspace(min_v, max_v, num=max(2, int((max_v - min_v) / step) + 1)).tolist()
+            scenario_params[key] = {"values": values}
 
-            # Construire les paramètres pour le sweep
-            scenario_params: Dict[str, Any] = {}
-            for key, (min_v, max_v) in param_ranges.items():
-                step = param_steps[key]
-                if param_types[key] == 'int':
-                    values = list(range(int(min_v), int(max_v) + 1, max(1, int(step))))
-                else:
-                    values = np.linspace(min_v, max_v, num=max(2, int((max_v - min_v) / step) + 1)).tolist()
-                scenario_params[key] = {"values": values}
+        # Ajouter les paramètres non-optimisés
+        for key, value in configured_params.items():
+            if key not in scenario_params:
+                scenario_params[key] = {"value": value}
 
-            # Ajouter les paramètres non-optimisés
-            for key, value in configured_params.items():
-                if key not in scenario_params:
-                    scenario_params[key] = {"value": value}
+        # Utiliser run_grid pour explorer toutes les combinaisons
+        spec = ScenarioSpec(type="grid", params=scenario_params)
 
-            # Utiliser run_grid pour explorer toutes les combinaisons
-            spec = ScenarioSpec(type="grid", params=scenario_params)
+        # Récupérer les données réelles pour le backtest
+        real_data = st.session_state.get("data")
+        symbol = st.session_state.get("symbol", "BTC")
+        timeframe = st.session_state.get("timeframe", "1h")
 
-            # Récupérer les données réelles pour le backtest
-            real_data = st.session_state.get("data")
-            symbol = st.session_state.get("symbol", "BTC")
-            timeframe = st.session_state.get("timeframe", "1h")
+        try:
+            # Lancer le sweep avec barre de progression
+            st.markdown("### 🚀 Exécution du Sweep")
+            results = _run_sweep_with_progress(runner, spec, real_data, symbol, timeframe, strategy, total_combinations)
+            st.session_state["sweep_results"] = results
 
-            try:
-                results = runner.run_grid(spec, real_data, symbol, timeframe, strategy_name=strategy, reuse_cache=True)
-                st.session_state["sweep_results"] = results
-
-                # Afficher les informations de configuration
-                st.success(f"✅ Sweep terminé ! {len(results)} résultats")
-                col_info1, col_info2, col_info3 = st.columns(3)
-                with col_info1:
-                    st.metric("Mode Multi-GPU", "Activé" if use_multigpu else "Désactivé")
-                with col_info2:
-                    actual_workers = runner.max_workers if runner.max_workers else "Auto"
-                    st.metric("Workers utilisés", str(actual_workers))
-                with col_info3:
-                    st.metric("Combinaisons testées", len(results) if isinstance(results, pd.DataFrame) else 0)
-            except Exception as exc:
-                st.error(f"❌ Erreur Sweep: {exc}")
-                import traceback
-                st.code(traceback.format_exc())
-                return
+            # Afficher les informations de configuration
+            st.markdown("---")
+            st.markdown("### ⚙️ Configuration d'exécution")
+            col_info1, col_info2, col_info3 = st.columns(3)
+            with col_info1:
+                st.metric("Mode Multi-GPU", "Activé ✅" if use_multigpu else "Désactivé ⊘")
+            with col_info2:
+                actual_workers = runner.max_workers if runner.max_workers else "Auto"
+                st.metric("Workers utilisés", str(actual_workers))
+            with col_info3:
+                st.metric("Total des résultats", len(results) if isinstance(results, pd.DataFrame) else 0)
+        except Exception as exc:
+            st.error(f"❌ Erreur Sweep: {exc}")
+            import traceback
+            st.code(traceback.format_exc())
+            return
 
     # Affichage des résultats
     results_df = st.session_state.get("sweep_results")
-
-    # Debug: vérifier ce qui est stocké
-    if results_df is not None:
-        st.write(f"DEBUG: Type des résultats = {type(results_df)}")
-        if isinstance(results_df, pd.DataFrame):
-            st.write(f"DEBUG: DataFrame shape = {results_df.shape}")
-            st.write(f"DEBUG: DataFrame columns = {list(results_df.columns)}")
-            st.write(f"DEBUG: DataFrame empty? = {results_df.empty}")
-    else:
-        st.write("DEBUG: Aucun résultat dans session_state")
 
     if isinstance(results_df, pd.DataFrame) and not results_df.empty:
         st.markdown("---")
