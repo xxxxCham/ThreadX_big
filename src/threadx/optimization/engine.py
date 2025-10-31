@@ -52,22 +52,29 @@ logger = get_logger(__name__)
 # Global stop flag to allow UI-triggered cancellation without direct runner reference
 _GLOBAL_STOP_FLAG = False
 
+def set_global_stop(stop: bool = True) -> None:
+    """Définir le flag global pour arrêter l'exécution."""
+    global _GLOBAL_STOP_FLAG
+    _GLOBAL_STOP_FLAG = stop
+    if stop:
+        logger.warning("⏹️ ARRÊT GLOBAL DEMANDÉ")
+
+
+def is_global_stop_requested() -> bool:
+    """Vérifier si un arrêt global a été demandé."""
+    global _GLOBAL_STOP_FLAG
+    return bool(_GLOBAL_STOP_FLAG)
+
 
 def request_global_stop() -> None:
     """Request cancellation for any running optimization."""
-    global _GLOBAL_STOP_FLAG
-    _GLOBAL_STOP_FLAG = True
+    set_global_stop(True)
 
 
 def clear_global_stop() -> None:
     """Clear the global stop flag."""
     global _GLOBAL_STOP_FLAG
     _GLOBAL_STOP_FLAG = False
-
-
-def is_global_stop_requested() -> bool:
-    """Return True if a global stop has been requested."""
-    return bool(_GLOBAL_STOP_FLAG)
 
 
 class SweepRunner:
@@ -373,35 +380,44 @@ class SweepRunner:
                         futures[future] = i
 
                     # Collecter les résultats au fur et à mesure (résiste aux interruptions)
-                    for future in as_completed(futures):
-                        if self.should_pause or is_global_stop_requested():
-                            break
+                    try:
+                        for future in as_completed(futures):
+                            if self.should_pause or is_global_stop_requested():
+                                self.logger.warning(f"⏹️ Arrêt demandé après {completed_count[0]} combos")
+                                # Cancel remaining futures
+                                for f in futures:
+                                    f.cancel()
+                                break
 
-                        try:
-                            result = future.result()
-                            results.append(result)
-                            completed_count[0] += 1
+                            try:
+                                result = future.result()
+                                results.append(result)
+                                completed_count[0] += 1
 
-                            # Mise à jour du compteur de progression (thread-safe via GIL)
-                            self.current_scenario = completed_count[0]
+                                # Mise à jour du compteur de progression (thread-safe via GIL)
+                                self.current_scenario = completed_count[0]
 
-                            # Log de progression tous les 100 combos
-                            if completed_count[0] % 100 == 0:
-                                self._log_progress()
+                                # Log de progression tous les 100 combos
+                                if completed_count[0] % 100 == 0:
+                                    self._log_progress()
 
-                        except Exception as e:
-                            self.logger.error(f"Erreur exécution combo: {e}")
-                            # Continuer avec les autres combos
-                            completed_count[0] += 1
-                            results.append({
-                                "error": str(e),
-                                "pnl": 0.0,
-                                "pnl_pct": 0.0,
-                                "sharpe": 0.0,
-                                "max_drawdown": 0.0,
-                                "win_rate": 0.0,
-                                "total_trades": 0,
-                            })
+                            except Exception as e:
+                                self.logger.error(f"Erreur exécution combo: {e}")
+                                # Continuer avec les autres combos
+                                completed_count[0] += 1
+                                results.append({
+                                    "error": str(e),
+                                    "pnl": 0.0,
+                                    "pnl_pct": 0.0,
+                                    "sharpe": 0.0,
+                                    "max_drawdown": 0.0,
+                                    "win_rate": 0.0,
+                                    "total_trades": 0,
+                                })
+                    finally:
+                        # Ensure all futures are cancelled
+                        for f in futures:
+                            f.cancel()
 
             # Construction du DataFrame final
             with self._time_stage("results_compilation"):

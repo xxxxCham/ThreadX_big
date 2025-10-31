@@ -552,6 +552,8 @@ def _run_sweep_with_progress(runner, spec, real_data, symbol, timeframe, strateg
         try:
             # Vérifier si l'utilisateur a demandé l'arrêt
             if st.session_state.get("run_stop_requested", False):
+                from threadx.optimization.engine import request_global_stop
+                request_global_stop()  # Signal au moteur d'arrêter
                 shared_state["should_stop"] = True
                 st.session_state.run_stop_requested = False  # Réinitialiser le flag
                 progress_placeholder.progress(0, text="⏹️ Arrêt en cours...")
@@ -670,6 +672,8 @@ def _run_monte_carlo_with_progress(runner, spec, real_data, symbol, timeframe, s
         try:
             # Vérifier si l'utilisateur a demandé l'arrêt
             if st.session_state.get("run_stop_requested", False):
+                from threadx.optimization.engine import request_global_stop
+                request_global_stop()  # Signal au moteur d'arrêter
                 shared_state["should_stop"] = True
                 st.session_state.run_stop_requested = False  # Réinitialiser le flag
                 progress_placeholder.progress(0, text="⏹️ Arrêt en cours...")
