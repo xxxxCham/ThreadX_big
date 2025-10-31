@@ -172,7 +172,7 @@ def init_session() -> None:
 
     defaults = {
         "page": "selection",
-        "symbol": "BTC",
+        "symbol": "BTCUSDC",  # Changé de "BTC" pour correspondre aux fichiers réels
         "timeframe": "1h",
         "start_date": date(2025, 1, 1),
         "end_date": date(2025, 1, 15),

@@ -8,7 +8,7 @@ import streamlit as st
 from ..data_access import DATA_DIR, discover_tokens_and_timeframes, load_ohlcv
 from ..dataset.validate import validate_dataset
 
-DEFAULT_SYMBOL = "BTC"
+DEFAULT_SYMBOL = "BTCUSDC"  # Changé de "BTC" pour correspondre aux fichiers réels
 DEFAULT_TIMEFRAME = "1h"
 DEFAULT_START_DATE = date(2025, 1, 1)
 DEFAULT_END_DATE = date(2025, 1, 15)
