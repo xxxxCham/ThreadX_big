@@ -14,7 +14,7 @@ Fonctionnalités:
 
 Améliorations vs TradXPro:
 - atr_multiplier paramétrable (défaut 1.5) pour stops adaptatifs
-- Filtrage min_pnl_pct (défaut 0.01%) évite micro-trades
+- Filtrage min_pnl_pct optionnel (désactivé par défaut pour éviter sur-filtrage)
 - Trailing stop ATR plus robuste
 - Intégration native avec IndicatorBank (cache TTL)
 """
@@ -63,7 +63,7 @@ class BBAtrParams:
 
         # Risk Management
         risk_per_trade: Risque par trade en fraction du capital (défaut: 0.01 = 1%)
-        min_pnl_pct: PnL minimum requis pour valider trade (défaut: 0.01%)
+        min_pnl_pct: PnL minimum requis pour valider trade (défaut: 0.0% = désactivé)
 
         # Positions et timing
         leverage: Effet de levier (défaut: 1.0)
@@ -99,7 +99,9 @@ class BBAtrParams:
 
     # Risk management
     risk_per_trade: float = 0.01  # 1% du capital par trade
-    min_pnl_pct: float = 0.01  # Amélioration: filtrage micro-trades
+    min_pnl_pct: float = (
+        0.0  # FIX: Désactivé par défaut (0.01% filtrait TOUS les trades)
+    )
 
     # Position management
     leverage: float = 1.0
@@ -182,7 +184,7 @@ class BBAtrParams:
             atr_multiplier=data.get("atr_multiplier", 1.5),
             trailing_stop=data.get("trailing_stop", True),
             risk_per_trade=data.get("risk_per_trade", 0.01),
-            min_pnl_pct=data.get("min_pnl_pct", 0.01),
+            min_pnl_pct=data.get("min_pnl_pct", 0.0),  # FIX: 0.0 par défaut
             leverage=data.get("leverage", 1.0),
             max_hold_bars=data.get("max_hold_bars", 72),
             spacing_bars=data.get("spacing_bars", 6),
@@ -235,10 +237,13 @@ class BBAtrStrategy:
         """
         self.symbol = symbol
         self.timeframe = timeframe
-        logger.info(f"Stratégie BB+ATR initialisée: {symbol}/{timeframe}")
+        logger.debug(f"Stratégie BB+ATR initialisée: {symbol}/{timeframe}")
 
     def _ensure_indicators(
-        self, df: pd.DataFrame, params: BBAtrParams
+        self,
+        df: pd.DataFrame,
+        params: BBAtrParams,
+        precomputed_indicators: Optional[Dict] = None,
     ) -> Tuple[pd.DataFrame, np.ndarray]:
         """
         Garantit la disponibilité des indicateurs via IndicatorBank.
@@ -246,10 +251,65 @@ class BBAtrStrategy:
         Args:
             df: DataFrame OHLCV
             params: Paramètres stratégie
+            precomputed_indicators: Dictionnaire {key: result} d'indicateurs pré-calculés (optionnel)
 
         Returns:
             Tuple (df_with_bollinger, atr_array)
         """
+        import json
+
+        # 🚀 OPTIMISATION: Utiliser le même format de clé que _params_to_key() dans engine.py
+        bb_key = json.dumps(
+            {"period": params.bb_period, "std": params.bb_std},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        atr_key = json.dumps(
+            {"method": "ema", "period": params.atr_period},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+        # Debug: Voir ce qui est fourni (désactivé pour performance)
+        # if precomputed_indicators:
+        #     logger.info(
+        #         f"🔍 DEBUG precomputed keys: bollinger={list(precomputed_indicators.get('bollinger', {}).keys())}, atr={list(precomputed_indicators.get('atr', {}).keys())}, wanted_bb={bb_key}, wanted_atr={atr_key}"
+        #     )
+
+        if (
+            precomputed_indicators
+            and "bollinger" in precomputed_indicators
+            and "atr" in precomputed_indicators
+            and bb_key in precomputed_indicators["bollinger"]
+            and atr_key in precomputed_indicators["atr"]
+        ):
+            # logger.info(f"⚡ FAST PATH: Réutilisation BB({bb_key}), ATR({atr_key})")
+            pass  # Log désactivé pour performance
+
+            # Récupération Bollinger pré-calculé
+            bb_result = precomputed_indicators["bollinger"][bb_key]
+            if isinstance(bb_result, tuple) and len(bb_result) == 3:
+                upper, middle, lower = bb_result
+                df_bb = df.copy()
+                df_bb["bb_upper"] = upper
+                df_bb["bb_middle"] = middle
+                df_bb["bb_lower"] = lower
+
+                # Calcul Z-score
+                close = df["close"].values
+                bb_std_dev = (upper - lower) / (4 * params.bb_std)
+                df_bb["bb_z"] = (close - middle) / bb_std_dev
+            else:
+                raise ValueError(f"Bollinger format invalide: {type(bb_result)}")
+
+            # Récupération ATR pré-calculé
+            atr_array = precomputed_indicators["atr"][atr_key]
+            if not isinstance(atr_array, np.ndarray):
+                raise ValueError(f"ATR format invalide: {type(atr_array)}")
+
+            return df_bb, atr_array
+
+        # Sinon, calcul classique via IndicatorBank
         logger.debug(
             f"Calcul indicateurs: BB(period={params.bb_period}, std={params.bb_std}), ATR(period={params.atr_period})"
         )
@@ -324,13 +384,19 @@ class BBAtrStrategy:
         )
         return np.array(ema) if ema is not None else None
 
-    def generate_signals(self, df: pd.DataFrame, params: dict) -> pd.DataFrame:
+    def generate_signals(
+        self,
+        df: pd.DataFrame,
+        params: dict,
+        precomputed_indicators: Optional[Dict] = None,
+    ) -> pd.DataFrame:
         """
         Génère les signaux de trading basés sur Bollinger+ATR.
 
         Args:
             df: DataFrame OHLCV avec timestamp index (UTC)
             params: Dictionnaire paramètres (format BBAtrParams.to_dict())
+            precomputed_indicators: Dictionnaire {key: result} d'indicateurs pré-calculés (optionnel)
 
         Returns:
             DataFrame avec colonne 'signal' et métadonnées
@@ -341,7 +407,7 @@ class BBAtrStrategy:
         - "EXIT": Conditions de sortie (stop, take profit, durée)
         - "HOLD": Maintenir position actuelle
         """
-        logger.info(f"Génération signaux BB+ATR: {len(df)} barres")
+        logger.debug(f"Génération signaux BB+ATR: {len(df)} barres")
 
         # Validation inputs
         validate_ohlcv_dataframe(df)
@@ -350,8 +416,10 @@ class BBAtrStrategy:
         # Parse paramètres
         strategy_params = BBAtrParams.from_dict(params)
 
-        # Ensure indicateurs
-        df_with_indicators, atr_array = self._ensure_indicators(df, strategy_params)
+        # Ensure indicateurs (utilise pré-calculés si fournis)
+        df_with_indicators, atr_array = self._ensure_indicators(
+            df, strategy_params, precomputed_indicators=precomputed_indicators
+        )
 
         # Extraction des données
         close = df["close"].values
@@ -444,7 +512,7 @@ class BBAtrStrategy:
         enter_shorts = np.sum(signals == "ENTER_SHORT")
         total_signals = enter_longs + enter_shorts
 
-        logger.info(
+        logger.debug(
             f"Signaux générés: {total_signals} total ({enter_longs} LONG, {enter_shorts} SHORT)"
         )
 
@@ -457,6 +525,7 @@ class BBAtrStrategy:
         initial_capital: float = 10000.0,
         fee_bps: float = 4.5,
         slippage_bps: float = 0.0,
+        precomputed_indicators: Optional[Dict] = None,
     ) -> Tuple[pd.Series, RunStats]:
         """
         Exécute un backtest complet de la stratégie BB+ATR.
@@ -467,6 +536,8 @@ class BBAtrStrategy:
             initial_capital: Capital initial
             fee_bps: Frais de transaction en basis points (défaut: 4.5)
             slippage_bps: Slippage en basis points (défaut: 0.0)
+            precomputed_indicators: Dictionnaire {key: result} d'indicateurs pré-calculés (optionnel)
+                                   Permet de skip ensure_indicator() et réutiliser calculs batch
 
         Returns:
             Tuple (equity_curve, run_stats) avec:
@@ -480,7 +551,7 @@ class BBAtrStrategy:
         - Sortie forcée après max_hold_bars
         - Filtrage trades avec PnL < min_pnl_pct
         """
-        logger.info(
+        logger.debug(
             f"Début backtest BB+ATR: capital={initial_capital}, fee={fee_bps}bps, slippage={slippage_bps}bps"
         )
 
@@ -488,8 +559,10 @@ class BBAtrStrategy:
         validate_ohlcv_dataframe(df)
         strategy_params = BBAtrParams.from_dict(params)
 
-        # Génération signaux
-        signals_df = self.generate_signals(df, params)
+        # Génération signaux (avec indicateurs pré-calculés si disponibles)
+        signals_df = self.generate_signals(
+            df, params, precomputed_indicators=precomputed_indicators
+        )
 
         # Initialisation backtest
         n_bars = len(df)
@@ -511,12 +584,20 @@ class BBAtrStrategy:
         bb_z_vals = signals_df["bb_z"].values
         timestamps = signals_df.index.values
 
+        # Détecter si l'index du DataFrame a un timezone
+        has_tz = df.index.tz is not None
+
         # Boucle principale
         for i in range(n_bars):
             current_price = close_vals[i]
             current_atr = atr_vals[i]
             signal = signal_vals[i]
-            timestamp = pd.Timestamp(timestamps[i], tz='UTC')
+            # Créer timestamp en respectant le timezone de l'index pour éviter les erreurs
+            timestamp = (
+                pd.Timestamp(timestamps[i], tz=df.index.tz)
+                if has_tz
+                else pd.Timestamp(timestamps[i])
+            )
 
             # Skip si ATR invalide
             if np.isnan(current_atr) or current_atr <= 0:
@@ -548,10 +629,9 @@ class BBAtrStrategy:
                     exit_reason = "take_profit_bb_middle"
 
                 # 3. Durée maximale
-                entry_timestamp = pd.to_datetime(position.entry_time, utc=True)
-                bars_held = (df.index <= timestamp).sum() - (
-                    df.index <= entry_timestamp
-                ).sum()
+                # Calcul O(1) au lieu de O(n) : utiliser l'index de barre
+                entry_bar_index = position.meta.get("entry_bar_index", 0)
+                bars_held = i - entry_bar_index
 
                 if bars_held >= strategy_params.max_hold_bars:
                     should_exit = True
@@ -659,6 +739,7 @@ class BBAtrStrategy:
                                 "atr": current_atr,
                                 "atr_multiplier": strategy_params.atr_multiplier,
                                 "risk_per_trade": strategy_params.risk_per_trade,
+                                "entry_bar_index": i,  # Stocker l'index pour calcul O(1) de bars_held
                             },
                         )
 
@@ -710,7 +791,7 @@ class BBAtrStrategy:
             },
         )
 
-        logger.info(
+        logger.debug(
             f"Backtest terminé: {run_stats.total_trades} trades, PnL={run_stats.total_pnl:.2f} ({run_stats.total_pnl_pct:.2f}%)"
         )
 
@@ -818,6 +899,3 @@ __all__ = [
     "backtest",
     "create_default_params",
 ]
-
-
-

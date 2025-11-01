@@ -27,10 +27,10 @@ from ..data_access import (
 from ..dataset.validate import validate_dataset
 from .strategy_registry import indicator_specs_for, list_strategies, parameter_specs_for
 
-DEFAULT_SYMBOL = "BTC"
-DEFAULT_TIMEFRAME = "1h"
-DEFAULT_START_DATE = date(2024, 9, 1)
-DEFAULT_END_DATE = date(2024, 9, 10)
+DEFAULT_SYMBOL = "BTCUSDC"
+DEFAULT_TIMEFRAME = "15m"
+DEFAULT_START_DATE = date(2024, 12, 1)
+DEFAULT_END_DATE = date(2025, 1, 31)
 
 
 def _render_ohlcv_chart(df: pd.DataFrame) -> None:
@@ -488,6 +488,8 @@ def main() -> None:
 
     # Section unique : Chargement et visualisation
     _render_data_section()
+    st.markdown("---")
+    _render_strategy_section()
 
 
 if __name__ == "__main__":

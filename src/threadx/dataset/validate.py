@@ -1,59 +1,3 @@
-"""Module léger de validation des datasets.
-
-Ce module fournit une fonction `validate_dataset(path)` minimale qui
-permet à l'UI Streamlit et aux scripts de fonctionner même si le module
-de validation complet (pandera, règles métier) est absent.
-
-Ce fichier est un fallback sûr : il n'altère ni ne supprime de données.
-Il réalise des vérifications passives (existence du dossier, liste de fichiers)
-et renvoie une structure dict standardisée.
-"""
-
-from __future__ import annotations
-
-from pathlib import Path
-from typing import Dict, Any
-
-
-def validate_dataset(path: str) -> Dict[str, Any]:
-    """Validation légère et non destructive d'un dataset.
-
-    Args:
-        path: chemin vers le dossier de données (fichier ou dossier)
-
-    Returns:
-        dict: rapport de validation avec clefs minimales ('ok', 'type', 'note', 'files')
-    """
-    p = Path(path)
-    result = {
-        "ok": True,
-        "type": "fallback-light-validate",
-        "note": "fallback validator in place; no destructive actions taken",
-        "path": str(p),
-        "files": [],
-    }
-
-    try:
-        if not p.exists():
-            result["ok"] = False
-            result["note"] = "path does not exist"
-            return result
-
-        if p.is_file():
-            result["files"] = [p.name]
-            return result
-
-        # Directory: list top-level files/folders (non-recursive)
-        items = []
-        for child in sorted(p.iterdir()):
-            items.append(child.name)
-        result["files"] = items
-        return result
-
-    except Exception as e:
-        return {"ok": False, "type": "error", "note": str(e)}
-
-
 """Data validation utilities for ThreadX.
 
 Provides `validate_dataset(path)` which returns a small report dict:
@@ -160,6 +104,4 @@ def validate_dataset(path: str) -> Dict[str, Any]:
     if not report["errors"]:
         report["errors"].append("No supported data files found")
     return report
-
-
 

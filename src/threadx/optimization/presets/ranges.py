@@ -21,6 +21,7 @@ logger = get_logger(__name__)
 
 # Chemin vers le fichier de configuration
 RANGES_FILE = Path(__file__).parent / "indicator_ranges.toml"
+EXECUTION_PRESETS_FILE = Path(__file__).parent / "execution_presets.toml"
 
 
 @dataclass
@@ -52,7 +53,9 @@ class IndicatorRangePreset:
     def get_range(self) -> Tuple[float, float]:
         """Retourne la plage (min, max)"""
         if self.type != "numeric":
-            raise ValueError(f"get_range() n'est applicable que pour type='numeric', got: {self.type}")
+            raise ValueError(
+                f"get_range() n'est applicable que pour type='numeric', got: {self.type}"
+            )
         if self.min is None or self.max is None:
             raise ValueError(f"min ou max non défini pour {self.name}")
         return (self.min, self.max)
@@ -250,9 +253,13 @@ class StrategyPresetMapper:
                 try:
                     ranges[strategy_param] = preset.get_range()
                 except ValueError as e:
-                    logger.warning(f"Impossible de récupérer la plage pour {strategy_param}: {e}")
+                    logger.warning(
+                        f"Impossible de récupérer la plage pour {strategy_param}: {e}"
+                    )
 
-        logger.info(f"✓ {len(ranges)} plages d'optimisation générées pour {self.strategy_name}")
+        logger.info(
+            f"✓ {len(ranges)} plages d'optimisation générées pour {self.strategy_name}"
+        )
         return ranges
 
     def get_grid_parameters(self) -> Dict[str, List[Any]]:
@@ -270,9 +277,13 @@ class StrategyPresetMapper:
                 try:
                     grid[strategy_param] = preset.get_grid_values()
                 except ValueError as e:
-                    logger.warning(f"Impossible de générer la grille pour {strategy_param}: {e}")
+                    logger.warning(
+                        f"Impossible de générer la grille pour {strategy_param}: {e}"
+                    )
 
-        logger.info(f"✓ {len(grid)} grilles de paramètres générées pour {self.strategy_name}")
+        logger.info(
+            f"✓ {len(grid)} grilles de paramètres générées pour {self.strategy_name}"
+        )
         return grid
 
     def get_default_parameters(self) -> Dict[str, Any]:
@@ -289,7 +300,9 @@ class StrategyPresetMapper:
             if preset and preset.default is not None:
                 defaults[strategy_param] = preset.default
 
-        logger.info(f"✓ {len(defaults)} valeurs par défaut générées pour {self.strategy_name}")
+        logger.info(
+            f"✓ {len(defaults)} valeurs par défaut générées pour {self.strategy_name}"
+        )
         return defaults
 
     def get_preset_info(self) -> Dict[str, Dict[str, Any]]:
@@ -327,67 +340,65 @@ def get_strategy_preset(strategy_name: str) -> StrategyPresetMapper:
 
     # Configuration des mappings selon la stratégie
     if strategy_name.lower() in ["amplitudehunter", "amplitude_hunter"]:
-        mapper.add_mappings({
-            # Bollinger Bands
-            "bb_period": "bollinger.period",
-            "bb_std": "bollinger.std_dev",
-
-            # MACD
-            "macd_fast": "macd.fast_period",
-            "macd_slow": "macd.slow_period",
-            "macd_signal": "macd.signal_period",
-
-            # ADX
-            "adx_period": "adx.period",
-            "adx_threshold": "adx.trend_threshold",
-
-            # ATR
-            "atr_period": "atr.period",
-            "sl_atr_multiplier": "atr.stop_multiplier",
-
-            # Paramètres spécifiques AmplitudeHunter
-            "bbwidth_percentile_threshold": "amplitude_hunter.bbwidth_percentile_threshold",
-            "volume_zscore_threshold": "amplitude_hunter.volume_zscore_threshold",
-            "spring_lookback": "amplitude_hunter.spring_lookback",
-            "pb_entry_threshold_min": "amplitude_hunter.pb_entry_threshold_min",
-            "pb_entry_threshold_max": "amplitude_hunter.pb_entry_threshold_max",
-            "amplitude_score_threshold": "amplitude_hunter.amplitude_score_threshold",
-            "trailing_activation_gain_r": "amplitude_hunter.trailing_activation_gain_r",
-            "trailing_chandelier_atr_mult": "amplitude_hunter.trailing_chandelier_atr_mult",
-            "bip_partial_exit_pct": "amplitude_hunter.bip_partial_exit_pct",
-            "risk_per_trade": "amplitude_hunter.risk_per_trade",
-            "max_hold_bars": "amplitude_hunter.max_hold_bars",
-            "pyramiding_max_adds": "amplitude_hunter.pyramiding_max_adds",
-        })
+        mapper.add_mappings(
+            {
+                # Bollinger Bands
+                "bb_period": "bollinger.period",
+                "bb_std": "bollinger.std_dev",
+                # MACD
+                "macd_fast": "macd.fast_period",
+                "macd_slow": "macd.slow_period",
+                "macd_signal": "macd.signal_period",
+                # ADX
+                "adx_period": "adx.period",
+                "adx_threshold": "adx.trend_threshold",
+                # ATR
+                "atr_period": "atr.period",
+                "sl_atr_multiplier": "atr.stop_multiplier",
+                # Paramètres spécifiques AmplitudeHunter
+                "bbwidth_percentile_threshold": "amplitude_hunter.bbwidth_percentile_threshold",
+                "volume_zscore_threshold": "amplitude_hunter.volume_zscore_threshold",
+                "spring_lookback": "amplitude_hunter.spring_lookback",
+                "pb_entry_threshold_min": "amplitude_hunter.pb_entry_threshold_min",
+                "pb_entry_threshold_max": "amplitude_hunter.pb_entry_threshold_max",
+                "amplitude_score_threshold": "amplitude_hunter.amplitude_score_threshold",
+                "trailing_activation_gain_r": "amplitude_hunter.trailing_activation_gain_r",
+                "trailing_chandelier_atr_mult": "amplitude_hunter.trailing_chandelier_atr_mult",
+                "bip_partial_exit_pct": "amplitude_hunter.bip_partial_exit_pct",
+                "risk_per_trade": "amplitude_hunter.risk_per_trade",
+                "max_hold_bars": "amplitude_hunter.max_hold_bars",
+                "pyramiding_max_adds": "amplitude_hunter.pyramiding_max_adds",
+            }
+        )
 
     elif strategy_name.lower() in ["bbatr", "bb_atr"]:
-        mapper.add_mappings({
-            # Bollinger Bands
-            "bb_period": "bollinger.period",
-            "bb_std": "bollinger.std_dev",
-
-            # ATR
-            "atr_period": "atr.period",
-            "atr_multiplier": "atr.stop_multiplier",
-
-            # Risk management
-            "risk_per_trade": "amplitude_hunter.risk_per_trade",  # Réutilise le même preset
-            "max_hold_bars": "amplitude_hunter.max_hold_bars",
-        })
+        mapper.add_mappings(
+            {
+                # Bollinger Bands
+                "bb_period": "bollinger.period",
+                "bb_std": "bollinger.std_dev",
+                # ATR
+                "atr_period": "atr.period",
+                "atr_multiplier": "atr.stop_multiplier",
+                # Risk management
+                "risk_per_trade": "amplitude_hunter.risk_per_trade",  # Réutilise le même preset
+                "max_hold_bars": "amplitude_hunter.max_hold_bars",
+            }
+        )
 
     elif strategy_name.lower() in ["bollingerdual", "bollinger_dual"]:
-        mapper.add_mappings({
-            # Bollinger Bands
-            "bb_period": "bollinger.period",
-            "bb_std": "bollinger.std_dev",
-
-            # Moving Average
-            "ma_window": "sma.short_period",
-
-            # Risk management
-            "risk_per_trade": "amplitude_hunter.risk_per_trade",
-            "max_hold_bars": "amplitude_hunter.max_hold_bars",
-        })
+        mapper.add_mappings(
+            {
+                # Bollinger Bands
+                "bb_period": "bollinger.period",
+                "bb_std": "bollinger.std_dev",
+                # Moving Average
+                "ma_window": "sma.short_period",
+                # Risk management
+                "risk_per_trade": "amplitude_hunter.risk_per_trade",
+                "max_hold_bars": "amplitude_hunter.max_hold_bars",
+            }
+        )
 
     else:
         logger.warning(
@@ -396,6 +407,61 @@ def get_strategy_preset(strategy_name: str) -> StrategyPresetMapper:
         )
 
     return mapper
+
+
+def load_execution_presets() -> Dict[str, Dict[str, Any]]:
+    """
+    🆕 Charge les presets d'exécution (workers, batch size, GPU targets).
+
+    Returns:
+        Dict avec structure: {
+            "workers": {"auto": {...}, "manuel_30": {...}, ...},
+            "batch": {...},
+            "gpu": {...},
+            "combined": {...}
+        }
+    """
+    if not EXECUTION_PRESETS_FILE.exists():
+        logger.warning(
+            f"Fichier execution presets non trouvé: {EXECUTION_PRESETS_FILE}"
+        )
+        return {}
+
+    try:
+        data = toml.load(EXECUTION_PRESETS_FILE)
+        logger.info(f"✅ Presets d'exécution chargés: {len(data)} catégories")
+        return data
+    except Exception as e:
+        logger.error(f"Erreur chargement execution presets: {e}")
+        return {}
+
+
+def get_execution_preset(preset_name: str = "manuel_30") -> Dict[str, Any]:
+    """
+    🆕 Récupère un preset d'exécution par nom.
+
+    Args:
+        preset_name: Nom du preset (ex: "manuel_30", "auto", "aggressive")
+
+    Returns:
+        Configuration du preset
+
+    Example:
+        >>> preset = get_execution_preset("manuel_30")
+        >>> print(preset["max_workers"])  # 30
+        >>> print(preset["batch_size"])   # 2000
+    """
+    presets = load_execution_presets()
+
+    # Chercher dans toutes les catégories
+    for category, category_presets in presets.items():
+        for name, config in category_presets.items():
+            if name == preset_name or name.endswith(preset_name):
+                logger.info(f"✅ Preset trouvé: {category}.{name}")
+                return config
+
+    logger.warning(f"Preset '{preset_name}' non trouvé, utilisant défaut")
+    return {"max_workers": 30, "batch_size": 2000, "description": "Défaut manuel"}
 
 
 # ==========================================================================
@@ -409,4 +475,6 @@ __all__ = [
     "get_strategy_preset",
     "list_available_indicators",
     "load_all_presets",
+    "load_execution_presets",
+    "get_execution_preset",
 ]

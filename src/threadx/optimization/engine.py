@@ -36,6 +36,7 @@ from .reporting import write_reports, summarize_distribution
 # Multi-GPU support
 try:
     from threadx.gpu.multi_gpu import get_default_manager, MultiGPUManager
+
     MULTIGPU_AVAILABLE = True
 except ImportError:
     MULTIGPU_AVAILABLE = False
@@ -43,6 +44,7 @@ except ImportError:
 # Monitoring système pour workers dynamiques
 try:
     import psutil
+
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False
@@ -51,6 +53,7 @@ logger = get_logger(__name__)
 
 # Global stop flag to allow UI-triggered cancellation without direct runner reference
 _GLOBAL_STOP_FLAG = False
+
 
 def set_global_stop(stop: bool = True) -> None:
     """Définir le flag global pour arrêter l'exécution."""
@@ -89,7 +92,7 @@ class SweepRunner:
         self,
         indicator_bank: Optional[IndicatorBank] = None,
         max_workers: Optional[int] = None,
-        use_multigpu: bool = True
+        use_multigpu: bool = True,
     ):
         """
         Initialise le runner de sweeps avec support Multi-GPU.
@@ -152,7 +155,9 @@ class SweepRunner:
 
         if self.gpu_manager and self.use_multigpu:
             # Mode Multi-GPU: limiter les workers pour éviter goulots
-            gpu_devices = [d for d in self.gpu_manager.available_devices if d.device_id != -1]
+            gpu_devices = [
+                d for d in self.gpu_manager.available_devices if d.device_id != -1
+            ]
 
             if len(gpu_devices) >= 2:
                 # 2 GPUs: 4 workers par GPU = 8 total
@@ -179,7 +184,9 @@ class SweepRunner:
 
         return max(optimal, 2)  # Minimum 2 workers
 
-    def _adjust_workers_dynamically(self, current_batch: int, total_batches: int) -> int:
+    def _adjust_workers_dynamically(
+        self, current_batch: int, total_batches: int
+    ) -> int:
         """
         Ajuste le nombre de workers en temps réel selon:
         - Utilisation GPU actuelle
@@ -205,9 +212,9 @@ class SweepRunner:
 
                 # Moyenne utilisation GPU
                 gpu_usage_values = [
-                    stats.get('memory_used_pct', 0)
+                    stats.get("memory_used_pct", 0)
                     for stats in gpu_stats.values()
-                    if stats.get('device_id', -1) != -1
+                    if stats.get("device_id", -1) != -1
                 ]
 
                 if gpu_usage_values:
@@ -217,14 +224,18 @@ class SweepRunner:
                     if gpu_usage_avg < 50 and ram_used_pct < 70:
                         # GPU sous-utilisé et RAM OK: augmenter workers
                         new_workers = min(current_workers + 2, 16)
-                        self.logger.info(f"↑ Augmentation workers: {current_workers} → {new_workers} (GPU: {gpu_usage_avg:.0f}%, RAM: {ram_used_pct:.0f}%)")
+                        self.logger.info(
+                            f"↑ Augmentation workers: {current_workers} → {new_workers} (GPU: {gpu_usage_avg:.0f}%, RAM: {ram_used_pct:.0f}%)"
+                        )
                         self._last_worker_adjustment = current_batch
                         return new_workers
 
                     elif gpu_usage_avg > 85 or ram_used_pct > 85:
                         # Saturation: réduire workers
                         new_workers = max(current_workers - 2, 2)
-                        self.logger.warning(f"↓ Réduction workers: {current_workers} → {new_workers} (GPU: {gpu_usage_avg:.0f}%, RAM: {ram_used_pct:.0f}%)")
+                        self.logger.warning(
+                            f"↓ Réduction workers: {current_workers} → {new_workers} (GPU: {gpu_usage_avg:.0f}%, RAM: {ram_used_pct:.0f}%)"
+                        )
                         self._last_worker_adjustment = current_batch
                         return new_workers
             except Exception as e:
@@ -240,7 +251,7 @@ class SweepRunner:
         timeframe: str,
         strategy_name: str = "Bollinger_Breakout",
         *,
-        reuse_cache: bool = True
+        reuse_cache: bool = True,
     ) -> pd.DataFrame:
         """
         Exécute un sweep de grille paramétrique avec vraies données.
@@ -262,7 +273,9 @@ class SweepRunner:
         if real_data is None or real_data.empty:
             raise ValueError("Données OHLCV requises pour run_grid()")
 
-        self.logger.info(f"Début sweep grille: {grid_spec} avec {len(real_data)} barres")
+        self.logger.info(
+            f"Début sweep grille: {grid_spec} avec {len(real_data)} barres"
+        )
 
         # Génération des combinaisons
         with self._time_stage("scenario_generation"):
@@ -277,7 +290,12 @@ class SweepRunner:
 
         # Exécution batch
         results_df = self._execute_combinations(
-            combinations, real_data, symbol, timeframe, strategy_name, reuse_cache=reuse_cache
+            combinations,
+            real_data,
+            symbol,
+            timeframe,
+            strategy_name,
+            reuse_cache=reuse_cache,
         )
 
         return results_df
@@ -290,7 +308,7 @@ class SweepRunner:
         timeframe: str,
         strategy_name: str = "Bollinger_Breakout",
         *,
-        reuse_cache: bool = True
+        reuse_cache: bool = True,
     ) -> pd.DataFrame:
         """
         Exécute un sweep Monte Carlo avec vraies données.
@@ -312,7 +330,9 @@ class SweepRunner:
         if real_data is None or real_data.empty:
             raise ValueError("Données OHLCV requises pour run_monte_carlo()")
 
-        self.logger.info(f"Début sweep Monte Carlo: {mc_spec} avec {len(real_data)} barres")
+        self.logger.info(
+            f"Début sweep Monte Carlo: {mc_spec} avec {len(real_data)} barres"
+        )
 
         # Génération des scénarios
         with self._time_stage("scenario_generation"):
@@ -333,7 +353,12 @@ class SweepRunner:
 
         # Exécution avec pruning adaptatif
         results_df = self._execute_combinations_with_pruning(
-            scenarios, real_data, symbol, timeframe, strategy_name, reuse_cache=reuse_cache
+            scenarios,
+            real_data,
+            symbol,
+            timeframe,
+            strategy_name,
+            reuse_cache=reuse_cache,
         )
 
         return results_df
@@ -346,7 +371,7 @@ class SweepRunner:
         timeframe: str,
         strategy_name: str = "Bollinger_Breakout",
         *,
-        reuse_cache: bool = True
+        reuse_cache: bool = True,
     ) -> pd.DataFrame:
         """Exécute les combinaisons en mode batch avec vraies données."""
         self.is_running = True
@@ -362,7 +387,11 @@ class SweepRunner:
             # Calcul batch des indicateurs via IndicatorBank
             with self._time_stage("batch_indicators"):
                 computed_indicators = self._compute_batch_indicators(
-                    unique_indicators, real_data, symbol, timeframe, reuse_cache=reuse_cache
+                    unique_indicators,
+                    real_data,
+                    symbol,
+                    timeframe,
+                    reuse_cache=reuse_cache,
                 )
 
             # Évaluation PARALLÈLE des stratégies avec ThreadPoolExecutor
@@ -371,16 +400,22 @@ class SweepRunner:
 
                 with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                     futures = {}
-                    batch_size = 1000  # Soumettre par batch pour éviter une queue géante
+                    batch_size = (
+                        1000  # Soumettre par batch pour éviter une queue géante
+                    )
                     stop_requested = False
 
                     # Soumettre les futures par BATCH, en vérifiant le stop entre chaque
-                    self.logger.info(f"Début soumission {len(combinations)} combos par batch de {batch_size}")
+                    self.logger.info(
+                        f"Début soumission {len(combinations)} combos par batch de {batch_size}"
+                    )
                     for batch_idx in range(0, len(combinations), batch_size):
                         # Vérifier le stop AVANT de soumettre chaque batch
                         if self.should_pause or is_global_stop_requested():
                             stop_requested = True
-                            self.logger.warning(f"⏹️ Arrêt détecté avant soumission batch {batch_idx // batch_size}")
+                            self.logger.warning(
+                                f"⏹️ Arrêt détecté avant soumission batch {batch_idx // batch_size}"
+                            )
                             break
 
                         # Soumettre le batch
@@ -389,11 +424,18 @@ class SweepRunner:
                             combo = combinations[i]
                             future = executor.submit(
                                 self._evaluate_single_combination,
-                                combo, computed_indicators, real_data, symbol, timeframe, strategy_name
+                                combo,
+                                computed_indicators,
+                                real_data,
+                                symbol,
+                                timeframe,
+                                strategy_name,
                             )
                             futures[future] = i
 
-                        self.logger.debug(f"Batch {batch_idx // batch_size}: {batch_end - batch_idx} futures soumises (total: {len(futures)})")
+                        self.logger.debug(
+                            f"Batch {batch_idx // batch_size}: {batch_end - batch_idx} futures soumises (total: {len(futures)})"
+                        )
 
                     # Collecter les résultats au fur et à mesure
                     try:
@@ -401,7 +443,9 @@ class SweepRunner:
                             # Vérifier le stop régulièrement
                             if self.should_pause or is_global_stop_requested():
                                 if not stop_requested:
-                                    self.logger.warning(f"⏹️ Arrêt demandé après {completed_count[0]} combos terminés")
+                                    self.logger.warning(
+                                        f"⏹️ Arrêt demandé après {completed_count[0]} combos terminés"
+                                    )
                                     stop_requested = True
 
                                 # Annuler les futures restantes en queue
@@ -411,7 +455,9 @@ class SweepRunner:
                                         cancelled_count += 1
 
                                 if cancelled_count > 0:
-                                    self.logger.warning(f"⏹️ {cancelled_count} futures annulées en queue")
+                                    self.logger.warning(
+                                        f"⏹️ {cancelled_count} futures annulées en queue"
+                                    )
                                 break
 
                             try:
@@ -430,22 +476,26 @@ class SweepRunner:
                                 self.logger.error(f"Erreur exécution combo: {e}")
                                 # Continuer avec les autres combos
                                 completed_count[0] += 1
-                                results.append({
-                                    "error": str(e),
-                                    "pnl": 0.0,
-                                    "pnl_pct": 0.0,
-                                    "sharpe": 0.0,
-                                    "max_drawdown": 0.0,
-                                    "win_rate": 0.0,
-                                    "total_trades": 0,
-                                })
+                                results.append(
+                                    {
+                                        "error": str(e),
+                                        "pnl": 0.0,
+                                        "pnl_pct": 0.0,
+                                        "sharpe": 0.0,
+                                        "max_drawdown": 0.0,
+                                        "win_rate": 0.0,
+                                        "total_trades": 0,
+                                    }
+                                )
                     finally:
                         # Cleanup: cancel any remaining futures
                         remaining = sum(1 for f in futures if not f.done())
                         if remaining > 0:
                             for f in futures:
                                 f.cancel()
-                            self.logger.info(f"Cleanup: {remaining} futures restantes annulées")
+                            self.logger.info(
+                                f"Cleanup: {remaining} futures restantes annulées"
+                            )
 
             # Construction du DataFrame final
             with self._time_stage("results_compilation"):
@@ -466,7 +516,7 @@ class SweepRunner:
         timeframe: str,
         strategy_name: str = "Bollinger_Breakout",
         *,
-        reuse_cache: bool = True
+        reuse_cache: bool = True,
     ) -> pd.DataFrame:
         """Exécute avec pruning Pareto adaptatif et vraies données."""
         self.is_running = True
@@ -482,7 +532,11 @@ class SweepRunner:
 
             with self._time_stage("batch_indicators"):
                 computed_indicators = self._compute_batch_indicators(
-                    unique_indicators, real_data, symbol, timeframe, reuse_cache=reuse_cache
+                    unique_indicators,
+                    real_data,
+                    symbol,
+                    timeframe,
+                    reuse_cache=reuse_cache,
                 )
 
             # Évaluation avec pruning progressif
@@ -500,7 +554,12 @@ class SweepRunner:
                     batch_results = []
                     for combo in batch_combos:
                         result = self._evaluate_single_combination(
-                            combo, computed_indicators, real_data, symbol, timeframe, strategy_name
+                            combo,
+                            computed_indicators,
+                            real_data,
+                            symbol,
+                            timeframe,
+                            strategy_name,
                         )
                         batch_results.append(result)
 
@@ -553,14 +612,15 @@ class SweepRunner:
                     if "bollinger" not in indicators_by_type:
                         indicators_by_type["bollinger"] = []
 
-                    # Recherche de paramètres BB complets
+                    # ✅ MAPPING: bb_window→period, bb_num_std→std
                     bb_params = {}
                     for name, value in combo.items():
-                        if name.startswith("bb_"):
-                            clean_name = name[3:]  # Retire 'bb_'
-                            bb_params[clean_name] = value
+                        if name == "bb_window":
+                            bb_params["period"] = value
+                        elif name == "bb_num_std":
+                            bb_params["std"] = value
 
-                    if bb_params not in indicators_by_type["bollinger"]:
+                    if bb_params and bb_params not in indicators_by_type["bollinger"]:
                         indicators_by_type["bollinger"].append(bb_params)
 
                 elif param_name.startswith("atr_"):
@@ -568,13 +628,20 @@ class SweepRunner:
                     if "atr" not in indicators_by_type:
                         indicators_by_type["atr"] = []
 
+                    # ✅ MAPPING: atr_window→period, atr_method→method (défaut: ema)
                     atr_params = {}
                     for name, value in combo.items():
-                        if name.startswith("atr_"):
-                            clean_name = name[4:]  # Retire 'atr_'
-                            atr_params[clean_name] = value
+                        if name == "atr_window":
+                            atr_params["period"] = value
+                        elif name == "atr_method":
+                            atr_params["method"] = value
+                        # atr_multiplier est pour la STRATÉGIE, pas l'indicateur
 
-                    if atr_params not in indicators_by_type["atr"]:
+                    # ATR par défaut utilise EMA
+                    if "method" not in atr_params:
+                        atr_params["method"] = "ema"
+
+                    if atr_params and atr_params not in indicators_by_type["atr"]:
                         indicators_by_type["atr"].append(atr_params)
 
         return indicators_by_type
@@ -586,7 +653,7 @@ class SweepRunner:
         symbol: str,
         timeframe: str,
         *,
-        reuse_cache: bool = True
+        reuse_cache: bool = True,
     ) -> Dict[str, Dict]:
         """Calcule les indicateurs en batch avec VRAIES données."""
         computed = {}
@@ -636,7 +703,7 @@ class SweepRunner:
         real_data: pd.DataFrame,
         symbol: str,
         timeframe: str,
-        strategy_name: str = "Bollinger_Breakout"
+        strategy_name: str = "Bollinger_Breakout",
     ) -> Dict:
         """
         Évaluation avec VRAI backtest de stratégie.
@@ -660,28 +727,70 @@ class SweepRunner:
 
             StrategyClass = strategy_classes.get(strat_name, BBAtrStrategy)
 
-            # Instancier la stratégie
-            strategy = StrategyClass(symbol=symbol, timeframe=timeframe)
+            # 🚀 OPTIMISATION CRITIQUE: Réutiliser instance existante si disponible
+            # Évite de recréer GPU Manager, Bollinger, ATR, IndicatorBank pour chaque combo
+            if not hasattr(self, "_cached_strategy_instances"):
+                self._cached_strategy_instances = {}
 
-            # ✅ VRAI backtest avec vraies données
+            cache_key = (strat_name, symbol, timeframe)
+            if cache_key not in self._cached_strategy_instances:
+                self._cached_strategy_instances[cache_key] = StrategyClass(
+                    symbol=symbol, timeframe=timeframe
+                )
+
+            strategy = self._cached_strategy_instances[cache_key]
+
+            # ✅ MAPPING: Transformer paramètres sweep → paramètres stratégie
+            strategy_params = {}
+            for key, value in combo.items():
+                if key == "bb_window":
+                    strategy_params["bb_period"] = value
+                elif key == "bb_num_std":
+                    strategy_params["bb_std"] = value
+                elif key == "atr_window":
+                    strategy_params["atr_period"] = value
+                elif key == "atr_multiplier":
+                    strategy_params["atr_multiplier"] = value
+                else:
+                    # Autres paramètres passent tels quels
+                    strategy_params[key] = value
+
+            # Paramètres par défaut requis
+            if "entry_z" not in strategy_params:
+                strategy_params["entry_z"] = 1.0  # Valeur par défaut
+
+            # ✅ VRAI backtest avec vraies données + indicateurs pré-calculés
             equity_curve, run_stats = strategy.backtest(
                 df=real_data,
-                params=combo,
+                params=strategy_params,  # Utiliser les paramètres mappés
                 initial_capital=10000.0,
                 fee_bps=4.5,
-                slippage_bps=0.0
+                slippage_bps=0.0,
+                precomputed_indicators=computed_indicators,  # 🚀 OPTIMISATION: Réutiliser batch indicators
             )
 
             # Retourner métriques réelles
             result = combo.copy()
-            result.update({
-                "pnl": run_stats.total_pnl,
-                "pnl_pct": run_stats.total_pnl_pct,
-                "sharpe": run_stats.sharpe_ratio if hasattr(run_stats, 'sharpe_ratio') else 0.0,
-                "max_drawdown": run_stats.max_drawdown if hasattr(run_stats, 'max_drawdown') else 0.0,
-                "win_rate": run_stats.win_rate if hasattr(run_stats, 'win_rate') else 0.0,
-                "total_trades": run_stats.total_trades,
-            })
+            result.update(
+                {
+                    "pnl": run_stats.total_pnl,
+                    "pnl_pct": run_stats.total_pnl_pct,
+                    "sharpe": (
+                        run_stats.sharpe_ratio
+                        if hasattr(run_stats, "sharpe_ratio")
+                        else 0.0
+                    ),
+                    "max_drawdown": (
+                        run_stats.max_drawdown
+                        if hasattr(run_stats, "max_drawdown")
+                        else 0.0
+                    ),
+                    "win_rate": (
+                        run_stats.win_rate if hasattr(run_stats, "win_rate") else 0.0
+                    ),
+                    "total_trades": run_stats.total_trades,
+                }
+            )
 
             return result
 
@@ -689,15 +798,17 @@ class SweepRunner:
             # Fallback en cas d'erreur: retourner résultats neutres
             self.logger.error(f"Erreur évaluation combo {combo}: {e}")
             result = combo.copy()
-            result.update({
-                "pnl": 0.0,
-                "pnl_pct": 0.0,
-                "sharpe": 0.0,
-                "max_drawdown": 0.0,
-                "win_rate": 0.0,
-                "total_trades": 0,
-                "error": str(e)
-            })
+            result.update(
+                {
+                    "pnl": 0.0,
+                    "pnl_pct": 0.0,
+                    "sharpe": 0.0,
+                    "max_drawdown": 0.0,
+                    "win_rate": 0.0,
+                    "total_trades": 0,
+                    "error": str(e),
+                }
+            )
             return result
 
     def _params_to_key(self, params: Dict) -> str:
@@ -830,11 +941,15 @@ class UnifiedOptimizationEngine:
                 stop_requested = False
 
                 # Soumission des tâches par BATCH
-                self.logger.info(f"Soumission {len(combinations)} combos par batch de {batch_size}")
+                self.logger.info(
+                    f"Soumission {len(combinations)} combos par batch de {batch_size}"
+                )
                 for batch_idx in range(0, len(combinations), batch_size):
                     if self.should_pause or is_global_stop_requested():
                         stop_requested = True
-                        self.logger.warning(f"⏹️ Arrêt avant batch {batch_idx // batch_size}")
+                        self.logger.warning(
+                            f"⏹️ Arrêt avant batch {batch_idx // batch_size}"
+                        )
                         break
 
                     batch_end = min(batch_idx + batch_size, len(combinations))
@@ -845,14 +960,18 @@ class UnifiedOptimizationEngine:
                         )
                         futures[future] = i
 
-                    self.logger.debug(f"Batch: {batch_end - batch_idx} soumises (total: {len(futures)})")
+                    self.logger.debug(
+                        f"Batch: {batch_end - batch_idx} soumises (total: {len(futures)})"
+                    )
 
                 # Collecte des résultats
                 try:
                     for future in as_completed(futures):
                         if self.should_pause or is_global_stop_requested():
                             if not stop_requested:
-                                self.logger.warning(f"⏹️ Arrêt après {self.completed_combos} combos")
+                                self.logger.warning(
+                                    f"⏹️ Arrêt après {self.completed_combos} combos"
+                                )
                                 stop_requested = True
 
                             # Annuler les futures en queue
@@ -1276,6 +1395,3 @@ DEFAULT_SWEEP_CONFIG = {
         "top_k": 50,
     },
 }
-
-
-

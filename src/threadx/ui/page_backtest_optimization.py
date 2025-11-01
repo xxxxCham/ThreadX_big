@@ -26,12 +26,16 @@ from ..data_access import load_ohlcv
 from .strategy_registry import (
     base_params_for,
     list_strategies,
+    parameter_specs_for,
     resolve_range,
     tunable_parameters_for,
 )
 from threadx.indicators.bank import IndicatorBank, IndicatorSettings
 from threadx.optimization.engine import SweepRunner
 from threadx.optimization.scenarios import ScenarioSpec
+from threadx.utils.log import get_logger
+
+logger = get_logger(__name__)
 
 
 def _require_configuration() -> Dict[str, Any]:
@@ -50,7 +54,9 @@ def _require_configuration() -> Dict[str, Any]:
     data_frame = st.session_state.get("data")
     if not isinstance(data_frame, pd.DataFrame) or data_frame.empty:
         st.warning("⚠️ Aucune donnée chargée.")
-        st.info("👈 Retournez sur **Configuration & Stratégie** et cliquez sur 'Charger & Prévisualiser'.")
+        st.info(
+            "👈 Retournez sur **Configuration & Stratégie** et cliquez sur 'Charger & Prévisualiser'."
+        )
         st.stop()
 
     return {key: st.session_state[key] for key in required_keys}
@@ -65,7 +71,9 @@ def _render_config_badge(context: Dict[str, Any]) -> None:
     )
 
 
-def _render_price_chart(df: pd.DataFrame, indicators: Dict[str, Dict[str, Any]]) -> None:
+def _render_price_chart(
+    df: pd.DataFrame, indicators: Dict[str, Dict[str, Any]]
+) -> None:
     """Graphique OHLC avec indicateurs."""
     fig = go.Figure()
 
@@ -78,8 +86,8 @@ def _render_price_chart(df: pd.DataFrame, indicators: Dict[str, Dict[str, Any]])
             low=df["low"],
             close=df["close"],
             name="OHLC",
-            increasing_line_color='#26a69a',
-            decreasing_line_color='#ef5350',
+            increasing_line_color="#26a69a",
+            decreasing_line_color="#ef5350",
         )
     )
 
@@ -92,18 +100,33 @@ def _render_price_chart(df: pd.DataFrame, indicators: Dict[str, Dict[str, Any]])
         mid = rolling_close.mean()
         std = rolling_close.std()
 
-        fig.add_trace(go.Scatter(
-            x=df.index, y=mid, name="BB Mid",
-            mode="lines", line=dict(color='#ffa726', width=1)
-        ))
-        fig.add_trace(go.Scatter(
-            x=df.index, y=mid + std_mult * std, name="BB Upper",
-            mode="lines", line=dict(color='#42a5f5', width=1, dash='dash')
-        ))
-        fig.add_trace(go.Scatter(
-            x=df.index, y=mid - std_mult * std, name="BB Lower",
-            mode="lines", line=dict(color='#42a5f5', width=1, dash='dash')
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=df.index,
+                y=mid,
+                name="BB Mid",
+                mode="lines",
+                line=dict(color="#ffa726", width=1),
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df.index,
+                y=mid + std_mult * std,
+                name="BB Upper",
+                mode="lines",
+                line=dict(color="#42a5f5", width=1, dash="dash"),
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df.index,
+                y=mid - std_mult * std,
+                name="BB Lower",
+                mode="lines",
+                line=dict(color="#42a5f5", width=1, dash="dash"),
+            )
+        )
 
     fig.update_layout(
         height=500,
@@ -111,19 +134,13 @@ def _render_price_chart(df: pd.DataFrame, indicators: Dict[str, Dict[str, Any]])
         template="plotly_dark",
         xaxis_title="",
         yaxis_title="Prix (USD)",
-        xaxis=dict(rangeslider=dict(visible=False), gridcolor='rgba(128,128,128,0.2)'),
-        yaxis=dict(gridcolor='rgba(128,128,128,0.2)'),
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#a8b2d1', size=11),
-        hovermode='x unified',
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
+        xaxis=dict(rangeslider=dict(visible=False), gridcolor="rgba(128,128,128,0.2)"),
+        yaxis=dict(gridcolor="rgba(128,128,128,0.2)"),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#a8b2d1", size=11),
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
 
     st.plotly_chart(fig, use_container_width=True, key="backtest_chart")
@@ -137,21 +154,27 @@ def _render_equity_curve(equity: pd.Series) -> None:
 
     fig = go.Figure()
 
-    fig.add_trace(go.Scatter(
-        x=equity.index,
-        y=equity.values,
-        mode='lines',
-        name='Équité',
-        line=dict(color='#26a69a', width=2),
-        fill='tozeroy',
-        fillcolor='rgba(38, 166, 154, 0.1)',
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=equity.index,
+            y=equity.values,
+            mode="lines",
+            name="Équité",
+            line=dict(color="#26a69a", width=2),
+            fill="tozeroy",
+            fillcolor="rgba(38, 166, 154, 0.1)",
+        )
+    )
 
     # Ligne initiale
-    fig.add_hline(y=equity.iloc[0], line_dash="dash",
-                  line_color="gray", opacity=0.5,
-                  annotation_text="Capital initial",
-                  annotation_position="right")
+    fig.add_hline(
+        y=equity.iloc[0],
+        line_dash="dash",
+        line_color="gray",
+        opacity=0.5,
+        annotation_text="Capital initial",
+        annotation_position="right",
+    )
 
     fig.update_layout(
         height=300,
@@ -159,12 +182,12 @@ def _render_equity_curve(equity: pd.Series) -> None:
         template="plotly_dark",
         xaxis_title="",
         yaxis_title="Équité ($)",
-        xaxis=dict(gridcolor='rgba(128,128,128,0.2)'),
-        yaxis=dict(gridcolor='rgba(128,128,128,0.2)'),
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#a8b2d1', size=11),
-        hovermode='x unified',
+        xaxis=dict(gridcolor="rgba(128,128,128,0.2)"),
+        yaxis=dict(gridcolor="rgba(128,128,128,0.2)"),
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#a8b2d1", size=11),
+        hovermode="x unified",
     )
 
     st.plotly_chart(fig, use_container_width=True, key="equity_curve")
@@ -212,8 +235,9 @@ def _render_metrics(metrics: Dict[str, Any]) -> None:
     )
 
 
-
-def _build_sweep_grid(min_value: float, max_value: float, step: float, value_type: str) -> np.ndarray:
+def _build_sweep_grid(
+    min_value: float, max_value: float, step: float, value_type: str
+) -> np.ndarray:
     """Crée une grille de valeurs pour le sweep en gérant int/float proprement."""
     if max_value < min_value:
         min_value, max_value = max_value, min_value
@@ -265,32 +289,48 @@ def _render_monte_carlo_tab() -> None:
         strategy = st.selectbox(
             "Stratégie",
             strategies,
-            index=strategies.index(context["strategy"]) if context["strategy"] in strategies else 0,
-            key="mc_strategy"
+            index=(
+                strategies.index(context["strategy"])
+                if context["strategy"] in strategies
+                else 0
+            ),
+            key="mc_strategy",
         )
 
     with col_gpu:
-        use_gpu = st.checkbox("Activer GPU",
-                               value=st.session_state.get("mc_use_gpu", True),
-                               key="mc_use_gpu")
+        use_gpu = st.checkbox(
+            "Activer GPU",
+            value=st.session_state.get("mc_use_gpu", True),
+            key="mc_use_gpu",
+        )
 
     with col_multigpu:
-        use_multigpu = st.checkbox("Multi-GPU (5090+2060)",
-                                    value=st.session_state.get("mc_use_multigpu", True),
-                                    key="mc_use_multigpu")
+        use_multigpu = st.checkbox(
+            "Multi-GPU (5090+2060)",
+            value=st.session_state.get("mc_use_multigpu", True),
+            key="mc_use_multigpu",
+        )
 
     with col_workers:
         # Récupérer la sélection précédente depuis session_state
         current_mode = st.session_state.get("mc_workers_mode", "Auto (Dynamique)")
         mode_index = 1 if current_mode == "Manuel" else 0
 
-        workers_mode = st.selectbox("Workers", ["Auto (Dynamique)", "Manuel"],
-                                     index=mode_index,
-                                     key="mc_workers_mode")
+        workers_mode = st.selectbox(
+            "Workers",
+            ["Auto (Dynamique)", "Manuel"],
+            index=mode_index,
+            key="mc_workers_mode",
+        )
         if workers_mode == "Manuel":
-            max_workers = st.number_input("Nb Workers", min_value=2, max_value=32,
-                                         value=st.session_state.get("mc_manual_workers", 8),
-                                         step=1, key="mc_manual_workers")
+            max_workers = st.number_input(
+                "Nb Workers",
+                min_value=2,
+                max_value=32,
+                value=st.session_state.get("mc_manual_workers", 8),
+                step=1,
+                key="mc_manual_workers",
+            )
         else:
             max_workers = None
 
@@ -308,25 +348,31 @@ def _render_monte_carlo_tab() -> None:
     param_types: Dict[str, str] = {}
 
     for key, spec in tunable_specs.items():
-        label = spec.get('label') or key.replace('_', ' ').title()
-        param_type = spec.get('type') or ('float' if isinstance(spec.get('default'), float) else 'int')
+        label = spec.get("label") or key.replace("_", " ").title()
+        param_type = spec.get("type") or (
+            "float" if isinstance(spec.get("default"), float) else "int"
+        )
         param_types[key] = param_type
 
-        default_val = configured_params.get(key, spec.get('default'))
+        default_val = configured_params.get(key, spec.get("default"))
         if default_val is None:
-            default_val = base_strategy_params.get(key, 0 if param_type == 'int' else 0.0)
+            default_val = base_strategy_params.get(
+                key, 0 if param_type == "int" else 0.0
+            )
 
-        min_val = spec.get('min')
-        max_val = spec.get('max')
+        min_val = spec.get("min")
+        max_val = spec.get("max")
         opt_min, opt_max = resolve_range(spec)
         if min_val is None:
             min_val = opt_min if opt_min is not None else default_val
         if max_val is None:
             max_val = opt_max if opt_max is not None else default_val
         if min_val is None:
-            min_val = 0 if param_type == 'int' else 0.0
+            min_val = 0 if param_type == "int" else 0.0
         if max_val is None or max_val <= min_val:
-            max_val = min_val + (spec.get('step') or (1 if param_type == 'int' else 0.1))
+            max_val = min_val + (
+                spec.get("step") or (1 if param_type == "int" else 0.1)
+            )
 
         stored_range = range_preferences.get(key)
 
@@ -334,38 +380,65 @@ def _render_monte_carlo_tab() -> None:
         col_range, col_sense = st.columns([3, 1])
 
         with col_range:
-            if param_type == 'int':
+            if param_type == "int":
                 min_val = int(round(min_val))
                 max_val = int(round(max_val))
                 if stored_range:
                     stored_low, stored_high = map(int, stored_range)
-                    default_tuple = (max(min_val, stored_low), min(max_val, stored_high))
+                    default_tuple = (
+                        max(min_val, stored_low),
+                        min(max_val, stored_high),
+                    )
                 else:
-                    default_tuple = (min(int(default_val), max_val), max(int(default_val), min_val)) if isinstance(default_val, (int, float)) else (min_val, max_val)
-                selected_range = st.slider(label, min_value=min_val, max_value=max_val, value=(int(default_tuple[0]), int(default_tuple[1])), step=1, key=f"mc_range_{key}")
+                    default_tuple = (
+                        (min(int(default_val), max_val), max(int(default_val), min_val))
+                        if isinstance(default_val, (int, float))
+                        else (min_val, max_val)
+                    )
+                selected_range = st.slider(
+                    label,
+                    min_value=min_val,
+                    max_value=max_val,
+                    value=(int(default_tuple[0]), int(default_tuple[1])),
+                    step=1,
+                    key=f"mc_range_{key}",
+                )
             else:
                 min_val = float(min_val)
                 max_val = float(max_val)
-                float_step = float(spec.get('step') or 0.1)
+                float_step = float(spec.get("step") or 0.1)
                 if stored_range:
                     stored_low = float(stored_range[0])
                     stored_high = float(stored_range[1])
-                    default_tuple = (max(min_val, stored_low), min(max_val, stored_high))
+                    default_tuple = (
+                        max(min_val, stored_low),
+                        min(max_val, stored_high),
+                    )
                 else:
                     if default_val is not None:
                         default_min = float(default_val) - 0.1 * abs(float(default_val))
                         default_max = float(default_val) + 0.1 * abs(float(default_val))
-                        default_tuple = (max(min_val, default_min), min(max_val, default_max))
+                        default_tuple = (
+                            max(min_val, default_min),
+                            min(max_val, default_max),
+                        )
                     else:
                         default_tuple = (min_val, max_val)
-                selected_range = st.slider(label, min_value=min_val, max_value=max_val, value=(float(default_tuple[0]), float(default_tuple[1])), step=float_step, key=f"mc_range_{key}")
+                selected_range = st.slider(
+                    label,
+                    min_value=min_val,
+                    max_value=max_val,
+                    value=(float(default_tuple[0]), float(default_tuple[1])),
+                    step=float_step,
+                    key=f"mc_range_{key}",
+                )
 
         # Sensibilité : Slider de STEP (granularité d'exploration) - Monte-Carlo
         with col_sense:
             range_span = selected_range[1] - selected_range[0]
-            base_step = float(spec.get('step') or 0.1)
+            base_step = float(spec.get("step") or 0.1)
 
-            if param_type == 'int':
+            if param_type == "int":
                 # Pour entiers : step de 1 à range_span
                 step_val_display = st.slider(
                     "📊 Step",
@@ -374,7 +447,7 @@ def _render_monte_carlo_tab() -> None:
                     value=1,
                     step=1,
                     key=f"mc_step_{key}",
-                    label_visibility="collapsed"
+                    label_visibility="collapsed",
                 )
             else:
                 # Pour floats : step de (base_step/10) à range_span
@@ -386,7 +459,7 @@ def _render_monte_carlo_tab() -> None:
                     step=base_step / 100,
                     format="%.4f",
                     key=f"mc_step_{key}",
-                    label_visibility="collapsed"
+                    label_visibility="collapsed",
                 )
 
         range_preferences[key] = (selected_range[0], selected_range[1])
@@ -396,9 +469,11 @@ def _render_monte_carlo_tab() -> None:
         range_min, range_max = selected_range
         span = range_max - range_min
 
-        if param_type == 'int':
+        if param_type == "int":
             # For integers: count the values in the range with this step
-            n_combinations = len(range(int(range_min), int(range_max) + 1, max(1, int(step_val_display))))
+            n_combinations = len(
+                range(int(range_min), int(range_max) + 1, max(1, int(step_val_display)))
+            )
         else:
             # For floats: (span / step)
             n_combinations = span / step_val_display if step_val_display > 0 else 1
@@ -411,38 +486,95 @@ def _render_monte_carlo_tab() -> None:
     st.markdown("##### Paramètres d'échantillonnage")
     col_count, col_seed = st.columns(2)
     with col_count:
-        n_scenarios = st.number_input("Nombre de scénarios", min_value=50, max_value=10000, value=st.session_state.get("mc_n", 500), step=50, key="mc_n")
+        n_scenarios = st.number_input(
+            "Nombre de scénarios",
+            min_value=50,
+            max_value=10000,
+            value=st.session_state.get("mc_n", 500),
+            step=50,
+            key="mc_n",
+        )
     with col_seed:
-        seed = st.number_input("Seed", min_value=0, max_value=999999, value=st.session_state.get("mc_seed", 42), step=1, key="mc_seed")
+        seed = st.number_input(
+            "Seed",
+            min_value=0,
+            max_value=999999,
+            value=st.session_state.get("mc_seed", 42),
+            step=1,
+            key="mc_seed",
+        )
 
-    if st.button("🎲 Lancer Monte-Carlo", type="primary", use_container_width=True, key="run_mc_btn"):
+    if st.button(
+        "🎲 Lancer Monte-Carlo",
+        type="primary",
+        use_container_width=True,
+        key="run_mc_btn",
+    ):
         indicator_settings = IndicatorSettings(use_gpu=use_gpu)
         indicator_bank = IndicatorBank(indicator_settings)
-        runner = SweepRunner(indicator_bank=indicator_bank, max_workers=max_workers, use_multigpu=use_multigpu)
+        runner = SweepRunner(
+            indicator_bank=indicator_bank,
+            max_workers=max_workers,
+            use_multigpu=use_multigpu,
+        )
 
         scenario_params: Dict[str, Any] = {}
         for key, (min_v, max_v) in param_ranges.items():
-            if param_types[key] == 'int':
+            if param_types[key] == "int":
                 values = list(range(int(min_v), int(max_v) + 1))
             else:
                 values = np.linspace(min_v, max_v, num=50).tolist()
             scenario_params[key] = {"values": values}
 
-        for key, value in configured_params.items():
+        # 🔥 FIX CRITIQUE: Ajouter TOUS les paramètres par défaut manquants
+        # Garantir que min_pnl_pct et autres params sont TOUJOURS présents
+        all_param_specs = parameter_specs_for(strategy)
+        for key, spec in all_param_specs.items():
             if key not in scenario_params:
+                # Priorité: configured_params > base_strategy_params > spec default
+                value = configured_params.get(
+                    key,
+                    base_strategy_params.get(
+                        key, spec.get("default") if isinstance(spec, dict) else spec
+                    ),
+                )
                 scenario_params[key] = {"value": value}
+                logger.debug(f"[MC] Param par défaut ajouté: {key} = {value}")
 
-        spec = ScenarioSpec(type="monte_carlo", params=scenario_params, n_scenarios=int(n_scenarios), seed=int(seed))
+        spec = ScenarioSpec(
+            type="monte_carlo",
+            params=scenario_params,
+            n_scenarios=int(n_scenarios),
+            seed=int(seed),
+        )
 
         # Récupérer les données réelles pour le backtest
-        real_data = st.session_state.get("data")
         symbol = st.session_state.get("symbol", "BTC")
         timeframe = st.session_state.get("timeframe", "1h")
+        start_date = st.session_state.get("start_date")
+        end_date = st.session_state.get("end_date")
+
+        # 🔥 FIX CRITIQUE: Recharger les données avec les dates correctes
+        # Les données en session peuvent être obsolètes si l'utilisateur a changé les dates
+        try:
+            real_data = load_ohlcv(symbol, timeframe, start=start_date, end=end_date)
+            if real_data.empty:
+                st.error(
+                    f"⚠️ Aucune donnée disponible pour {symbol}/{timeframe} entre {start_date} et {end_date}"
+                )
+                return
+            # Mettre à jour le cache pour cohérence
+            st.session_state.data = real_data
+        except Exception as e:
+            st.error(f"❌ Erreur chargement données: {e}")
+            return
 
         try:
             # Lancer le Monte-Carlo avec barre de progression
             st.markdown("### 🎲 Exécution du Monte-Carlo")
-            results = _run_monte_carlo_with_progress(runner, spec, real_data, symbol, timeframe, strategy, int(n_scenarios))
+            results = _run_monte_carlo_with_progress(
+                runner, spec, real_data, symbol, timeframe, strategy, int(n_scenarios)
+            )
             st.session_state["monte_carlo_results"] = results
 
             # Afficher les informations de configuration
@@ -450,15 +582,21 @@ def _render_monte_carlo_tab() -> None:
             st.markdown("### ⚙️ Configuration d'exécution")
             col_info1, col_info2, col_info3 = st.columns(3)
             with col_info1:
-                st.metric("Mode Multi-GPU", "Activé ✅" if use_multigpu else "Désactivé ⊘")
+                st.metric(
+                    "Mode Multi-GPU", "Activé ✅" if use_multigpu else "Désactivé ⊘"
+                )
             with col_info2:
                 actual_workers = runner.max_workers if runner.max_workers else "Auto"
                 st.metric("Workers utilisés", str(actual_workers))
             with col_info3:
-                st.metric("Total des résultats", len(results) if isinstance(results, pd.DataFrame) else 0)
+                st.metric(
+                    "Total des résultats",
+                    len(results) if isinstance(results, pd.DataFrame) else 0,
+                )
         except Exception as exc:
             st.error(f"❌ Erreur Monte-Carlo: {exc}")
             import traceback
+
             st.code(traceback.format_exc())
             return
 
@@ -495,7 +633,9 @@ def _render_monte_carlo_tab() -> None:
         )
 
 
-def _run_sweep_with_progress(runner, spec, real_data, symbol, timeframe, strategy, total_combinations):
+def _run_sweep_with_progress(
+    runner, spec, real_data, symbol, timeframe, strategy, total_combinations
+):
     """Lance un sweep avec barre de progression et statistiques de vitesse."""
     import threading
 
@@ -518,7 +658,14 @@ def _run_sweep_with_progress(runner, spec, real_data, symbol, timeframe, strateg
         try:
             shared_state["running"] = True
             shared_state["start_time"] = time.time()
-            results = runner.run_grid(spec, real_data, symbol, timeframe, strategy_name=strategy, reuse_cache=True)
+            results = runner.run_grid(
+                spec,
+                real_data,
+                symbol,
+                timeframe,
+                strategy_name=strategy,
+                reuse_cache=True,
+            )
             shared_state["results"] = results
             shared_state["error"] = None
         except Exception as e:
@@ -553,6 +700,7 @@ def _run_sweep_with_progress(runner, spec, real_data, symbol, timeframe, strateg
             # Vérifier si l'utilisateur a demandé l'arrêt
             if st.session_state.get("run_stop_requested", False):
                 from threadx.optimization.engine import request_global_stop
+
                 request_global_stop()  # Signal au moteur d'arrêter
                 shared_state["should_stop"] = True
                 st.session_state.run_stop_requested = False  # Réinitialiser le flag
@@ -574,13 +722,17 @@ def _run_sweep_with_progress(runner, spec, real_data, symbol, timeframe, strateg
                     eta_str = f"{int(eta_minutes)}m {int(eta_secs)}s"
 
                     # Mise à jour UI (thread principal)
-                    progress_placeholder.progress(progress, text=f"⏳ {current}/{total} ({progress*100:.0f}%)")
+                    progress_placeholder.progress(
+                        progress, text=f"⏳ {current}/{total} ({progress*100:.0f}%)"
+                    )
                     status_placeholder.metric("📊 Status", "Exécution...", delta=None)
                     speed_placeholder.metric("🚀 Vitesse", f"{speed:.1f} tests/sec")
                     eta_placeholder.metric("⏱️ ETA", eta_str)
                     completed_placeholder.metric("📈 Complétés", f"{current}")
 
-            time.sleep(0.1)  # Mettre à jour plus fréquemment (100ms) pour réactivité d'arrêt
+            time.sleep(
+                0.1
+            )  # Mettre à jour plus fréquemment (100ms) pour réactivité d'arrêt
         except:
             pass  # Ignorer erreurs de mise à jour
 
@@ -615,7 +767,9 @@ def _run_sweep_with_progress(runner, spec, real_data, symbol, timeframe, strateg
     return results
 
 
-def _run_monte_carlo_with_progress(runner, spec, real_data, symbol, timeframe, strategy, n_scenarios):
+def _run_monte_carlo_with_progress(
+    runner, spec, real_data, symbol, timeframe, strategy, n_scenarios
+):
     """Lance un Monte-Carlo avec barre de progression et statistiques de vitesse."""
     import threading
 
@@ -638,7 +792,14 @@ def _run_monte_carlo_with_progress(runner, spec, real_data, symbol, timeframe, s
         try:
             shared_state["running"] = True
             shared_state["start_time"] = time.time()
-            results = runner.run_monte_carlo(spec, real_data, symbol, timeframe, strategy_name=strategy, reuse_cache=True)
+            results = runner.run_monte_carlo(
+                spec,
+                real_data,
+                symbol,
+                timeframe,
+                strategy_name=strategy,
+                reuse_cache=True,
+            )
             shared_state["results"] = results
             shared_state["error"] = None
         except Exception as e:
@@ -673,6 +834,7 @@ def _run_monte_carlo_with_progress(runner, spec, real_data, symbol, timeframe, s
             # Vérifier si l'utilisateur a demandé l'arrêt
             if st.session_state.get("run_stop_requested", False):
                 from threadx.optimization.engine import request_global_stop
+
                 request_global_stop()  # Signal au moteur d'arrêter
                 shared_state["should_stop"] = True
                 st.session_state.run_stop_requested = False  # Réinitialiser le flag
@@ -694,13 +856,17 @@ def _run_monte_carlo_with_progress(runner, spec, real_data, symbol, timeframe, s
                     eta_str = f"{int(eta_minutes)}m {int(eta_secs)}s"
 
                     # Mise à jour UI (thread principal)
-                    progress_placeholder.progress(progress, text=f"⏳ {current}/{total} ({progress*100:.0f}%)")
+                    progress_placeholder.progress(
+                        progress, text=f"⏳ {current}/{total} ({progress*100:.0f}%)"
+                    )
                     status_placeholder.metric("📊 Status", "Exécution...", delta=None)
                     speed_placeholder.metric("🚀 Vitesse", f"{speed:.1f} scén/sec")
                     eta_placeholder.metric("⏱️ ETA", eta_str)
                     completed_placeholder.metric("📈 Complétés", f"{current}")
 
-            time.sleep(0.1)  # Mettre à jour plus fréquemment (100ms) pour réactivité d'arrêt
+            time.sleep(
+                0.1
+            )  # Mettre à jour plus fréquemment (100ms) pour réactivité d'arrêt
         except:
             pass  # Ignorer erreurs de mise à jour
 
@@ -751,8 +917,8 @@ def _render_trades_table(trades: List[Dict[str, Any]]) -> None:
     trades_df = pd.DataFrame(trades)
 
     # Formater si colonnes spécifiques existent
-    if 'profit' in trades_df.columns:
-        trades_df['profit'] = trades_df['profit'].apply(lambda x: f"${x:.2f}")
+    if "profit" in trades_df.columns:
+        trades_df["profit"] = trades_df["profit"].apply(lambda x: f"${x:.2f}")
 
     st.dataframe(
         trades_df,
@@ -771,9 +937,9 @@ def _render_trades_table(trades: List[Dict[str, Any]]) -> None:
     )
 
 
-
-
-def _render_monitoring_section(metadata: Optional[Dict[str, Any]], history: Optional[pd.DataFrame]) -> None:
+def _render_monitoring_section(
+    metadata: Optional[Dict[str, Any]], history: Optional[pd.DataFrame]
+) -> None:
     """Affiche les diagnostics GPU/CPU et les courbes de monitoring."""
     has_metadata = isinstance(metadata, dict) and bool(metadata)
     has_history = isinstance(history, pd.DataFrame) and not history.empty
@@ -797,10 +963,19 @@ def _render_monitoring_section(metadata: Optional[Dict[str, Any]], history: Opti
             st.metric("Multi-GPU", "Oui" if multi_gpu else "Non")
         with col_meta2:
             st.metric("Durée (s)", f"{exec_time:.2f}" if exec_time else "N/A")
-            st.metric("GPU 1 moyen (%)", f"{monitor_stats.get('gpu1_mean', 0):.1f}" if monitor_stats else "N/A")
+            st.metric(
+                "GPU 1 moyen (%)",
+                f"{monitor_stats.get('gpu1_mean', 0):.1f}" if monitor_stats else "N/A",
+            )
         with col_meta3:
-            st.metric("GPU 2 moyen (%)", f"{monitor_stats.get('gpu2_mean', 0):.1f}" if monitor_stats else "N/A")
-            st.metric("CPU moyen (%)", f"{monitor_stats.get('cpu_mean', 0):.1f}" if monitor_stats else "N/A")
+            st.metric(
+                "GPU 2 moyen (%)",
+                f"{monitor_stats.get('gpu2_mean', 0):.1f}" if monitor_stats else "N/A",
+            )
+            st.metric(
+                "CPU moyen (%)",
+                f"{monitor_stats.get('cpu_mean', 0):.1f}" if monitor_stats else "N/A",
+            )
 
         with st.expander("Détails GPU", expanded=False):
             st.write("Périphériques :", devices or "Inconnu")
@@ -812,15 +987,29 @@ def _render_monitoring_section(metadata: Optional[Dict[str, Any]], history: Opti
     if has_history:
         df = history.copy()
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df["time"], y=df["cpu"], name="CPU (%)", line=dict(color="#26a69a")))
-        fig.add_trace(go.Scatter(x=df["time"], y=df["gpu1"], name="GPU 1 (%)", line=dict(color="#42a5f5")))
-        fig.add_trace(go.Scatter(x=df["time"], y=df["gpu2"], name="GPU 2 (%)", line=dict(color="#ef5350")))
+        fig.add_trace(
+            go.Scatter(
+                x=df["time"], y=df["cpu"], name="CPU (%)", line=dict(color="#26a69a")
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df["time"], y=df["gpu1"], name="GPU 1 (%)", line=dict(color="#42a5f5")
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df["time"], y=df["gpu2"], name="GPU 2 (%)", line=dict(color="#ef5350")
+            )
+        )
         fig.update_layout(
             height=320,
             template="plotly_dark",
             xaxis_title="Temps (s)",
             yaxis_title="Utilisation (%)",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            legend=dict(
+                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+            ),
             margin=dict(l=0, r=0, t=30, b=0),
         )
         st.plotly_chart(fig, use_container_width=True, key="monitoring_chart")
@@ -837,15 +1026,24 @@ def _render_backtest_tab() -> None:
     st.markdown("### 🚀 Lancer le Backtest")
     col_mode, col_monitor = st.columns(2)
     with col_mode:
-        use_gpu = st.checkbox("Activer le moteur GPU (BacktestEngine)",
-                               value=st.session_state.get("backtest_use_gpu", True),
-                               key="backtest_use_gpu")
+        use_gpu = st.checkbox(
+            "Activer le moteur GPU (BacktestEngine)",
+            value=st.session_state.get("backtest_use_gpu", True),
+            key="backtest_use_gpu",
+        )
     with col_monitor:
-        monitoring = st.checkbox("Monitoring CPU/GPU en temps réel",
-                                 value=st.session_state.get("backtest_monitoring", True),
-                                 key="backtest_monitoring")
+        monitoring = st.checkbox(
+            "Monitoring CPU/GPU en temps réel",
+            value=st.session_state.get("backtest_monitoring", True),
+            key="backtest_monitoring",
+        )
 
-    if st.button("🚀 Exécuter le Backtest", type="primary", use_container_width=True, key="run_backtest_btn"):
+    if st.button(
+        "🚀 Exécuter le Backtest",
+        type="primary",
+        use_container_width=True,
+        key="run_backtest_btn",
+    ):
         with st.spinner("🛠️ Exécution du backtest en cours..."):
             monitor_history = None
             try:
@@ -886,7 +1084,9 @@ def _render_backtest_tab() -> None:
                         monitor_history = monitor.get_history_df()
                         monitor.clear_history()
                 else:
-                    result = run_backtest(df=df, strategy=context["strategy"], params=run_params)
+                    result = run_backtest(
+                        df=df, strategy=context["strategy"], params=run_params
+                    )
 
                     monitor = get_global_monitor()
                     if monitor.is_running():
@@ -895,7 +1095,7 @@ def _render_backtest_tab() -> None:
 
                 st.session_state.backtest_results = result
                 st.session_state.data = df
-                st.session_state['monitor_history'] = monitor_history
+                st.session_state["monitor_history"] = monitor_history
 
                 st.success("✅ Backtest terminé avec succès !")
 
@@ -911,7 +1111,9 @@ def _render_backtest_tab() -> None:
         st.markdown("---")
         st.markdown("### 📊 Résultats du Backtest")
 
-        res_tab1, res_tab2, res_tab3 = st.tabs(["🔍 Graphiques", "📈 Métriques", "👥 Transactions"])
+        res_tab1, res_tab2, res_tab3 = st.tabs(
+            ["🔍 Graphiques", "📈 Métriques", "👥 Transactions"]
+        )
 
         with res_tab1:
             st.markdown("#### Prix & Indicateurs")
@@ -940,7 +1142,9 @@ def _render_optimization_tab() -> None:
     data = st.session_state.get("data")
 
     if not isinstance(data, pd.DataFrame) or data.empty:
-        st.warning("⚠️ Chargez d'abord des données sur la page 'Chargement des Données'.")
+        st.warning(
+            "⚠️ Chargez d'abord des données sur la page 'Chargement des Données'."
+        )
         return
 
     strategies = list_strategies()
@@ -957,32 +1161,48 @@ def _render_optimization_tab() -> None:
         strategy = st.selectbox(
             "Stratégie à optimiser",
             strategies,
-            index=strategies.index(context["strategy"]) if context["strategy"] in strategies else 0,
-            key="sweep_strategy"
+            index=(
+                strategies.index(context["strategy"])
+                if context["strategy"] in strategies
+                else 0
+            ),
+            key="sweep_strategy",
         )
 
     with col_gpu:
-        use_gpu = st.checkbox("Activer GPU",
-                               value=st.session_state.get("sweep_use_gpu", True),
-                               key="sweep_use_gpu")
+        use_gpu = st.checkbox(
+            "Activer GPU",
+            value=st.session_state.get("sweep_use_gpu", True),
+            key="sweep_use_gpu",
+        )
 
     with col_multigpu:
-        use_multigpu = st.checkbox("Multi-GPU (5090+2060)",
-                                    value=st.session_state.get("sweep_use_multigpu", True),
-                                    key="sweep_use_multigpu")
+        use_multigpu = st.checkbox(
+            "Multi-GPU (5090+2060)",
+            value=st.session_state.get("sweep_use_multigpu", True),
+            key="sweep_use_multigpu",
+        )
 
     with col_workers:
         # Récupérer la sélection précédente depuis session_state
         current_mode = st.session_state.get("sweep_workers_mode", "Auto (Dynamique)")
         mode_index = 1 if current_mode == "Manuel" else 0
 
-        workers_mode = st.selectbox("Workers", ["Auto (Dynamique)", "Manuel"],
-                                     index=mode_index,
-                                     key="sweep_workers_mode")
+        workers_mode = st.selectbox(
+            "Workers",
+            ["Auto (Dynamique)", "Manuel"],
+            index=mode_index,
+            key="sweep_workers_mode",
+        )
         if workers_mode == "Manuel":
-            max_workers = st.number_input("Nb Workers", min_value=2, max_value=32,
-                                         value=st.session_state.get("sweep_manual_workers", 8),
-                                         step=1, key="sweep_manual_workers")
+            max_workers = st.number_input(
+                "Nb Workers",
+                min_value=2,
+                max_value=32,
+                value=st.session_state.get("sweep_manual_workers", 8),
+                step=1,
+                key="sweep_manual_workers",
+            )
         else:
             max_workers = None
 
@@ -1008,17 +1228,21 @@ def _render_optimization_tab() -> None:
     param_steps: Dict[str, float] = {}
 
     for key, spec in tunable_specs.items():
-        label = spec.get('label') or key.replace('_', ' ').title()
-        param_type = spec.get('type') or ('float' if isinstance(spec.get('default'), float) else 'int')
+        label = spec.get("label") or key.replace("_", " ").title()
+        param_type = spec.get("type") or (
+            "float" if isinstance(spec.get("default"), float) else "int"
+        )
         param_types[key] = param_type
 
-        default_val = configured_params.get(key, spec.get('default'))
+        default_val = configured_params.get(key, spec.get("default"))
         if default_val is None:
-            default_val = base_strategy_params.get(key, 0 if param_type == 'int' else 0.0)
+            default_val = base_strategy_params.get(
+                key, 0 if param_type == "int" else 0.0
+            )
 
-        min_val = spec.get('min')
-        max_val = spec.get('max')
-        step_val = spec.get('step') or (1 if param_type == 'int' else 0.1)
+        min_val = spec.get("min")
+        max_val = spec.get("max")
+        step_val = spec.get("step") or (1 if param_type == "int" else 0.1)
         opt_min, opt_max = resolve_range(spec)
 
         if min_val is None:
@@ -1026,7 +1250,7 @@ def _render_optimization_tab() -> None:
         if max_val is None:
             max_val = opt_max if opt_max is not None else default_val
         if min_val is None:
-            min_val = 0 if param_type == 'int' else 0.0
+            min_val = 0 if param_type == "int" else 0.0
         if max_val is None or max_val <= min_val:
             max_val = min_val + (step_val * 10)
 
@@ -1036,14 +1260,17 @@ def _render_optimization_tab() -> None:
         col_range, col_sense = st.columns([3, 1])
 
         with col_range:
-            if param_type == 'int':
+            if param_type == "int":
                 min_val = int(round(min_val))
                 max_val = int(round(max_val))
                 step_val = max(1, int(round(step_val)))
 
                 if stored_range:
                     stored_low, stored_high = map(int, stored_range)
-                    default_tuple = (max(min_val, stored_low), min(max_val, stored_high))
+                    default_tuple = (
+                        max(min_val, stored_low),
+                        min(max_val, stored_high),
+                    )
                 else:
                     default_tuple = (min_val, max_val)
 
@@ -1053,7 +1280,7 @@ def _render_optimization_tab() -> None:
                     max_value=max_val,
                     value=(int(default_tuple[0]), int(default_tuple[1])),
                     step=1,
-                    key=f"sweep_range_{key}"
+                    key=f"sweep_range_{key}",
                 )
             else:
                 min_val = float(min_val)
@@ -1063,7 +1290,10 @@ def _render_optimization_tab() -> None:
                 if stored_range:
                     stored_low = float(stored_range[0])
                     stored_high = float(stored_range[1])
-                    default_tuple = (max(min_val, stored_low), min(max_val, stored_high))
+                    default_tuple = (
+                        max(min_val, stored_low),
+                        min(max_val, stored_high),
+                    )
                 else:
                     default_tuple = (min_val, max_val)
 
@@ -1073,14 +1303,14 @@ def _render_optimization_tab() -> None:
                     max_value=max_val,
                     value=(float(default_tuple[0]), float(default_tuple[1])),
                     step=step_val,
-                    key=f"sweep_range_{key}"
+                    key=f"sweep_range_{key}",
                 )
 
         # Sensibilité : Slider de STEP (granularité d'exploration)
         with col_sense:
             range_span = selected_range[1] - selected_range[0]
 
-            if param_type == 'int':
+            if param_type == "int":
                 # Pour entiers : step de 1 à range_span
                 step_input = st.slider(
                     "📊 Step",
@@ -1089,7 +1319,7 @@ def _render_optimization_tab() -> None:
                     value=step_val,
                     step=1,
                     key=f"sweep_step_{key}",
-                    label_visibility="collapsed"
+                    label_visibility="collapsed",
                 )
             else:
                 # Pour floats : step de (step_val/10) à range_span
@@ -1101,7 +1331,7 @@ def _render_optimization_tab() -> None:
                     step=step_val / 100,
                     format="%.4f",
                     key=f"sweep_step_{key}",
-                    label_visibility="collapsed"
+                    label_visibility="collapsed",
                 )
 
         range_preferences[key] = (selected_range[0], selected_range[1])
@@ -1113,9 +1343,11 @@ def _render_optimization_tab() -> None:
         step = step_input
         span = range_max - range_min
 
-        if param_type == 'int':
+        if param_type == "int":
             # For integers: count the values in the range with this step
-            n_combinations = len(range(int(range_min), int(range_max) + 1, max(1, int(step))))
+            n_combinations = len(
+                range(int(range_min), int(range_max) + 1, max(1, int(step)))
+            )
         else:
             # For floats: (span / step)
             n_combinations = span / step if step > 0 else 1
@@ -1130,7 +1362,7 @@ def _render_optimization_tab() -> None:
     total_combinations = 1
     for key, (min_v, max_v) in param_ranges.items():
         step = param_steps[key]
-        if param_types[key] == 'int':
+        if param_types[key] == "int":
             n_values = len(range(int(min_v), int(max_v) + 1, max(1, int(step))))
         else:
             # Utiliser le même calcul que np.linspace pour cohérence
@@ -1139,51 +1371,103 @@ def _render_optimization_tab() -> None:
 
     # Affichage du nombre total de combinaisons
     if total_combinations <= 100000:
-        st.success(f"✅ **{total_combinations} combinaisons** - Grille optimale (rapide)")
+        st.success(
+            f"✅ **{total_combinations} combinaisons** - Grille optimale (rapide)"
+        )
     elif total_combinations <= 1000000:
-        st.info(f"📊 **{total_combinations} combinaisons** - Grille normale (quelques minutes)")
+        st.info(
+            f"📊 **{total_combinations} combinaisons** - Grille normale (quelques minutes)"
+        )
     elif total_combinations <= 3000000:
-        st.warning(f"⚠️ **ATTENTION: {total_combinations} combinaisons** - Peut prendre 30-60 min avec GPU")
+        st.warning(
+            f"⚠️ **ATTENTION: {total_combinations} combinaisons** - Peut prendre 30-60 min avec GPU"
+        )
         st.info("💡 **Note:** Grille large mais faisable avec multi-GPU et 30 workers")
     else:
         st.error(f"❌ **BLOKÉ: {total_combinations} combinaisons trop nombreuses!**")
         st.error("🛑 Cette grille causera un MemoryError (>3M même avec GPU).")
-        st.info("✨ **Solutions:**\n1. Augmentez le step (sensibilité) pour tous les paramètres\n2. Réduisez les plages (min/max)\n3. Utilisez Monte-Carlo à la place")
+        st.info(
+            "✨ **Solutions:**\n1. Augmentez le step (sensibilité) pour tous les paramètres\n2. Réduisez les plages (min/max)\n3. Utilisez Monte-Carlo à la place"
+        )
 
     # Bouton de lancement (désactivé si grille > 3 millions)
     button_disabled = total_combinations > 3000000
-    if st.button("🔬 Lancer le Sweep", type="primary", use_container_width=True, key="run_sweep_btn", disabled=button_disabled):
+    if st.button(
+        "🔬 Lancer le Sweep",
+        type="primary",
+        use_container_width=True,
+        key="run_sweep_btn",
+        disabled=button_disabled,
+    ):
         indicator_settings = IndicatorSettings(use_gpu=use_gpu)
         indicator_bank = IndicatorBank(indicator_settings)
-        runner = SweepRunner(indicator_bank=indicator_bank, max_workers=max_workers, use_multigpu=use_multigpu)
+        runner = SweepRunner(
+            indicator_bank=indicator_bank,
+            max_workers=max_workers,
+            use_multigpu=use_multigpu,
+        )
 
         # Construire les paramètres pour le sweep
         scenario_params: Dict[str, Any] = {}
         for key, (min_v, max_v) in param_ranges.items():
             step = param_steps[key]
-            if param_types[key] == 'int':
+            if param_types[key] == "int":
                 values = list(range(int(min_v), int(max_v) + 1, max(1, int(step))))
             else:
-                values = np.linspace(min_v, max_v, num=max(2, int((max_v - min_v) / step) + 1)).tolist()
+                values = np.linspace(
+                    min_v, max_v, num=max(2, int((max_v - min_v) / step) + 1)
+                ).tolist()
             scenario_params[key] = {"values": values}
 
-        # Ajouter les paramètres non-optimisés
-        for key, value in configured_params.items():
+        # 🔥 FIX CRITIQUE: Ajouter TOUS les paramètres par défaut manquants
+        # Garantir que min_pnl_pct et autres params sont TOUJOURS présents
+        all_param_specs = parameter_specs_for(strategy)
+        for key, spec in all_param_specs.items():
             if key not in scenario_params:
+                # Priorité: configured_params > base_strategy_params > spec default
+                value = configured_params.get(
+                    key,
+                    base_strategy_params.get(
+                        key, spec.get("default") if isinstance(spec, dict) else spec
+                    ),
+                )
                 scenario_params[key] = {"value": value}
+                logger.debug(f"Param par défaut ajouté: {key} = {value}")
 
         # Utiliser run_grid pour explorer toutes les combinaisons
         spec = ScenarioSpec(type="grid", params=scenario_params)
 
         # Récupérer les données réelles pour le backtest
-        real_data = st.session_state.get("data")
         symbol = st.session_state.get("symbol", "BTC")
         timeframe = st.session_state.get("timeframe", "1h")
+        start_date = st.session_state.get("start_date")
+        end_date = st.session_state.get("end_date")
+
+        # 🔥 FIX CRITIQUE: Recharger les données avec les dates correctes
+        # Les données en session peuvent être obsolètes ou couvrir une période différente
+        try:
+            real_data = load_ohlcv(symbol, timeframe, start=start_date, end=end_date)
+            if real_data.empty:
+                st.error(
+                    f"⚠️ Aucune donnée disponible pour {symbol}/{timeframe} entre {start_date} et {end_date}"
+                )
+                return
+            # Mettre à jour le cache pour cohérence
+            st.session_state.data = real_data
+            st.info(
+                f"📊 Données chargées: {len(real_data)} barres "
+                f"({real_data.index[0].date()} → {real_data.index[-1].date()})"
+            )
+        except Exception as e:
+            st.error(f"❌ Erreur chargement données: {e}")
+            return
 
         try:
             # Lancer le sweep avec barre de progression
             st.markdown("### 🚀 Exécution du Sweep")
-            results = _run_sweep_with_progress(runner, spec, real_data, symbol, timeframe, strategy, total_combinations)
+            results = _run_sweep_with_progress(
+                runner, spec, real_data, symbol, timeframe, strategy, total_combinations
+            )
             st.session_state["sweep_results"] = results
 
             # Afficher les informations de configuration
@@ -1191,15 +1475,21 @@ def _render_optimization_tab() -> None:
             st.markdown("### ⚙️ Configuration d'exécution")
             col_info1, col_info2, col_info3 = st.columns(3)
             with col_info1:
-                st.metric("Mode Multi-GPU", "Activé ✅" if use_multigpu else "Désactivé ⊘")
+                st.metric(
+                    "Mode Multi-GPU", "Activé ✅" if use_multigpu else "Désactivé ⊘"
+                )
             with col_info2:
                 actual_workers = runner.max_workers if runner.max_workers else "Auto"
                 st.metric("Workers utilisés", str(actual_workers))
             with col_info3:
-                st.metric("Total des résultats", len(results) if isinstance(results, pd.DataFrame) else 0)
+                st.metric(
+                    "Total des résultats",
+                    len(results) if isinstance(results, pd.DataFrame) else 0,
+                )
         except Exception as exc:
             st.error(f"❌ Erreur Sweep: {exc}")
             import traceback
+
             st.code(traceback.format_exc())
             return
 
@@ -1237,7 +1527,9 @@ def _render_optimization_tab() -> None:
         )
 
 
-def _build_sweep_grid(min_value: float, max_value: float, step: float, value_type: str) -> np.ndarray:
+def _build_sweep_grid(
+    min_value: float, max_value: float, step: float, value_type: str
+) -> np.ndarray:
     """Crée une grille de valeurs pour le sweep en gérant int/float proprement."""
     if max_value < min_value:
         min_value, max_value = max_value, min_value
@@ -1280,8 +1572,8 @@ def _render_trades_table(trades: List[Dict[str, Any]]) -> None:
     trades_df = pd.DataFrame(trades)
 
     # Formater si colonnes spécifiques existent
-    if 'profit' in trades_df.columns:
-        trades_df['profit'] = trades_df['profit'].apply(lambda x: f"${x:.2f}")
+    if "profit" in trades_df.columns:
+        trades_df["profit"] = trades_df["profit"].apply(lambda x: f"${x:.2f}")
 
     st.dataframe(
         trades_df,
@@ -1300,9 +1592,9 @@ def _render_trades_table(trades: List[Dict[str, Any]]) -> None:
     )
 
 
-
-
-def _render_monitoring_section(metadata: Optional[Dict[str, Any]], history: Optional[pd.DataFrame]) -> None:
+def _render_monitoring_section(
+    metadata: Optional[Dict[str, Any]], history: Optional[pd.DataFrame]
+) -> None:
     """Affiche les diagnostics GPU/CPU et les courbes de monitoring."""
     has_metadata = isinstance(metadata, dict) and bool(metadata)
     has_history = isinstance(history, pd.DataFrame) and not history.empty
@@ -1326,10 +1618,19 @@ def _render_monitoring_section(metadata: Optional[Dict[str, Any]], history: Opti
             st.metric("Multi-GPU", "Oui" if multi_gpu else "Non")
         with col_meta2:
             st.metric("Durée (s)", f"{exec_time:.2f}" if exec_time else "N/A")
-            st.metric("GPU 1 moyen (%)", f"{monitor_stats.get('gpu1_mean', 0):.1f}" if monitor_stats else "N/A")
+            st.metric(
+                "GPU 1 moyen (%)",
+                f"{monitor_stats.get('gpu1_mean', 0):.1f}" if monitor_stats else "N/A",
+            )
         with col_meta3:
-            st.metric("GPU 2 moyen (%)", f"{monitor_stats.get('gpu2_mean', 0):.1f}" if monitor_stats else "N/A")
-            st.metric("CPU moyen (%)", f"{monitor_stats.get('cpu_mean', 0):.1f}" if monitor_stats else "N/A")
+            st.metric(
+                "GPU 2 moyen (%)",
+                f"{monitor_stats.get('gpu2_mean', 0):.1f}" if monitor_stats else "N/A",
+            )
+            st.metric(
+                "CPU moyen (%)",
+                f"{monitor_stats.get('cpu_mean', 0):.1f}" if monitor_stats else "N/A",
+            )
 
         with st.expander("Détails GPU", expanded=False):
             st.write("Périphériques :", devices or "Inconnu")
@@ -1341,15 +1642,29 @@ def _render_monitoring_section(metadata: Optional[Dict[str, Any]], history: Opti
     if has_history:
         df = history.copy()
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df["time"], y=df["cpu"], name="CPU (%)", line=dict(color="#26a69a")))
-        fig.add_trace(go.Scatter(x=df["time"], y=df["gpu1"], name="GPU 1 (%)", line=dict(color="#42a5f5")))
-        fig.add_trace(go.Scatter(x=df["time"], y=df["gpu2"], name="GPU 2 (%)", line=dict(color="#ef5350")))
+        fig.add_trace(
+            go.Scatter(
+                x=df["time"], y=df["cpu"], name="CPU (%)", line=dict(color="#26a69a")
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df["time"], y=df["gpu1"], name="GPU 1 (%)", line=dict(color="#42a5f5")
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df["time"], y=df["gpu2"], name="GPU 2 (%)", line=dict(color="#ef5350")
+            )
+        )
         fig.update_layout(
             height=320,
             template="plotly_dark",
             xaxis_title="Temps (s)",
             yaxis_title="Utilisation (%)",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            legend=dict(
+                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+            ),
             margin=dict(l=0, r=0, t=30, b=0),
         )
         st.plotly_chart(fig, use_container_width=True, key="monitoring_chart")
@@ -1370,10 +1685,13 @@ def main() -> None:
 
     # Global Stop control in sidebar
     with st.sidebar:
-        if st.button("⏹ Arrêter l'exécution", use_container_width=True, key="global_stop_btn"):
+        if st.button(
+            "⏹ Arrêter l'exécution", use_container_width=True, key="global_stop_btn"
+        ):
             st.session_state.run_stop_requested = True
             try:
                 from threadx.optimization.engine import request_global_stop
+
                 request_global_stop()
             except Exception:
                 pass

@@ -27,6 +27,8 @@ import time
 import threading
 import json
 import hashlib
+import signal
+import atexit
 from datetime import datetime, timedelta
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -36,7 +38,10 @@ import numpy as np
 import pandas as pd
 
 from threadx.utils.log import get_logger
-from threadx.config.settings import S
+from threadx.config import get_settings
+
+S = get_settings()  # Stub settings instance
+
 from .device_manager import (
     is_available,
     list_devices,
@@ -59,6 +64,15 @@ if CUPY_AVAILABLE:
     import cupy as cp
 
 logger = get_logger(__name__)
+
+
+# === Constantes de Configuration ===
+
+# 🆕 Taille minimale de chunk pour GPU (optimisation saturation VRAM)
+MIN_CHUNK_SIZE_GPU = 50_000  # Chunks < 50k → warning sous-utilisation
+
+# Timeout par défaut pour operations GPU
+DEFAULT_GPU_TIMEOUT = 300  # 5 minutes
 
 
 # === Exceptions Spécialisées ===
@@ -342,6 +356,14 @@ class MultiGPUManager:
                     end_idx=end_idx,
                     expected_size=chunk_size,
                 )
+
+                # 🆕 Validation taille chunk pour GPU
+                if device_name != "cpu" and chunk_size < MIN_CHUNK_SIZE_GPU:
+                    logger.warning(
+                        f"⚠️  Chunk GPU trop petit: {device_name} = {chunk_size:,} "
+                        f"(min recommandé: {MIN_CHUNK_SIZE_GPU:,}). "
+                        f"Risque sous-utilisation VRAM."
+                    )
 
                 chunks.append(chunk)
                 current_idx = end_idx
@@ -699,18 +721,19 @@ class MultiGPUManager:
             logger.warning(f"Erreur synchronisation {method}: {e}")
 
     def profile_auto_balance(
-        self, sample_size: int = 200_000, runs: int = 3
+        self, sample_size: int = 200_000, warmup: int = 2, runs: int = 3
     ) -> Dict[str, float]:
         """
-        Profile automatique pour optimiser la balance des devices.
+        Profile automatique pour optimiser la balance des devices hétérogènes.
 
         Exécute des benchmarks sur chaque device disponible et calcule
-        les ratios optimaux basés sur le throughput mesuré.
+        les ratios optimaux basés sur le throughput mesuré. Méthode inspirée
+        des techniques de profiling hétérogène pour RTX 5090 + RTX 2060.
 
         Args:
             sample_size: Taille des échantillons de test
-            warmup: Nombre de runs de warmup (non comptés)
-            runs: Nombre de runs de mesure
+            warmup: Nombre de runs de warmup (non comptés, défaut: 2)
+            runs: Nombre de runs de mesure (défaut: 3)
 
         Returns:
             Nouveaux ratios normalisés {"device": ratio}
@@ -721,7 +744,8 @@ class MultiGPUManager:
             >>> manager.set_balance(ratios)
         """
         logger.info(
-            f"Profiling auto-balance: {sample_size} échantillons, " f"{runs} runs"
+            f"Profiling auto-balance hétérogène: {sample_size} échantillons, "
+            f"{warmup} warmup + {runs} runs"
         )
 
         # Données de test: opération vectorielle représentative
@@ -732,6 +756,7 @@ class MultiGPUManager:
             return x.sum(axis=1) + (x * x).mean(axis=1)
 
         device_throughputs = {}
+        device_memory_efficiency = {}
 
         # Test de chaque device individuellement
         for device in self.available_devices:
@@ -746,41 +771,57 @@ class MultiGPUManager:
             self.device_balance = temp_balance
 
             try:
-                # Warmup
-                for _ in range(warmup):
+                # Warmup pour stabiliser GPU (important pour profiling précis)
+                for w in range(warmup):
                     _ = self.distribute_workload(
-                        test_data[:1000], benchmark_func, seed=42
+                        test_data[:1000], benchmark_func, seed=42 + w
                     )
 
-                # Mesures
+                # Mesures avec stats mémoire
                 times = []
+                mem_usages = []
                 for run in range(runs):
+                    # Mémoire avant
+                    mem_before = device.memory_used_pct if device.device_id >= 0 else 0
+
                     start_time = time.time()
                     _ = self.distribute_workload(
-                        test_data, benchmark_func, seed=42 + run
+                        test_data, benchmark_func, seed=42 + warmup + run
                     )
                     elapsed = time.time() - start_time
                     times.append(elapsed)
 
+                    # Mémoire après
+                    mem_after = device.memory_used_pct if device.device_id >= 0 else 0
+                    mem_usages.append(mem_after - mem_before)
+
                 # Calcul throughput (échantillons/seconde)
                 avg_time = np.mean(times)
+                std_time = np.std(times)
                 throughput = sample_size / avg_time
                 device_throughputs[device.name] = throughput
 
+                # Efficacité mémoire (throughput / memory_used)
+                avg_mem_usage = np.mean(mem_usages) if mem_usages else 1.0
+                mem_efficiency = throughput / max(avg_mem_usage, 0.01)
+                device_memory_efficiency[device.name] = mem_efficiency
+
                 logger.info(
                     f"Device {device.name}: {throughput:.0f} échantillons/s "
-                    f"(avg {avg_time:.3f}s)"
+                    f"(avg {avg_time:.3f}s ±{std_time:.3f}s), "
+                    f"mem_efficiency: {mem_efficiency:.0f}"
                 )
 
             except Exception as e:
                 logger.warning(f"Erreur profiling {device.name}: {e}")
                 device_throughputs[device.name] = 0.0
+                device_memory_efficiency[device.name] = 0.0
 
             finally:
                 # Restauration balance
                 self.device_balance = old_balance
 
-        # Calcul ratios optimaux basés sur throughput
+        # Calcul ratios optimaux basés sur throughput (avec pondération mémoire)
         if not device_throughputs or all(t == 0 for t in device_throughputs.values()):
             logger.warning("Profiling échoué, conservation balance actuelle")
             return self.device_balance.copy()
@@ -793,14 +834,15 @@ class MultiGPUManager:
             if throughput > 0
         }
 
-        # Log des résultats
-        logger.info("Profiling terminé:")
+        # Log des résultats détaillés
+        logger.info("Profiling hétérogène terminé:")
         for device, ratio in optimal_ratios.items():
             old_ratio = self.device_balance.get(device, 0.0)
             throughput = device_throughputs[device]
+            mem_eff = device_memory_efficiency.get(device, 0.0)
             logger.info(
                 f"  {device}: {ratio:.1%} (était {old_ratio:.1%}), "
-                f"{throughput:.0f} échantillons/s"
+                f"{throughput:.0f} échant./s, mem_eff: {mem_eff:.0f}"
             )
 
         return optimal_ratios
@@ -866,4 +908,52 @@ def get_default_manager() -> MultiGPUManager:
     return _default_manager
 
 
+def shutdown_default_manager() -> None:
+    """
+    Ferme proprement le gestionnaire multi-GPU global.
 
+    Libère les CUDA Streams et resources GPU.
+    Appeler avant la fin du programme pour éviter que les streams bloquent l'arrêt.
+
+    Example:
+        >>> from threadx.gpu.multi_gpu import shutdown_default_manager
+        >>> # ... utilisation GPU ...
+        >>> shutdown_default_manager()  # Avant sys.exit() ou fin du script
+    """
+    global _default_manager
+
+    if _default_manager is not None:
+        try:
+            with _default_manager._lock:
+                for stream in _default_manager._device_streams.values():
+                    if hasattr(stream, "close"):
+                        stream.close()
+                _default_manager._device_streams.clear()
+            logger.info("✅ Gestionnaire multi-GPU arrêté proprement")
+        except Exception as e:
+            logger.warning(f"Erreur lors du shutdown GPU: {e}")
+        finally:
+            _default_manager = None
+
+
+# === Gestion propre de l'arrêt ===
+
+
+def _signal_handler(signum, frame):
+    """Handler pour SIGINT/SIGTERM - Ferme proprement les ressources GPU."""
+    logger.info(f"⚠️ Signal {signum} reçu - Nettoyage GPU...")
+    shutdown_default_manager()
+
+
+# Enregistrer les signal handlers (échoue silencieusement si impossible, ex: Streamlit)
+try:
+    signal.signal(signal.SIGINT, _signal_handler)
+    signal.signal(signal.SIGTERM, _signal_handler)
+    logger.info("🔧 Handlers de signal GPU enregistrés (SIGINT, SIGTERM)")
+except (ValueError, RuntimeError) as e:
+    # Normal dans Streamlit, threads secondaires, ou environnements non-interactifs
+    logger.debug(f"⚠️ Signal handlers non disponibles (normal pour Streamlit): {e}")
+
+# Enregistrer le shutdown à la sortie normale (fonctionne partout)
+atexit.register(shutdown_default_manager)
+logger.info("🔧 Handler atexit enregistré pour nettoyage GPU")

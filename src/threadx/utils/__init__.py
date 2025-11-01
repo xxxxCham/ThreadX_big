@@ -61,7 +61,7 @@ try:
     from .xp import (
         xp,
         gpu_available,
-        get_gpu_devices,
+        
         to_device,
         to_host,
         device_synchronize,

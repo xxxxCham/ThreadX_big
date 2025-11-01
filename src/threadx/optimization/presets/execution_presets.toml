@@ -1,0 +1,97 @@
+# ThreadX - Presets d'Exécution pour Optimisation
+# ===============================================
+#
+# Configurations pré-définies pour les paramètres d'exécution des sweeps.
+#
+# Date: 2025-10-31
+
+# ==========================================================================
+# PRESETS WORKERS (Parallélisation)
+# ==========================================================================
+
+# [workers.auto]
+# Note: Auto-detection is default behavior when no preset is specified
+# max_workers will be calculated dynamically based on CPU/GPU/RAM
+
+[workers.conservative]
+max_workers = 4
+description = "Configuration conservative (4 workers)"
+use_case = "Petits datasets, RAM limitée"
+
+[workers.balanced]
+max_workers = 8
+description = "Configuration équilibrée (8 workers)"
+use_case = "Configuration générale équilibrée"
+
+[workers.aggressive]
+max_workers = 16
+description = "Configuration aggressive (16 workers)"
+use_case = "Gros datasets, beaucoup de RAM"
+
+[workers.manuel_30]
+max_workers = 30
+description = "🆕 Preset Manuel 30 workers pour sweeps intensifs"
+use_case = "Multi-GPU haute performance (RTX 5090 + RTX 2060), optimisation paramétrique intensive"
+batch_size = 2000
+gpu_utilization_target = 0.85
+cpu_utilization_target = 0.90
+ram_utilization_target = 0.80
+
+[workers.extreme]
+max_workers = 50
+description = "Configuration extrême (50 workers)"
+use_case = "Multi-GPU très puissant, énormes datasets"
+
+# ==========================================================================
+# PRESETS BATCH SIZE
+# ==========================================================================
+
+[batch.small]
+batch_size = 500
+description = "Petits batchs pour updates fréquentes"
+
+[batch.medium]
+batch_size = 1000
+description = "Batchs moyens (défaut)"
+
+[batch.large]
+batch_size = 2000
+description = "Gros batchs pour performance maximale"
+
+[batch.manuel_30_optimized]
+batch_size = 2000
+description = "Optimisé pour preset manuel_30"
+
+# ==========================================================================
+# PRESETS GPU UTILIZATION
+# ==========================================================================
+
+[gpu.conservative]
+target_utilization = 0.60
+description = "Utilisation GPU conservative"
+
+[gpu.balanced]
+target_utilization = 0.75
+description = "Utilisation GPU équilibrée"
+
+[gpu.aggressive]
+target_utilization = 0.85
+description = "Utilisation GPU aggressive (recommandé)"
+
+[gpu.maximum]
+target_utilization = 0.95
+description = "Utilisation GPU maximale (risque OOM)"
+
+# ==========================================================================
+# PRESETS COMBINED (Workers + Batch + GPU)
+# ==========================================================================
+
+[combined.manuel_30_full_power]
+max_workers = 30
+batch_size = 2000
+gpu_target = 0.85
+cpu_target = 0.90
+ram_target = 0.80
+description = "🔥 Preset complet 30 workers avec optimisation GPU/CPU/RAM"
+use_case = "RTX 5090 + RTX 2060, sweeps paramétriques intensifs (>10k combos)"
+estimated_speedup = "5-10x vs défaut"

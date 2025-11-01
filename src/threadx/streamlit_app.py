@@ -61,34 +61,40 @@ st.markdown(
 PAGE_TITLES = {"config": "📊 Chargement des Données", "backtest": "⚡ Optimisation"}
 PAGE_RENDERERS = {"config": config_page_main, "backtest": backtest_page_main}
 
+
 def init_session() -> None:
     """
     Initialise la session avec les réglages par défaut.
-    Force l'application des paramètres BTC préréglés à chaque ouverture.
+    Force l'application des paramètres BTC préréglés UNIQUEMENT à la première ouverture.
+    Les modifications de l'utilisateur sont conservées entre les pages.
     """
+    # Vérifier si c'est la première initialisation
+    if "session_initialized" not in st.session_state:
+        st.session_state.session_initialized = False
+
     defaults = {
         "page": "config",
         "symbol": "BTCUSDC",  # Bitcoin préréglé - OBLIGATOIRE
-        "timeframe": "15m",   # 15 minutes préréglé - OBLIGATOIRE
-        "start_date": date(2024, 12, 1),      # 1er décembre 2024 - OBLIGATOIRE
-        "end_date": date(2025, 1, 31),        # 31 janvier 2025 - OBLIGATOIRE
-        "strategy": "Bollinger_Breakout",     # Stratégie Bollinger+ATR préréglée
+        "timeframe": "15m",  # 15 minutes préréglé - OBLIGATOIRE
+        "start_date": date(2024, 12, 1),  # 1er décembre 2024 - OBLIGATOIRE
+        "end_date": date(2025, 1, 31),  # 31 janvier 2025 - OBLIGATOIRE
+        "strategy": "Bollinger_Breakout",  # Stratégie Bollinger+ATR préréglée
         "indicators": {},
         # Paramètres de stratégie préréglés selon le tableau classique
         "strategy_params": {
-            "bb_period": 20,           # Milieu de la plage 10→50
-            "bb_std": 2.0,             # Milieu de la plage 1.5→3.0
-            "entry_z": 1.0,            # Seuil Z-score standard
-            "entry_logic": "AND",      # Logique d'entrée standard
-            "atr_period": 14,          # Milieu de la plage 7→21 (classique)
-            "atr_multiplier": 1.5,     # Milieu de la plage 1.0→3.0
-            "trailing_stop": True,     # Activer trailing stop
-            "risk_per_trade": 0.02,    # 2% de risque par trade (préréglé)
-            "min_pnl_pct": 0.01,       # Filtre minimum 0.01%
-            "leverage": 1.0,           # Sans levier
-            "max_hold_bars": 72,       # 3 jours en 1h (72 barres de 1h)
-            "spacing_bars": 6,         # 6 barres minimum entre trades
-            "trend_period": 0,         # Sans filtre tendance EMA
+            "bb_period": 20,  # Milieu de la plage 10→50
+            "bb_std": 2.0,  # Milieu de la plage 1.5→3.0
+            "entry_z": 1.0,  # Seuil Z-score standard
+            "entry_logic": "AND",  # Logique d'entrée standard
+            "atr_period": 14,  # Milieu de la plage 7→21 (classique)
+            "atr_multiplier": 1.5,  # Milieu de la plage 1.0→3.0
+            "trailing_stop": True,  # Activer trailing stop
+            "risk_per_trade": 0.02,  # 2% de risque par trade (préréglé)
+            "min_pnl_pct": 0.01,  # Filtre minimum 0.01%
+            "leverage": 1.0,  # Sans levier
+            "max_hold_bars": 72,  # 3 jours en 1h (72 barres de 1h)
+            "spacing_bars": 6,  # 6 barres minimum entre trades
+            "trend_period": 0,  # Sans filtre tendance EMA
         },
         "data": None,
         "backtest_results": None,
@@ -101,14 +107,21 @@ def init_session() -> None:
         if key not in st.session_state:
             st.session_state[key] = value
 
-    # FORCER les paramètres BTC/15m/1dec-31jan à chaque ouverture (ne jamais les laisser changer)
-    st.session_state.symbol = "BTCUSDC"
-    st.session_state.timeframe = "15m"
-    st.session_state.start_date = date(2024, 12, 1)
-    st.session_state.end_date = date(2025, 1, 31)
+    # FORCER les paramètres par défaut UNIQUEMENT lors de la première initialisation
+    # Après, les modifications utilisateur sont conservées
+    if not st.session_state.session_initialized:
+        st.session_state.symbol = "BTCUSDC"
+        st.session_state.timeframe = "15m"
+        st.session_state.start_date = date(2024, 12, 1)
+        st.session_state.end_date = date(2025, 1, 31)
 
-    # FORCER le risque par trade à 2% (0.02) - ne jamais le laisser à 0.01
-    st.session_state.strategy_params["risk_per_trade"] = 0.02
+        # FORCER le risque par trade à 2% (0.02) - ne jamais le laisser à 0.01
+        if "strategy_params" in st.session_state:
+            st.session_state.strategy_params["risk_per_trade"] = 0.02
+
+        # Marquer comme initialisé pour ne plus forcer les valeurs
+        st.session_state.session_initialized = True
+
 
 def render_sidebar() -> None:
     with st.sidebar:
@@ -119,7 +132,13 @@ def render_sidebar() -> None:
         labels = list(PAGE_TITLES.values())
         current_key = st.session_state.get("page", "config")
         current_label = PAGE_TITLES.get(current_key, labels[0])
-        selected_label = st.radio("Navigation", labels, index=labels.index(current_label), key="nav_radio", label_visibility="collapsed")
+        selected_label = st.radio(
+            "Navigation",
+            labels,
+            index=labels.index(current_label),
+            key="nav_radio",
+            label_visibility="collapsed",
+        )
         selected_key = next(k for k, v in PAGE_TITLES.items() if v == selected_label)
         if selected_key != current_key:
             st.session_state.page = selected_key
@@ -138,12 +157,14 @@ def render_sidebar() -> None:
         st.markdown("---")
         st.caption("**ThreadX v2.0** | © 2025")
 
+
 def main() -> None:
     init_session()
     render_sidebar()
     page_key = st.session_state.get("page", "config")
     renderer = PAGE_RENDERERS.get(page_key, config_page_main)
     renderer()
+
 
 if __name__ == "__main__":
     main()

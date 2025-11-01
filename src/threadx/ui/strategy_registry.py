@@ -13,117 +13,149 @@ REGISTRY: Dict[str, Dict[str, Any]] = {
     "Bollinger_Breakout": {
         "indicators": {
             "bollinger": {
-                "window": {
+                "period": {
                     "default": 20,
                     "min": 5,
                     "max": 120,
                     "step": 1,
                     "type": "int",
-                    "label": "Période SMA",
+                    "label": "Période Bollinger",
                 },
                 "std": {
                     "default": 2.0,
                     "min": 1.0,
                     "max": 4.0,
-                    "step": 0.05,
+                    "step": 0.1,
                     "type": "float",
                     "label": "Sigma (σ)",
-                    "opt_range": (1.5, 3.5),
-                },
-                "bandwidth_threshold": {
-                    "default": 0.04,
-                    "min": 0.01,
-                    "max": 0.2,
-                    "step": 0.005,
-                    "type": "float",
-                    "label": "Seuil largeur bande (ratio)",
-                    "opt_range": (0.02, 0.12),
-                },
-                "price_gap_pct": {
-                    "default": 0.5,
-                    "min": 0.1,
-                    "max": 5.0,
-                    "step": 0.05,
-                    "type": "float",
-                    "label": "Écart médiane (%)",
-                    "opt_range": (0.2, 2.5),
-                },
-                "signal_window": {
-                    "default": 5,
-                    "min": 1,
-                    "max": 30,
-                    "step": 1,
-                    "type": "int",
-                    "label": "Lissage signal (barres)",
-                    "opt_range": (2, 15),
                 },
             },
-            "volatilité": {
-                "bandwidth_ma": {
-                    "default": 10,
-                    "min": 1,
-                    "max": 60,
+            "atr": {
+                "period": {
+                    "default": 14,
+                    "min": 5,
+                    "max": 50,
                     "step": 1,
                     "type": "int",
-                    "label": "Lissage largeur bandes",
+                    "label": "Période ATR",
                 },
             },
         },
         "params": {
-            "window": {
+            "bb_period": {
                 "default": 20,
-                "min": 5,
-                "max": 120,
-                "step": 1,
+                "min": 10,
+                "max": 50,
+                "step": 10,  # Augmenté pour réduire combinaisons (ajustable via slider sensibilité)
                 "type": "int",
-                "label": "Période Bollinger",
-                "opt_range": (10, 60),
+                "label": "Période Bollinger (SMA)",
+                "opt_range": (10, 50),  # Plage classique du tableau : 10 → 50
             },
-            "std": {
+            "bb_std": {
                 "default": 2.0,
-                "min": 1.0,
-                "max": 4.0,
-                "step": 0.05,
+                "min": 1.5,
+                "max": 3.0,
+                "step": 0.5,  # Augmenté pour réduire combinaisons (ajustable via slider sensibilité)
                 "type": "float",
-                "label": "Sigma Bollinger",
-                "opt_range": (1.5, 3.5),
+                "label": "Sigma Bollinger (K)",
+                "opt_range": (1.5, 3.0),  # Plage classique du tableau : 1.5 → 3.0
             },
-            "bandwidth_threshold": {
-                "default": 0.04,
-                "min": 0.0,
-                "max": 0.2,
-                "step": 0.005,
+            "entry_z": {
+                "default": 1.0,
+                "min": 0.5,
+                "max": 2.5,
+                "step": 0.25,  # Augmenté pour réduire combinaisons (ajustable via slider sensibilité)
                 "type": "float",
-                "label": "Seuil largeur (ratio)",
-                "opt_range": (0.02, 0.12),
+                "label": "Seuil Z-score entrée",
+                "opt_range": (0.8, 2.0),
             },
-            "price_gap_pct": {
-                "default": 0.5,
-                "min": 0.0,
-                "max": 5.0,
-                "step": 0.05,
-                "type": "float",
-                "label": "Écart médiane (%)",
-                "opt_range": (0.2, 2.5),
+            "entry_logic": {
+                "default": "AND",
+                "options": ["AND", "OR"],
+                "type": "select",
+                "label": "Logique d'entrée (AND/OR)",
+                "tunable": False,  # Non-optimisable (enum, pas de plage numérique)
             },
-            "signal_window": {
-                "default": 5,
-                "min": 1,
-                "max": 30,
-                "step": 1,
+            "atr_period": {
+                "default": 14,
+                "min": 7,
+                "max": 21,
+                "step": 4,  # Augmenté pour réduire combinaisons (ajustable via slider sensibilité)
                 "type": "int",
-                "label": "Lissage signal (barres)",
-                "opt_range": (2, 15),
+                "label": "Période ATR",
+                "opt_range": (7, 21),  # Plage classique du tableau : 7 → 21
             },
-            "confirm_breakout": {
+            "atr_multiplier": {
+                "default": 1.5,
+                "min": 1.0,
+                "max": 3.0,
+                "step": 0.5,  # Augmenté pour réduire combinaisons (ajustable via slider sensibilité)
+                "type": "float",
+                "label": "Multiplicateur ATR pour stops",
+                "opt_range": (1.0, 3.0),  # Plage classique : 1.0 → 3.0 (pas de 0.25)
+            },
+            "trailing_stop": {
                 "default": True,
                 "type": "bool",
-                "label": "Confirmer par cassure opposée",
+                "label": "Activer Trailing Stop ATR",
+                "tunable": False,  # Non-optimisable (booléen, pas de plage)
             },
-            "use_bandwidth_filter": {
-                "default": True,
-                "type": "bool",
-                "label": "Activer filtre largeur",
+            "risk_per_trade": {
+                "default": 0.02,
+                "min": 0.005,
+                "max": 0.1,
+                "step": 0.005,  # Augmenté pour réduire combinaisons (ajustable via slider sensibilité)
+                "type": "float",
+                "label": "Risque par Trade (fraction du capital)",
+                "opt_range": (
+                    0.015,
+                    0.03,
+                ),  # Plage d'optimisation : 1.5% → 3% (pas de 0.25%)
+            },
+            "min_pnl_pct": {
+                "default": 0.0,  # FIX: 0.0 = désactivé (0.01% filtrait TOUS les trades)
+                "min": 0.0,
+                "max": 0.5,
+                "step": 0.02,  # Augmenté pour réduire combinaisons (ajustable via slider sensibilité)
+                "type": "float",
+                "label": "Filtre PnL Minimum (%)",
+                "opt_range": (0.0, 0.05),  # Plage d'optimisation : 0% → 5%
+            },
+            "leverage": {
+                "default": 1.0,
+                "min": 1.0,
+                "max": 150.0,
+                "step": 1.0,
+                "type": "float",
+                "label": "Levier (1.0 = sans levier, OPTIONNEL)",
+                "tunable": False,  # Non optimisable par défaut
+            },
+            "max_hold_bars": {
+                "default": 72,
+                "min": 10,
+                "max": 500,
+                "step": 40,  # Augmenté pour réduire combinaisons (ajustable via slider sensibilité)
+                "type": "int",
+                "label": "Durée Maximale en Position (barres)",
+                "opt_range": (30, 200),
+            },
+            "spacing_bars": {
+                "default": 6,
+                "min": 1,
+                "max": 50,
+                "step": 5,  # Augmenté pour réduire combinaisons (ajustable via slider sensibilité)
+                "type": "int",
+                "label": "Espacement Minimum entre Trades",
+                "opt_range": (3, 20),
+            },
+            "trend_period": {
+                "default": 0,
+                "min": 0,
+                "max": 100,
+                "step": 10,  # Augmenté pour réduire combinaisons (ajustable via slider sensibilité)
+                "type": "int",
+                "label": "Période EMA Filtre Tendance (0 = désactivé)",
+                "opt_range": (0, 50),  # Plage d'optimisation : 0 (désactivé) → 50
             },
         },
     },
@@ -334,7 +366,9 @@ def parameter_specs_for(strategy: str) -> Dict[str, Any]:
     return REGISTRY[strategy].get("params", {})
 
 
-def _extract_indicator_defaults(specs: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+def _extract_indicator_defaults(
+    specs: Dict[str, Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
     defaults: Dict[str, Dict[str, Any]] = {}
     for indicator, params in specs.items():
         defaults[indicator] = {}
@@ -371,14 +405,23 @@ def tunable_parameters_for(strategy: str) -> Dict[str, Dict[str, Any]]:
         if isinstance(raw_spec, dict):
             param_type = raw_spec.get("type")
             default = raw_spec.get("default")
+            # Exclure les paramètres non-optimisables (tunable: False)
+            if raw_spec.get("tunable") is False:
+                continue
         else:
             default = raw_spec
-            param_type = "float" if isinstance(raw_spec, float) else "int" if isinstance(raw_spec, int) else None
+            param_type = (
+                "float"
+                if isinstance(raw_spec, float)
+                else "int" if isinstance(raw_spec, int) else None
+            )
             raw_spec = {"default": raw_spec}
 
         if param_type in {"int", "float"} or isinstance(default, (int, float)):
             spec = dict(raw_spec)
-            spec.setdefault("type", param_type or ("float" if isinstance(default, float) else "int"))
+            spec.setdefault(
+                "type", param_type or ("float" if isinstance(default, float) else "int")
+            )
             tunables[key] = spec
 
     return tunables
@@ -390,7 +433,3 @@ def resolve_range(spec: Dict[str, Any]) -> Tuple[Any, Any]:
     if isinstance(opt_range, (list, tuple)) and len(opt_range) == 2:
         return opt_range[0], opt_range[1]
     return spec.get("min", spec.get("default")), spec.get("max", spec.get("default"))
-
-
-
-

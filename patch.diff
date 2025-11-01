@@ -1,0 +1,17 @@
+*** Begin Patch
+*** Update File: src\\threadx\\streamlit_app.py
+@@
+-        if st.button("? Valider Datasets", use_container_width=True):
+-            report = validate_dataset(str(DATA_DIR))
+-            if report.get("ok"):
+-                st.success("? Datasets valides!")
+-            else:
+-                st.error("? Erreur de validation des datasets")
++        if st.button("? Valider Datasets", use_container_width=True):
++            report = validate_dataset(str(DATA_DIR))
++            if report.get("ok"):
++                st.success("✅ Datasets valides!")
++            else:
++                errors = report.get("errors", ["Erreur inconnue"])
++                st.error(f"❌ Erreur: {'; '.join(errors)}")
+*** End Patch

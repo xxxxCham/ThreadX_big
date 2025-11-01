@@ -32,6 +32,7 @@ pycryptodome==3.23.0  # Chiffrement pour API sécurisées
 
 # Optimisation and GPU Dependencies
 cupy-cuda12x==13.6.0  # Calculs GPU pour indicateurs rapides
+nvidia-ml-py3>=7.352.0  # GPU monitoring (pynvml)
 torch==2.5.1+cu121  # Support ML/GPU optionnel
 torchvision==0.20.1+cu121  # Dépendance Torch pour vision
 torchaudio==2.5.1+cu121  # Dépendance Torch pour audio

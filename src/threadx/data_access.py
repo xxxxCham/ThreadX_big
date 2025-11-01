@@ -195,8 +195,13 @@ def load_ohlcv(symbol: str, timeframe: str, start=None, end=None) -> pd.DataFram
 
     # Filtrage par dates
     if start is not None:
-        df = df[df.index >= pd.to_datetime(start, utc=True)]
+        # Convertir date/datetime en Timestamp UTC au début du jour
+        start_dt = pd.to_datetime(start).tz_localize(None).tz_localize('UTC')
+        df = df[df.index >= start_dt]
     if end is not None:
-        df = df[df.index <= pd.to_datetime(end, utc=True)]
+        # Convertir date/datetime en Timestamp UTC à la fin du jour
+        end_dt = pd.to_datetime(end).tz_localize(None).tz_localize('UTC')
+        end_dt = end_dt + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+        df = df[df.index <= end_dt]
 
     return df

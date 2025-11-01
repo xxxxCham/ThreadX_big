@@ -32,15 +32,25 @@ logger = logging.getLogger(__name__)
 # Import GPU monitoring
 try:
     import cupy as cp
+
     CUPY_AVAILABLE = True
 except ImportError:
     CUPY_AVAILABLE = False
 
 try:
     from threadx.utils.gpu.device_manager import list_devices, get_device_by_name
+
     GPU_MANAGER_AVAILABLE = True
 except ImportError:
     GPU_MANAGER_AVAILABLE = False
+
+# Import NVIDIA Management Library pour vraies métriques GPU
+try:
+    import pynvml
+
+    PYNVML_AVAILABLE = True
+except ImportError:
+    PYNVML_AVAILABLE = False
 
 
 @dataclass
@@ -54,16 +64,25 @@ class SystemSnapshot:
         memory_percent: Utilisation mémoire RAM (0-100)
         gpu1_percent: Utilisation GPU 1 (0-100)
         gpu1_memory_percent: Mémoire GPU 1 (0-100)
+        gpu1_temperature: Température GPU 1 (°C)
+        gpu1_power_usage: Consommation GPU 1 (W)
         gpu2_percent: Utilisation GPU 2 (0-100)
         gpu2_memory_percent: Mémoire GPU 2 (0-100)
+        gpu2_temperature: Température GPU 2 (°C)
+        gpu2_power_usage: Consommation GPU 2 (W)
     """
+
     timestamp: float
     cpu_percent: float = 0.0
     memory_percent: float = 0.0
     gpu1_percent: float = 0.0
     gpu1_memory_percent: float = 0.0
+    gpu1_temperature: float = 0.0
+    gpu1_power_usage: float = 0.0
     gpu2_percent: float = 0.0
     gpu2_memory_percent: float = 0.0
+    gpu2_temperature: float = 0.0
+    gpu2_power_usage: float = 0.0
 
     def to_dict(self) -> Dict[str, float]:
         """Convertit en dictionnaire."""
@@ -73,8 +92,12 @@ class SystemSnapshot:
             "memory": self.memory_percent,
             "gpu1": self.gpu1_percent,
             "gpu1_mem": self.gpu1_memory_percent,
+            "gpu1_temp": self.gpu1_temperature,
+            "gpu1_power": self.gpu1_power_usage,
             "gpu2": self.gpu2_percent,
             "gpu2_mem": self.gpu2_memory_percent,
+            "gpu2_temp": self.gpu2_temperature,
+            "gpu2_power": self.gpu2_power_usage,
         }
 
 
@@ -112,27 +135,41 @@ class SystemMonitor:
         # Historique des snapshots
         self._history: deque = deque(maxlen=max_history)
 
-        # Détection GPU
-        self._gpu1_device = None
-        self._gpu2_device = None
+        # Détection GPU via pynvml
+        self._gpu1_handle = None
+        self._gpu2_handle = None
         self._gpu_available = False
 
-        if GPU_MANAGER_AVAILABLE and CUPY_AVAILABLE:
+        if PYNVML_AVAILABLE:
             try:
-                devices = list_devices()
-                self._gpu1_device = get_device_by_name("5090")
-                self._gpu2_device = get_device_by_name("2060")
-                self._gpu_available = (self._gpu1_device is not None) or (self._gpu2_device is not None)
+                pynvml.nvmlInit()
+                device_count = pynvml.nvmlDeviceGetCount()
 
-                if self._gpu_available:
-                    logger.info(f"SystemMonitor: GPU détectés - "
-                               f"GPU1={'✅' if self._gpu1_device else '❌'}, "
-                               f"GPU2={'✅' if self._gpu2_device else '❌'}")
+                # Identifier GPUs par nom
+                for i in range(device_count):
+                    handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+                    name = pynvml.nvmlDeviceGetName(handle).decode("utf-8")
+
+                    if "5090" in name or "5080" in name:  # RTX 5090/5080
+                        self._gpu1_handle = handle
+                        logger.info(f"GPU 1 détecté: {name} (index {i})")
+                    elif "2060" in name:  # RTX 2060
+                        self._gpu2_handle = handle
+                        logger.info(f"GPU 2 détecté: {name} (index {i})")
+
+                self._gpu_available = (self._gpu1_handle is not None) or (
+                    self._gpu2_handle is not None
+                )
+
             except Exception as e:
-                logger.warning(f"Erreur détection GPU: {e}")
+                logger.warning(f"Erreur initialisation pynvml: {e}")
                 self._gpu_available = False
+        else:
+            logger.info("pynvml non disponible - monitoring GPU désactivé")
 
-        logger.info(f"SystemMonitor initialisé: interval={interval}s, max_history={max_history}")
+        logger.info(
+            f"SystemMonitor initialisé: interval={interval}s, max_history={max_history}"
+        )
 
     def _collect_cpu_metrics(self) -> Dict[str, float]:
         """Collecte les métriques CPU/RAM."""
@@ -150,43 +187,67 @@ class SystemMonitor:
             return {"cpu_percent": 0.0, "memory_percent": 0.0}
 
     def _collect_gpu_metrics(self) -> Dict[str, float]:
-        """Collecte les métriques GPU."""
+        """Collecte les métriques GPU via pynvml."""
         metrics = {
             "gpu1_percent": 0.0,
             "gpu1_memory_percent": 0.0,
+            "gpu1_temperature": 0.0,
+            "gpu1_power_usage": 0.0,
             "gpu2_percent": 0.0,
             "gpu2_memory_percent": 0.0,
+            "gpu2_temperature": 0.0,
+            "gpu2_power_usage": 0.0,
         }
 
-        if not self._gpu_available or not CUPY_AVAILABLE:
+        if not self._gpu_available or not PYNVML_AVAILABLE:
             return metrics
 
         try:
-            # GPU 1 (RTX 5090)
-            if self._gpu1_device and self._gpu1_device.device_id != -1:
-                with cp.cuda.Device(self._gpu1_device.device_id):
-                    # Utilisation GPU (approximation via busy time)
-                    # Note: CuPy n'expose pas directement l'utilisation GPU
-                    # On utilise le ratio mémoire comme proxy
-                    mem_info = cp.cuda.runtime.memGetInfo()
-                    mem_free, mem_total = mem_info
-                    mem_used = mem_total - mem_free
-                    mem_percent = (mem_used / mem_total * 100) if mem_total > 0 else 0.0
+            # GPU 1 (RTX 5090/5080)
+            if self._gpu1_handle:
+                # Utilisation GPU (%)
+                util = pynvml.nvmlDeviceGetUtilizationRates(self._gpu1_handle)
+                metrics["gpu1_percent"] = float(util.gpu)
 
-                    metrics["gpu1_memory_percent"] = mem_percent
-                    # Approximation utilisation basée sur activité récente
-                    metrics["gpu1_percent"] = min(mem_percent * 1.2, 100.0)
+                # Mémoire VRAM (%)
+                mem_info = pynvml.nvmlDeviceGetMemoryInfo(self._gpu1_handle)
+                metrics["gpu1_memory_percent"] = (
+                    (mem_info.used / mem_info.total * 100)
+                    if mem_info.total > 0
+                    else 0.0
+                )
+
+                # Température (°C)
+                temp = pynvml.nvmlDeviceGetTemperature(
+                    self._gpu1_handle, pynvml.NVML_TEMPERATURE_GPU
+                )
+                metrics["gpu1_temperature"] = float(temp)
+
+                # Consommation (W)
+                power = (
+                    pynvml.nvmlDeviceGetPowerUsage(self._gpu1_handle) / 1000.0
+                )  # mW → W
+                metrics["gpu1_power_usage"] = float(power)
 
             # GPU 2 (RTX 2060)
-            if self._gpu2_device and self._gpu2_device.device_id != -1:
-                with cp.cuda.Device(self._gpu2_device.device_id):
-                    mem_info = cp.cuda.runtime.memGetInfo()
-                    mem_free, mem_total = mem_info
-                    mem_used = mem_total - mem_free
-                    mem_percent = (mem_used / mem_total * 100) if mem_total > 0 else 0.0
+            if self._gpu2_handle:
+                util = pynvml.nvmlDeviceGetUtilizationRates(self._gpu2_handle)
+                metrics["gpu2_percent"] = float(util.gpu)
 
-                    metrics["gpu2_memory_percent"] = mem_percent
-                    metrics["gpu2_percent"] = min(mem_percent * 1.2, 100.0)
+                mem_info = pynvml.nvmlDeviceGetMemoryInfo(self._gpu2_handle)
+                metrics["gpu2_memory_percent"] = (
+                    (mem_info.used / mem_info.total * 100)
+                    if mem_info.total > 0
+                    else 0.0
+                )
+
+                temp = pynvml.nvmlDeviceGetTemperature(
+                    self._gpu2_handle, pynvml.NVML_TEMPERATURE_GPU
+                )
+                metrics["gpu2_temperature"] = float(temp)
+
+                power = pynvml.nvmlDeviceGetPowerUsage(self._gpu2_handle) / 1000.0
+                metrics["gpu2_power_usage"] = float(power)
 
         except Exception as e:
             logger.warning(f"Erreur collecte GPU: {e}")
@@ -209,8 +270,12 @@ class SystemMonitor:
             memory_percent=cpu_metrics["memory_percent"],
             gpu1_percent=gpu_metrics["gpu1_percent"],
             gpu1_memory_percent=gpu_metrics["gpu1_memory_percent"],
+            gpu1_temperature=gpu_metrics["gpu1_temperature"],
+            gpu1_power_usage=gpu_metrics["gpu1_power_usage"],
             gpu2_percent=gpu_metrics["gpu2_percent"],
             gpu2_memory_percent=gpu_metrics["gpu2_memory_percent"],
+            gpu2_temperature=gpu_metrics["gpu2_temperature"],
+            gpu2_power_usage=gpu_metrics["gpu2_power_usage"],
         )
 
     def _monitoring_loop(self):
@@ -239,7 +304,9 @@ class SystemMonitor:
             return
 
         self._running = True
-        self._thread = threading.Thread(target=self._monitoring_loop, daemon=True, name="SystemMonitor")
+        self._thread = threading.Thread(
+            target=self._monitoring_loop, daemon=True, name="SystemMonitor"
+        )
         self._thread.start()
 
         logger.info("Monitoring démarré")
@@ -295,12 +362,26 @@ class SystemMonitor:
             n_last: Nombre de derniers snapshots
 
         Returns:
-            DataFrame avec colonnes [timestamp, cpu, memory, gpu1, gpu1_mem, gpu2, gpu2_mem]
+            DataFrame avec colonnes [timestamp, cpu, memory, gpu1, gpu1_mem, gpu1_temp, gpu1_power, gpu2, gpu2_mem, gpu2_temp, gpu2_power]
         """
         history = self.get_history(n_last)
 
         if not history:
-            return pd.DataFrame(columns=["timestamp", "cpu", "memory", "gpu1", "gpu1_mem", "gpu2", "gpu2_mem"])
+            return pd.DataFrame(
+                columns=[
+                    "timestamp",
+                    "cpu",
+                    "memory",
+                    "gpu1",
+                    "gpu1_mem",
+                    "gpu1_temp",
+                    "gpu1_power",
+                    "gpu2",
+                    "gpu2_mem",
+                    "gpu2_temp",
+                    "gpu2_power",
+                ]
+            )
 
         data = [snap.to_dict() for snap in history]
         df = pd.DataFrame(data)
@@ -310,6 +391,10 @@ class SystemMonitor:
             df["time"] = df["timestamp"] - df["timestamp"].iloc[0]
 
         return df
+
+    def get_history_dataframe(self, n_last: Optional[int] = None) -> pd.DataFrame:
+        """Alias de get_history_df() pour compatibilité."""
+        return self.get_history_df(n_last)
 
     def clear_history(self) -> None:
         """Vide l'historique des snapshots."""

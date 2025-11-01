@@ -28,7 +28,9 @@ from typing import Dict, Any, Optional, List, Union, Tuple
 import numpy as np
 
 from threadx.utils.log import get_logger
-from threadx.config.settings import S
+from threadx.config import get_settings
+
+S = get_settings()  # Stub settings instance
 
 logger = get_logger(__name__)
 
@@ -341,6 +343,3 @@ def is_profile_valid(profile: Dict[str, Any], ttl_days: int = None) -> bool:
         return age < timedelta(days=ttl_days)
     except:
         return False
-
-
-
