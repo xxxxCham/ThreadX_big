@@ -1,5 +1,5 @@
 """
-ThreadX Centralized Logging System - 
+ThreadX Centralized Logging System -
 ==============================================
 
 Provides logger configuration with rotation, Windows-compatible file handling,
@@ -20,6 +20,9 @@ from threading import Lock
 # Global setup lock to prevent double initialization
 _setup_lock = Lock()
 _setup_done = False
+
+# Détection du mode debug via variable d'environnement
+DEBUG_MODE = os.getenv("THREADX_DEBUG", "0") == "1"
 
 
 def configure_logging(
@@ -96,15 +99,15 @@ def setup_logging_once() -> None:
                 from threadx.utils.settings import Settings
 
                 log_dir = Settings.LOG_DIR
-                log_level = Settings.LOG_LEVEL
+                log_level = Settings.LOG_LEVEL if not DEBUG_MODE else "DEBUG"
             except ImportError:
                 # Valeurs par défaut si Settings n'est pas disponible
                 log_dir = Path("logs")
-                log_level = "INFO"
+                log_level = "DEBUG" if DEBUG_MODE else "ERROR"
         except (ImportError, AttributeError):
             # Fallback if Settings not available
             log_dir = Path("logs")
-            log_level = "INFO"
+            log_level = "DEBUG" if DEBUG_MODE else "ERROR"
 
         # Ensure log directory exists
         log_dir = Path(log_dir)
@@ -124,7 +127,8 @@ def setup_logging_once() -> None:
             datefmt="%Y-%m-%d %H:%M:%S",
         )
         console_handler.setFormatter(console_formatter)
-        console_handler.setLevel(logging.INFO)
+        # Mode DEBUG: tous les logs, sinon ERROR uniquement
+        console_handler.setLevel(logging.DEBUG if DEBUG_MODE else logging.ERROR)
         root_logger.addHandler(console_handler)
 
         # File handler with rotation (Windows-safe)
@@ -226,6 +230,3 @@ def setup_logging(log_file: Optional[Path] = None, level: str = "INFO") -> None:
 
 # Logger par défaut pour ce module
 logger = get_logger(__name__)
-
-
-

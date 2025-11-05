@@ -19,11 +19,11 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from .backtest_bridge import BacktestResult, run_backtest, run_backtest_gpu
-from .system_monitor import get_global_monitor
-from .fast_sweep import fast_parameter_sweep, get_strategy_function
-from ..data_access import load_ohlcv
-from .strategy_registry import (
+from threadx.ui.backtest_bridge import BacktestResult, run_backtest, run_backtest_gpu
+from threadx.ui.system_monitor import get_global_monitor
+from threadx.ui.fast_sweep import fast_parameter_sweep, get_strategy_function
+from threadx.data_access import load_ohlcv
+from threadx.ui.strategy_registry import (
     base_params_for,
     list_strategies,
     parameter_specs_for,
@@ -326,8 +326,8 @@ def _render_monte_carlo_tab() -> None:
             max_workers = st.number_input(
                 "Nb Workers",
                 min_value=2,
-                max_value=32,
-                value=st.session_state.get("mc_manual_workers", 8),
+                max_value=64,
+                value=st.session_state.get("mc_manual_workers", 30),
                 step=1,
                 key="mc_manual_workers",
             )
@@ -1198,8 +1198,8 @@ def _render_optimization_tab() -> None:
             max_workers = st.number_input(
                 "Nb Workers",
                 min_value=2,
-                max_value=32,
-                value=st.session_state.get("sweep_manual_workers", 8),
+                max_value=64,
+                value=st.session_state.get("sweep_manual_workers", 30),
                 step=1,
                 key="sweep_manual_workers",
             )

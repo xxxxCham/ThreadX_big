@@ -25,6 +25,7 @@ import pandas as pd
 import numpy as np
 import logging
 from pathlib import Path
+from numba import njit
 
 from threadx.configuration.settings import S
 from threadx.utils.log import get_logger
@@ -38,6 +39,245 @@ from threadx.strategy.model import (
 from threadx.indicators import ensure_indicator, batch_ensure_indicators
 
 logger = get_logger(__name__)
+
+# ==========================================
+# NUMBA OPTIMIZED BACKTEST LOOP
+# ==========================================
+
+
+@njit(fastmath=True, cache=True, boundscheck=False, nogil=True)
+def _backtest_loop_numba(
+    close_vals: np.ndarray,
+    atr_vals: np.ndarray,
+    signal_vals: np.ndarray,  # Encodé: 0=HOLD, 1=ENTER_LONG, 2=ENTER_SHORT
+    bb_middle_vals: np.ndarray,
+    initial_capital: float,
+    fee_rate: float,
+    atr_multiplier: float,
+    risk_per_trade: float,
+    leverage: float,
+    max_hold_bars: int,
+    min_pnl_pct: float,
+    trailing_stop: bool,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Boucle de backtest optimisée Numba (JIT compilée).
+
+    ARCHITECTURE TWO-PASS:
+    - Pass 1 (ce code): Calculs numériques purs (Numba JIT)
+    - Pass 2 (Python): Reconstruction objets Trade depuis résultats
+
+    Args:
+        close_vals: Prix de clôture (n_bars,)
+        atr_vals: Valeurs ATR (n_bars,)
+        signal_vals: Signaux encodés (n_bars,) - 0:HOLD, 1:LONG, 2:SHORT
+        bb_middle_vals: Bollinger middle band (n_bars,)
+        initial_capital: Capital de départ
+        fee_rate: Taux de frais total (fee + slippage)
+        atr_multiplier: Multiplicateur ATR pour stops
+        risk_per_trade: Fraction capital risquée par trade
+        leverage: Levier autorisé
+        max_hold_bars: Durée max position
+        min_pnl_pct: PnL min requis (en %)
+        trailing_stop: Activer trailing stop
+
+    Returns:
+        Tuple (equity_curve, trade_results) où:
+        - equity_curve: np.ndarray(n_bars,) équité à chaque barre
+        - trade_results: np.ndarray(max_trades, 10) résultats trades
+          Colonnes: [entry_bar, exit_bar, side, qty, entry_price, exit_price,
+                     entry_fees, exit_fees, pnl, stop_price]
+    """
+    n_bars = len(close_vals)
+    equity = np.full(n_bars, initial_capital, dtype=np.float64)
+
+    # Pré-allocation résultats trades (max = n_bars)
+    trade_results = np.zeros((n_bars, 10), dtype=np.float64)
+    trade_count = 0
+
+    cash = initial_capital
+
+    # State position (encodage scalaire pour Numba)
+    has_position = False
+    pos_side = 0  # 1=LONG, 2=SHORT
+    pos_qty = 0.0
+    pos_entry_price = 0.0
+    pos_stop = 0.0
+    pos_entry_bar = 0
+    pos_entry_fees = 0.0
+
+    # Boucle principale (NUMBA JIT)
+    for i in range(n_bars):
+        current_price = close_vals[i]
+        current_atr = atr_vals[i]
+        signal = signal_vals[i]
+
+        # Skip si ATR invalide
+        if np.isnan(current_atr) or current_atr <= 0:
+            equity[i] = cash
+            if has_position:
+                # Calcul unrealized PnL
+                if pos_side == 1:  # LONG
+                    unrealized = (current_price - pos_entry_price) * pos_qty
+                else:  # SHORT
+                    unrealized = (pos_entry_price - current_price) * pos_qty
+                equity[i] = cash + unrealized
+            continue
+
+        # === GESTION POSITION EXISTANTE ===
+        if has_position:
+            should_exit = False
+
+            # 1. Stop loss check
+            if pos_side == 1:  # LONG
+                if current_price <= pos_stop:
+                    should_exit = True
+            else:  # SHORT
+                if current_price >= pos_stop:
+                    should_exit = True
+
+            # 2. Take profit (BB middle)
+            if not should_exit:
+                if pos_side == 1 and current_price >= bb_middle_vals[i]:
+                    should_exit = True
+                elif pos_side == 2 and current_price <= bb_middle_vals[i]:
+                    should_exit = True
+
+            # 3. Max hold bars
+            if not should_exit:
+                bars_held = i - pos_entry_bar
+                if bars_held >= max_hold_bars:
+                    should_exit = True
+
+            # 4. Trailing stop update
+            if trailing_stop and not should_exit:
+                if pos_side == 1:  # LONG
+                    new_stop = current_price - (current_atr * atr_multiplier)
+                    if new_stop > pos_stop:
+                        pos_stop = new_stop
+                else:  # SHORT
+                    new_stop = current_price + (current_atr * atr_multiplier)
+                    if new_stop < pos_stop:
+                        pos_stop = new_stop
+
+            # === FERMETURE POSITION ===
+            if should_exit:
+                exit_value = current_price * pos_qty
+                exit_fees = exit_value * fee_rate
+
+                # Calcul PnL
+                if pos_side == 1:  # LONG
+                    pnl = (
+                        (current_price - pos_entry_price) * pos_qty
+                        - pos_entry_fees
+                        - exit_fees
+                    )
+                else:  # SHORT
+                    pnl = (
+                        (pos_entry_price - current_price) * pos_qty
+                        - pos_entry_fees
+                        - exit_fees
+                    )
+
+                # Filtrage min PnL
+                pnl_pct = abs(pnl / (pos_entry_price * pos_qty)) * 100
+
+                if pnl_pct >= min_pnl_pct:
+                    # Trade valide: enregistrer
+                    trade_results[trade_count, 0] = pos_entry_bar
+                    trade_results[trade_count, 1] = i
+                    trade_results[trade_count, 2] = pos_side
+                    trade_results[trade_count, 3] = pos_qty
+                    trade_results[trade_count, 4] = pos_entry_price
+                    trade_results[trade_count, 5] = current_price
+                    trade_results[trade_count, 6] = pos_entry_fees
+                    trade_results[trade_count, 7] = exit_fees
+                    trade_results[trade_count, 8] = pnl
+                    trade_results[trade_count, 9] = pos_stop
+                    trade_count += 1
+
+                    # Mise à jour cash
+                    cash += pnl + (pos_entry_price * pos_qty)
+
+                # Reset position
+                has_position = False
+                pos_side = 0
+                pos_qty = 0.0
+
+        # === NOUVEAU SIGNAL D'ENTRÉE ===
+        if not has_position and signal > 0:  # 1=LONG, 2=SHORT
+            # Position sizing ATR
+            atr_stop_distance = current_atr * atr_multiplier
+            risk_amount = cash * risk_per_trade
+
+            position_size = risk_amount / atr_stop_distance
+            max_position_size = (cash * leverage) / current_price
+
+            qty = min(position_size, max_position_size)
+
+            if qty > 0:
+                # Calcul stop
+                if signal == 1:  # LONG
+                    stop_price = current_price - atr_stop_distance
+                else:  # SHORT
+                    stop_price = current_price + atr_stop_distance
+
+                # Frais entrée
+                entry_value = current_price * qty
+                entry_fees = entry_value * fee_rate
+
+                if entry_value + entry_fees <= cash:
+                    # Ouvrir position
+                    has_position = True
+                    pos_side = signal
+                    pos_qty = qty
+                    pos_entry_price = current_price
+                    pos_stop = stop_price
+                    pos_entry_bar = i
+                    pos_entry_fees = entry_fees
+
+                    # Déduire cash
+                    cash -= entry_value + entry_fees
+
+        # === MISE À JOUR ÉQUITÉ ===
+        if has_position:
+            if pos_side == 1:  # LONG
+                unrealized = (current_price - pos_entry_price) * pos_qty
+            else:  # SHORT
+                unrealized = (pos_entry_price - current_price) * pos_qty
+            equity[i] = cash + unrealized
+        else:
+            equity[i] = cash
+
+    # Fermeture position finale si nécessaire
+    if has_position:
+        final_price = close_vals[-1]
+        exit_value = final_price * pos_qty
+        exit_fees = exit_value * fee_rate
+
+        if pos_side == 1:
+            pnl = (final_price - pos_entry_price) * pos_qty - pos_entry_fees - exit_fees
+        else:
+            pnl = (pos_entry_price - final_price) * pos_qty - pos_entry_fees - exit_fees
+
+        pnl_pct = abs(pnl / (pos_entry_price * pos_qty)) * 100
+
+        if pnl_pct >= min_pnl_pct:
+            trade_results[trade_count, 0] = pos_entry_bar
+            trade_results[trade_count, 1] = n_bars - 1
+            trade_results[trade_count, 2] = pos_side
+            trade_results[trade_count, 3] = pos_qty
+            trade_results[trade_count, 4] = pos_entry_price
+            trade_results[trade_count, 5] = final_price
+            trade_results[trade_count, 6] = pos_entry_fees
+            trade_results[trade_count, 7] = exit_fees
+            trade_results[trade_count, 8] = pnl
+            trade_results[trade_count, 9] = pos_stop
+            trade_count += 1
+
+    # Retourner seulement les trades valides (trim array)
+    return equity, trade_results[:trade_count]
+
 
 # ==========================================
 # STRATEGY PARAMETERS
@@ -423,8 +663,9 @@ class BBAtrStrategy:
 
         # Extraction des données
         close = df["close"].values
-        high = df["high"].values
-        low = df["low"].values
+        # high et low non utilisés dans version Numba (keep for potential future use)
+        # high = df["high"].values
+        # low = df["low"].values
 
         bb_z = df_with_indicators["bb_z"].values
         bb_upper = df_with_indicators["bb_upper"].values
@@ -528,7 +769,7 @@ class BBAtrStrategy:
         precomputed_indicators: Optional[Dict] = None,
     ) -> Tuple[pd.Series, RunStats]:
         """
-        Exécute un backtest complet de la stratégie BB+ATR.
+        Exécute un backtest complet de la stratégie BB+ATR avec Numba JIT.
 
         Args:
             df: DataFrame OHLCV avec timestamp index (UTC)
@@ -537,22 +778,16 @@ class BBAtrStrategy:
             fee_bps: Frais de transaction en basis points (défaut: 4.5)
             slippage_bps: Slippage en basis points (défaut: 0.0)
             precomputed_indicators: Dictionnaire {key: result} d'indicateurs pré-calculés (optionnel)
-                                   Permet de skip ensure_indicator() et réutiliser calculs batch
 
         Returns:
-            Tuple (equity_curve, run_stats) avec:
-            - equity_curve: Série temporelle de l'équité
-            - run_stats: Statistiques complètes du run
+            Tuple (equity_curve, run_stats)
 
-        Gestion des positions:
-        - Size basé sur ATR et risk_per_trade
-        - Stop loss dynamique: entry_price ± (ATR * atr_multiplier)
-        - Trailing stop si activé
-        - Sortie forcée après max_hold_bars
-        - Filtrage trades avec PnL < min_pnl_pct
+        ARCHITECTURE TWO-PASS NUMBA:
+        - Pass 1: Calculs numériques purs via _backtest_loop_numba (JIT)
+        - Pass 2: Reconstruction objets Trade depuis résultats Numba
         """
         logger.debug(
-            f"Début backtest BB+ATR: capital={initial_capital}, fee={fee_bps}bps, slippage={slippage_bps}bps"
+            f"Début backtest BB+ATR (Numba): capital={initial_capital}, fee={fee_bps}bps, slippage={slippage_bps}bps"
         )
 
         # Validation
@@ -564,214 +799,103 @@ class BBAtrStrategy:
             df, params, precomputed_indicators=precomputed_indicators
         )
 
-        # Initialisation backtest
-        n_bars = len(df)
-        equity = np.full(n_bars, initial_capital, dtype=float)
-
-        cash = initial_capital
-        position = None  # Trade actuel ou None
-        trades: List[Trade] = []
-
-        fee_rate = (fee_bps + slippage_bps) / 10000.0
-
-        logger.debug(f"Backtest initialisé: {n_bars} barres, fee_rate={fee_rate:.6f}")
-
-        # Pré-extraction des colonnes en numpy arrays (3-4x plus rapide que iterrows)
+        # Pré-extraction colonnes en numpy arrays
         close_vals = signals_df["close"].values
         atr_vals = signals_df["atr"].values
-        signal_vals = signals_df["signal"].values
+        signal_vals_str = signals_df["signal"].values
         bb_middle_vals = signals_df["bb_middle"].values
         bb_z_vals = signals_df["bb_z"].values
         timestamps = signals_df.index.values
 
-        # Détecter si l'index du DataFrame a un timezone
+        # Encodage signaux pour Numba (0=HOLD, 1=ENTER_LONG, 2=ENTER_SHORT)
+        signal_vals = np.zeros(len(signal_vals_str), dtype=np.int8)
+        signal_vals[signal_vals_str == "ENTER_LONG"] = 1
+        signal_vals[signal_vals_str == "ENTER_SHORT"] = 2
+
+        fee_rate = (fee_bps + slippage_bps) / 10000.0
+
+        logger.debug(
+            f"Appel Numba backtest loop: {len(df)} barres, fee_rate={fee_rate:.6f}"
+        )
+
+        # ========================================
+        # PASS 1: NUMBA JIT (calculs purs)
+        # ========================================
+        equity, trade_results = _backtest_loop_numba(
+            close_vals=close_vals,
+            atr_vals=atr_vals,
+            signal_vals=signal_vals,
+            bb_middle_vals=bb_middle_vals,
+            initial_capital=initial_capital,
+            fee_rate=fee_rate,
+            atr_multiplier=strategy_params.atr_multiplier,
+            risk_per_trade=strategy_params.risk_per_trade,
+            leverage=strategy_params.leverage,
+            max_hold_bars=strategy_params.max_hold_bars,
+            min_pnl_pct=strategy_params.min_pnl_pct,
+            trailing_stop=strategy_params.trailing_stop,
+        )
+
+        logger.debug(f"Numba loop terminé: {len(trade_results)} trades générés")
+
+        # ========================================
+        # PASS 2: RECONSTRUCTION TRADE OBJECTS
+        # ========================================
+        trades: List[Trade] = []
         has_tz = df.index.tz is not None
 
-        # Boucle principale
-        for i in range(n_bars):
-            current_price = close_vals[i]
-            current_atr = atr_vals[i]
-            signal = signal_vals[i]
-            # Créer timestamp en respectant le timezone de l'index pour éviter les erreurs
-            timestamp = (
-                pd.Timestamp(timestamps[i], tz=df.index.tz)
+        for trade_data in trade_results:
+            entry_bar = int(trade_data[0])
+            exit_bar = int(trade_data[1])
+            side_code = int(trade_data[2])
+            qty = trade_data[3]
+            entry_price = trade_data[4]
+            exit_price = trade_data[5]
+            entry_fees = trade_data[6]
+            exit_fees = trade_data[7]
+            pnl = trade_data[8]
+            stop_price = trade_data[9]
+
+            # Conversion side code
+            side = "LONG" if side_code == 1 else "SHORT"
+
+            # Timestamps
+            entry_time = (
+                pd.Timestamp(timestamps[entry_bar], tz=df.index.tz)
                 if has_tz
-                else pd.Timestamp(timestamps[i])
+                else pd.Timestamp(timestamps[entry_bar])
+            )
+            exit_time = (
+                pd.Timestamp(timestamps[exit_bar], tz=df.index.tz)
+                if has_tz
+                else pd.Timestamp(timestamps[exit_bar])
             )
 
-            # Skip si ATR invalide
-            if np.isnan(current_atr) or current_atr <= 0:
-                equity[i] = (
-                    cash
-                    if position is None
-                    else cash + position.calculate_unrealized_pnl(current_price)
-                )
-                continue
-
-            # Gestion position existante
-            if position is not None:
-                # Vérification stops et conditions de sortie
-                should_exit = False
-                exit_reason = ""
-
-                # 1. Stop loss ATR
-                if position.should_stop_loss(current_price):
-                    should_exit = True
-                    exit_reason = "stop_loss"
-
-                # 2. Take profit (retour vers BB middle)
-                elif position.is_long() and current_price >= bb_middle_vals[i]:
-                    should_exit = True
-                    exit_reason = "take_profit_bb_middle"
-
-                elif position.is_short() and current_price <= bb_middle_vals[i]:
-                    should_exit = True
-                    exit_reason = "take_profit_bb_middle"
-
-                # 3. Durée maximale
-                # Calcul O(1) au lieu de O(n) : utiliser l'index de barre
-                entry_bar_index = position.meta.get("entry_bar_index", 0)
-                bars_held = i - entry_bar_index
-
-                if bars_held >= strategy_params.max_hold_bars:
-                    should_exit = True
-                    exit_reason = "max_hold_bars"
-
-                # 4. Trailing stop ATR si activé
-                if strategy_params.trailing_stop and not should_exit:
-                    # Mise à jour trailing stop
-                    new_stop = None
-                    if position.is_long():
-                        new_stop = current_price - (
-                            current_atr * strategy_params.atr_multiplier
-                        )
-                        if new_stop > position.stop:  # Trail vers le haut seulement
-                            position.stop = new_stop
-                    else:
-                        new_stop = current_price + (
-                            current_atr * strategy_params.atr_multiplier
-                        )
-                        if new_stop < position.stop:  # Trail vers le bas seulement
-                            position.stop = new_stop
-
-                # Fermeture position
-                if should_exit:
-                    # Calcul frais de sortie
-                    exit_value = current_price * position.qty
-                    exit_fees = exit_value * fee_rate
-
-                    # Fermeture trade
-                    position.close_trade(
-                        exit_price=current_price,
-                        exit_time=(
-                            str(timestamp)
-                            if hasattr(timestamp, "isoformat")
-                            else str(timestamp)
-                        ),
-                        exit_fees=exit_fees,
-                    )
-
-                    # Filtrage min PnL
-                    pnl_val = (
-                        position.pnl_realized
-                        if position.pnl_realized is not None
-                        else 0.0
-                    )
-                    pnl_pct = abs(pnl_val / (position.entry_price * position.qty)) * 100
-                    if pnl_pct >= strategy_params.min_pnl_pct:
-                        # Trade valide: mise à jour cash
-                        pnl_val = (
-                            position.pnl_realized
-                            if position.pnl_realized is not None
-                            else 0.0
-                        )
-                        cash += pnl_val + (position.entry_price * position.qty)
-                        trades.append(position)
-                        logger.debug(
-                            f"Position fermée @ {current_price:.2f}: {exit_reason}, PnL={position.pnl_realized:.2f}"
-                        )
-                    else:
-                        # Trade filtré: PnL trop faible
-                        logger.debug(
-                            f"Trade filtré (PnL {pnl_pct:.4f}% < {strategy_params.min_pnl_pct}%)"
-                        )
-
-                    position = None
-
-            # Nouveau signal d'entrée (si pas de position)
-            if position is None and signal in ["ENTER_LONG", "ENTER_SHORT"]:
-                # Position sizing basé sur ATR et risk
-                atr_stop_distance = current_atr * strategy_params.atr_multiplier
-                risk_amount = cash * strategy_params.risk_per_trade
-
-                # Calcul quantité optimale
-                position_size = risk_amount / atr_stop_distance
-                max_position_size = (cash * strategy_params.leverage) / current_price
-
-                qty = min(position_size, max_position_size)
-
-                if qty > 0:
-                    # Calcul prix stop
-                    if signal == "ENTER_LONG":
-                        stop_price = current_price - atr_stop_distance
-                    else:
-                        stop_price = current_price + atr_stop_distance
-
-                    # Frais d'entrée
-                    entry_value = current_price * qty
-                    entry_fees = entry_value * fee_rate
-
-                    if entry_value + entry_fees <= cash:
-                        # Création nouveau trade
-                        position = Trade(
-                            side=signal.replace("ENTER_", ""),
-                            qty=qty,
-                            entry_price=current_price,
-                            entry_time=(
-                                str(timestamp)
-                                if hasattr(timestamp, "isoformat")
-                                else str(timestamp)
-                            ),
-                            stop=stop_price,
-                            fees_paid=entry_fees,
-                            meta={
-                                "bb_z": bb_z_vals[i],
-                                "atr": current_atr,
-                                "atr_multiplier": strategy_params.atr_multiplier,
-                                "risk_per_trade": strategy_params.risk_per_trade,
-                                "entry_bar_index": i,  # Stocker l'index pour calcul O(1) de bars_held
-                            },
-                        )
-
-                        # Mise à jour cash
-                        cash -= entry_value + entry_fees
-
-                        logger.debug(
-                            f"Nouvelle position: {signal} {qty:.4f} @ {current_price:.2f}, stop={stop_price:.2f}"
-                        )
-
-            # Mise à jour équité
-            if position is not None:
-                equity[i] = cash + position.calculate_unrealized_pnl(current_price)
-            else:
-                equity[i] = cash
-
-        # Fermeture position finale si nécessaire
-        if position is not None:
-            final_price = df["close"].iloc[-1]
-            position.close_trade(
-                exit_price=final_price,
-                exit_time=df.index[-1].isoformat(),
-                exit_fees=final_price * position.qty * fee_rate,
+            # Création Trade object
+            trade = Trade(
+                side=side,
+                qty=qty,
+                entry_price=entry_price,
+                entry_time=str(entry_time),
+                stop=stop_price,
+                fees_paid=entry_fees,
+                meta={
+                    "bb_z": bb_z_vals[entry_bar],
+                    "atr": atr_vals[entry_bar],
+                    "atr_multiplier": strategy_params.atr_multiplier,
+                    "risk_per_trade": strategy_params.risk_per_trade,
+                    "entry_bar_index": entry_bar,
+                },
             )
 
-            # Application filtrage min PnL
-            pnl_val = (
-                position.pnl_realized if position.pnl_realized is not None else 0.0
+            # Forcer fermeture avec PnL calculé par Numba
+            trade.close_trade(
+                exit_price=exit_price,
+                exit_time=str(exit_time),
+                exit_fees=exit_fees,
             )
-            pnl_pct = abs(pnl_val / (position.entry_price * position.qty)) * 100
-            if pnl_pct >= strategy_params.min_pnl_pct:
-                trades.append(position)
+
+            trades.append(trade)
 
         # Construction courbe d'équité
         equity_curve = pd.Series(equity, index=df.index)
@@ -782,7 +906,7 @@ class BBAtrStrategy:
             equity_curve=equity_curve,
             initial_capital=initial_capital,
             meta={
-                "strategy": "BBAtr",
+                "strategy": "BBAtr_Numba",
                 "params": params,
                 "fee_bps": fee_bps,
                 "slippage_bps": slippage_bps,

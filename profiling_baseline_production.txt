@@ -1,0 +1,39 @@
+====================================================================================================
+THREADX PROFILING BASELINE PRODUCTION REPORT
+====================================================================================================
+
+CONFIGURATION SYSTÈME:
+----------------------------------------------------------------------------------------------------
+Processeur: Ryzen 9 9950X (32 threads logiques)
+RAM: 64 Go
+GPU: RTX 5080 (CUDA indisponible actuellement)
+
+RÉSULTATS BENCHMARK:
+----------------------------------------------------------------------------------------------------
+Workers      Combos     Temps (s)       Tests/sec       Speedup        
+----------------------------------------------------------------------------------------------------
+4            81                  0.59s          137.6   1.00x (+0.0%)
+8            81                  0.28s          293.6   2.13x (+113.5%)
+16           81                  0.20s          399.2   2.90x (+190.2%)
+32           81                  0.20s          399.1   2.90x (+190.1%)
+
+====================================================================================================
+MEILLEURE CONFIGURATION: max_workers=16
+Performance: 399.2 tests/sec
+
+PROJECTION SWEEP COMPLET (8448 combos):
+----------------------------------------------------------------------------------------------------
+workers=4     Estimated time:    61.4s (  1.0 min)
+workers=8     Estimated time:    28.8s (  0.5 min)
+workers=16    Estimated time:    21.2s (  0.4 min)
+workers=32    Estimated time:    21.2s (  0.4 min)
+
+
+SCALING ANALYSIS:
+----------------------------------------------------------------------------------------------------
+Scaling efficiency (4→32 workers): 36.3%
+
+BOTTLENECKS IDENTIFIÉS:
+  - GIL Python (trop de code Python pur)
+  - I/O contention (Parquet writes)
+  - Mémoire non partagée (indicateurs recalculés)
