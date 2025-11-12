@@ -269,3 +269,116 @@ ssh-add $env:USERPROFILE\.ssh\id_ed25519
 **Your choice**: Speed (Token) or Polish (SSH)?
 
 Either way, you'll be pushing to GitHub in minutes! 🚀
+
+---
+
+## 🎬 OPTION 1: Automated Script (RECOMMENDED)
+
+Run this pre-built PowerShell script that handles everything:
+
+```powershell
+# Download and run setup script
+cd d:\ThreadX_big
+.\Setup-SSH.ps1
+
+# Or with verbose output:
+.\Setup-SSH.ps1 -Verbose
+```
+
+The script will:
+1. ✅ Check for existing SSH key
+2. ✅ Generate ed25519 key (if needed)
+3. ✅ Start SSH Agent service
+4. ✅ Add key to agent
+5. ✅ Show your public key
+6. ✅ Configure Git for SSH
+7. ✅ Test SSH connection to GitHub
+8. ✅ Verify Git operations work
+
+**Result**: Ready to use SSH with GitHub instantly! 🚀
+
+---
+
+## 🎬 OPTION 2: Copy-Paste Commands (Token Auth)
+
+If you prefer HTTPS + token authentication:
+
+```powershell
+# Configure Git for HTTPS token auth
+cd d:\ThreadX_big
+git remote set-url origin "https://github.com/xxxxCham/ThreadX_big.git"
+git config --global credential.helper wincred
+Write-Host "✅ Git configured for token auth"
+
+# Next git push/pull will prompt for token
+git pull origin main
+```
+
+Then visit https://github.com/settings/tokens to generate a Personal Access Token.
+
+---
+
+## 🎬 OPTION 3: Manual Step-by-Step (SSH)
+
+Run these commands individually if you prefer:
+
+```powershell
+# 1. Generate SSH key
+ssh-keygen -t ed25519 -C "xxxxcham@github.com"
+#    Press ENTER 3 times (no passphrase)
+
+# 2. Start SSH Agent
+Start-Service ssh-agent
+
+# 3. Add key to agent
+ssh-add "$env:USERPROFILE\.ssh\id_ed25519"
+
+# 4. View public key (copy this to GitHub)
+Get-Content "$env:USERPROFILE\.ssh\id_ed25519.pub"
+
+# 5. Add key to GitHub
+#    Visit: https://github.com/settings/ssh/new
+#    Paste the key above
+
+# 6. Configure Git for SSH
+cd d:\ThreadX_big
+git remote set-url origin "git@github.com:xxxxCham/ThreadX_big.git"
+
+# 7. Test SSH connection
+ssh -T git@github.com
+#    Should return: "Hi xxxxCham! You've successfully authenticated..."
+
+# 8. Test Git operations
+git pull origin main
+```
+
+---
+
+## ✅ Verification Checklist
+
+After setup, verify each step:
+
+- [ ] SSH key exists: `Test-Path "$env:USERPROFILE\.ssh\id_ed25519"`
+- [ ] SSH Agent running: `Get-Service ssh-agent | Select Status`
+- [ ] Key in agent: `ssh-add -l` (should show your key)
+- [ ] Git remote is SSH: `git remote -v` (should show `git@github.com:...`)
+- [ ] SSH works: `ssh -T git@github.com` (auth success message)
+- [ ] Git works: `git pull origin main` (no credential prompt)
+
+---
+
+## 🆘 Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| `ssh-keygen: command not found` | Install OpenSSH Client (Windows Optional Features) |
+| `Permission denied (publickey)` | Add public key to https://github.com/settings/ssh |
+| `SSH Agent service not found` | `Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0` |
+| `Cannot open connection to agent` | `Start-Service ssh-agent` |
+| `Cannot run scripts (execution policy)` | `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` |
+| `Host key verification failed` | Type `yes` when connecting for first time |
+| `Identity file not accessible` | Check key permissions: `icacls "$env:USERPROFILE\.ssh\id_ed25519"` |
+
+**Need more help?** See full troubleshooting in `WORKSPACE_HEALTH_REPORT.md`
+
+```
