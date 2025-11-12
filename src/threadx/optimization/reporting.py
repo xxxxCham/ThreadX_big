@@ -13,19 +13,19 @@ Version: Phase 10 - Optimization Reporting
 """
 
 import json
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple
-import time
-from datetime import datetime
 
 from threadx.utils.log import get_logger
 
 logger = get_logger(__name__)
 
 
-def summarize_distribution(results_df: pd.DataFrame) -> Dict[str, Any]:
+def summarize_distribution(results_df: pd.DataFrame) -> dict[str, Any]:
     """
     Analyse des distributions de métriques de performance.
 
@@ -128,7 +128,7 @@ def summarize_distribution(results_df: pd.DataFrame) -> Dict[str, Any]:
     return summary
 
 
-def build_heatmaps(results_df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+def build_heatmaps(results_df: pd.DataFrame) -> dict[str, pd.DataFrame]:
     """
     Construction de heatmaps 2D pour analyse des paramètres.
 
@@ -174,7 +174,7 @@ def build_heatmaps(results_df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
     return heatmaps
 
 
-def _identify_parameter_columns(df: pd.DataFrame) -> List[str]:
+def _identify_parameter_columns(df: pd.DataFrame) -> list[str]:
     """Identifie les colonnes de paramètres."""
     param_indicators = [
         "period",
@@ -212,7 +212,7 @@ def _identify_parameter_columns(df: pd.DataFrame) -> List[str]:
     return param_cols
 
 
-def _identify_metric_columns(df: pd.DataFrame) -> List[str]:
+def _identify_metric_columns(df: pd.DataFrame) -> list[str]:
     """Identifie les colonnes de métriques."""
     metric_indicators = [
         "pnl",
@@ -241,8 +241,8 @@ def _identify_metric_columns(df: pd.DataFrame) -> List[str]:
 
 
 def _build_metric_heatmaps(
-    df: pd.DataFrame, param_cols: List[str], metric: str
-) -> Dict[str, pd.DataFrame]:
+    df: pd.DataFrame, param_cols: list[str], metric: str
+) -> dict[str, pd.DataFrame]:
     """Construit les heatmaps pour une métrique donnée."""
     heatmaps = {}
 
@@ -280,11 +280,11 @@ def write_reports(
     results_df: pd.DataFrame,
     out_dir: str,
     *,
-    seeds: Optional[List[int]] = None,
-    devices: Optional[List[str]] = None,
-    gpu_ratios: Optional[Dict[str, float]] = None,
-    min_samples: Optional[int] = None,
-) -> Dict[str, str]:
+    seeds: list[int] | None = None,
+    devices: list[str] | None = None,
+    gpu_ratios: dict[str, float] | None = None,
+    min_samples: int | None = None,
+) -> dict[str, str]:
     """
     Écrit les rapports d'optimisation sur disque.
 
@@ -378,7 +378,7 @@ def write_reports(
     return created_files
 
 
-def _quick_performance_summary(results_df: pd.DataFrame) -> Dict[str, Any]:
+def _quick_performance_summary(results_df: pd.DataFrame) -> dict[str, Any]:
     """Résumé rapide des performances pour le manifest."""
     if results_df.empty:
         return {}
@@ -415,7 +415,7 @@ def _quick_performance_summary(results_df: pd.DataFrame) -> Dict[str, Any]:
 # === Utilitaires de validation ===
 
 
-def validate_results_dataframe(df: pd.DataFrame) -> Dict[str, Any]:
+def validate_results_dataframe(df: pd.DataFrame) -> dict[str, Any]:
     """
     Valide la structure du DataFrame de résultats.
 

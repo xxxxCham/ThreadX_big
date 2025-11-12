@@ -20,11 +20,10 @@ Version: Phase 10 - Unified Compute Engine
 """
 
 from .engine import (
+    DEFAULT_SWEEP_CONFIG,
     UnifiedOptimizationEngine,
     create_unified_engine,
-    DEFAULT_SWEEP_CONFIG,
 )
-from .ui import ParametricOptimizationUI, create_optimization_ui
 
 # Presets for optimization
 from .presets import (
@@ -35,6 +34,7 @@ from .presets import (
     list_available_indicators,
     load_all_presets,
 )
+from .ui import ParametricOptimizationUI, create_optimization_ui
 
 __all__ = [
     # Engine

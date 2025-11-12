@@ -7,13 +7,15 @@ Grid search implementation using BaseOptimizer template.
 Author: ThreadX Framework - Phase 2 Step 3.3
 """
 
-from typing import Any, Dict, List, Tuple, Callable
+from collections.abc import Callable
 from itertools import product
+from typing import Any
 
-from threadx.utils.common_imports import create_logger
-from .base_optimizer import BaseOptimizer
+from threadx.utils.common_imports import get_logger
 
-logger = create_logger(__name__)
+from .base_optimizer import BaseOptimizer, OptimizationResult
+
+logger = get_logger(__name__)
 
 
 class GridOptimizer(BaseOptimizer):
@@ -34,12 +36,12 @@ class GridOptimizer(BaseOptimizer):
 
     def __init__(
         self,
-        param_grid: Dict[str, List[Any]],
-        objective_fn: Callable[[Dict[str, Any]], float],
+        param_grid: dict[str, list[Any]],
+        objective_fn: Callable[[dict[str, Any]], float],
         maximize: bool = True,
         verbose: bool = True,
         parallel: bool = False,
-        n_jobs: int = -1
+        n_jobs: int = -1,
     ):
         """
         Initialize grid search optimizer.
@@ -53,11 +55,7 @@ class GridOptimizer(BaseOptimizer):
             parallel: Exécution parallèle (future feature)
             n_jobs: Nombre de workers (future feature)
         """
-        super().__init__(
-            objective_fn=objective_fn,
-            maximize=maximize,
-            verbose=verbose
-        )
+        super().__init__(objective_fn=objective_fn, maximize=maximize, verbose=verbose)
 
         self.param_grid = param_grid
         self.parallel = parallel
@@ -80,13 +78,10 @@ class GridOptimizer(BaseOptimizer):
 
         # Convertir en liste de dicts
         self.combinations = [
-            dict(zip(param_names, combo))
-            for combo in combinations_tuples
+            dict(zip(param_names, combo)) for combo in combinations_tuples
         ]
 
-        self.logger.debug(
-            f"Generated {len(self.combinations)} parameter combinations"
-        )
+        self.logger.debug(f"Generated {len(self.combinations)} parameter combinations")
 
     def prepare_data(self) -> None:
         """Override: Re-génère combinations si besoin."""
@@ -98,11 +93,9 @@ class GridOptimizer(BaseOptimizer):
 
         for param, values in self.param_grid.items():
             if not isinstance(values, (list, tuple)) or len(values) == 0:
-                raise ValueError(
-                    f"Parameter '{param}' must have at least one value"
-                )
+                raise ValueError(f"Parameter '{param}' must have at least one value")
 
-    def run_iteration(self, iteration: int) -> Tuple[Dict[str, Any], float]:
+    def run_iteration(self, iteration: int) -> tuple[dict[str, Any], float]:
         """
         Exécute une itération de grid search.
 
@@ -132,14 +125,12 @@ class GridOptimizer(BaseOptimizer):
             return params, score
 
         except Exception as e:
-            self.logger.warning(
-                f"Objective function failed for {params}: {e}"
-            )
+            self.logger.warning(f"Objective function failed for {params}: {e}")
             # Retourner score worst possible
-            score = float('-inf') if self.maximize else float('inf')
+            score = float("-inf") if self.maximize else float("inf")
             return params, score
 
-    def optimize(self, max_iterations: int = None) -> 'OptimizationResult':
+    def optimize(self, max_iterations: int = None) -> "OptimizationResult":
         """
         Override: Grid search teste TOUTES les combinaisons.
 
@@ -164,7 +155,7 @@ class GridOptimizer(BaseOptimizer):
 
         return super().optimize(max_iterations=actual_max)
 
-    def get_param_importance(self) -> Dict[str, float]:
+    def get_param_importance(self) -> dict[str, float]:
         """
         Calcule l'importance de chaque paramètre (variance du score).
 
@@ -175,12 +166,13 @@ class GridOptimizer(BaseOptimizer):
             return {}
 
         import pandas as pd
+
         df = pd.DataFrame(self.results)
 
         importance = {}
         for param in self.param_grid.keys():
             # Variance du score groupé par valeur du paramètre
-            grouped = df.groupby(param)['score'].var()
+            grouped = df.groupby(param)["score"].var()
             importance[param] = grouped.mean()
 
         return importance
@@ -188,11 +180,11 @@ class GridOptimizer(BaseOptimizer):
 
 # Convenience function
 def grid_search(
-    param_grid: Dict[str, List[Any]],
-    objective_fn: Callable[[Dict[str, Any]], float],
+    param_grid: dict[str, list[Any]],
+    objective_fn: Callable[[dict[str, Any]], float],
     maximize: bool = True,
-    verbose: bool = True
-) -> 'OptimizationResult':
+    verbose: bool = True,
+) -> "OptimizationResult":
     """
     Fonction helper pour grid search rapide.
 
@@ -217,9 +209,6 @@ def grid_search(
         param_grid=param_grid,
         objective_fn=objective_fn,
         maximize=maximize,
-        verbose=verbose
+        verbose=verbose,
     )
     return optimizer.optimize()
-
-
-

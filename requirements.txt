@@ -1,4 +1,5 @@
 # Core Dependencies (nécessaires pour l'application Streamlit et l'orchestration)
+cupy-cuda12x==13.6.0
 streamlit==1.49.1  # Interface utilisateur interactive
 pandas==2.3.2  # Manipulation des DataFrames OHLCV
 numpy==2.3.3  # Calculs vectorisés rapides pour indicateurs
@@ -6,7 +7,7 @@ pydantic==2.9.2  # Validation type-safe pour configs et requêtes
 pydantic-settings==2.6.1  # Support pour configs TOML avec Pydantic
 toml==0.10.2  # Parsing des fichiers de configuration TOML
 pandera==0.20.4  # Validation des schémas de DataFrames
-pyarrow==21.0.0  # Lecture/écriture de fichiers Parquet pour persistance
+pyarrow==22.0.0  # Lecture/écriture de fichiers Parquet pour persistance
 
 # Visualisation Dependencies (pour graphs interactifs et statiques)
 plotly==6.3.0  # Graphiques interactifs (candlesticks, heatmaps)

@@ -25,23 +25,25 @@ Usage:
 """
 
 import time
-from typing import Tuple, Optional, Dict, Any, Callable
+from collections.abc import Callable
+from typing import Any
+
 import numpy as np
 import pandas as pd
 
-from threadx.utils.log import get_logger
-from threadx.utils.gpu import get_default_manager, MultiGPUManager
-from threadx.utils.gpu.profile_persistence import (
+from threadx.gpu import MultiGPUManager, get_default_manager
+from threadx.gpu.profile_persistence import (
+    get_gpu_thresholds,
     stable_hash,
     update_gpu_threshold_entry,
-    get_gpu_thresholds,
 )
+from threadx.utils.log import get_logger
 
 logger = get_logger(__name__)
 
 # Numba CUDA imports optionnels
 try:
-    from numba import cuda, float32, float64, int32
+    from numba import cuda, float32
 
     NUMBA_AVAILABLE = True
     logger.info("Numba CUDA disponible pour kernels optimisés")
@@ -171,7 +173,7 @@ class GPUAcceleratedIndicatorBank:
         - Profiling dynamique CPU vs GPU vs Numba
     """
 
-    def __init__(self, gpu_manager: Optional[MultiGPUManager] = None):
+    def __init__(self, gpu_manager: MultiGPUManager | None = None):
         """
         Initialise la banque d'indicateurs GPU avec Numba.
 
@@ -194,7 +196,7 @@ class GPUAcceleratedIndicatorBank:
         self,
         indicator: str,
         n_rows: int,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         dtype: Any = np.float32,  # Any pour accepter DtypeObj pandas
         force_gpu: bool = False,
     ) -> bool:
@@ -286,11 +288,11 @@ class GPUAcceleratedIndicatorBank:
         self,
         indicator_name: str,
         data: pd.DataFrame,
-        params: Dict[str, Any],
-        use_gpu: Optional[bool],
+        params: dict[str, Any],
+        use_gpu: bool | None,
         gpu_func: Callable,
         cpu_func: Callable,
-        input_cols: Optional[str] = None,
+        input_cols: str | None = None,
         extract_arrays: bool = True,
     ) -> Any:
         """
@@ -362,8 +364,8 @@ class GPUAcceleratedIndicatorBank:
             return cpu_func(arrays)
 
     def _micro_probe(
-        self, indicator: str, n_rows: int, params: Dict[str, Any], n_samples: int = 3
-    ) -> Tuple[float, float]:
+        self, indicator: str, n_rows: int, params: dict[str, Any], n_samples: int = 3
+    ) -> tuple[float, float]:
         """
         Exécute un micro-benchmark pour comparer CPU vs GPU
         sur un échantillon réduit.
@@ -485,7 +487,7 @@ class GPUAcceleratedIndicatorBank:
 
         return cpu_ms_avg, gpu_ms_avg
 
-    def _generic_micro_probe(self, sample_size: int) -> Tuple[float, float]:
+    def _generic_micro_probe(self, sample_size: int) -> tuple[float, float]:
         """
         Exécute un benchmark générique pour CPU vs GPU.
 
@@ -542,8 +544,8 @@ class GPUAcceleratedIndicatorBank:
         period: int = 20,
         std_dev: float = 2.0,
         price_col: str = "close",
-        use_gpu: Optional[bool] = None,
-    ) -> Tuple[pd.Series, pd.Series, pd.Series]:
+        use_gpu: bool | None = None,
+    ) -> tuple[pd.Series, pd.Series, pd.Series]:
         """
         Calcul GPU des Bollinger Bands.
 
@@ -584,7 +586,7 @@ class GPUAcceleratedIndicatorBank:
 
     def _bollinger_bands_gpu(
         self, prices: np.ndarray, period: int, std_dev: float, index: pd.Index
-    ) -> Tuple[pd.Series, pd.Series, pd.Series]:
+    ) -> tuple[pd.Series, pd.Series, pd.Series]:
         """
         Calcul Bollinger Bands sur GPU avec Numba CUDA kernel fusionné.
 
@@ -666,7 +668,7 @@ class GPUAcceleratedIndicatorBank:
 
     def _bollinger_bands_numba(
         self, prices: np.ndarray, period: int, std_dev: float, index: pd.Index
-    ) -> Tuple[pd.Series, pd.Series, pd.Series]:
+    ) -> tuple[pd.Series, pd.Series, pd.Series]:
         """
         Calcul Bollinger Bands avec kernel Numba CUDA fusionné.
 
@@ -748,7 +750,7 @@ class GPUAcceleratedIndicatorBank:
 
     def _bollinger_bands_cpu(
         self, prices: np.ndarray, period: int, std_dev: float, index: pd.Index
-    ) -> Tuple[pd.Series, pd.Series, pd.Series]:
+    ) -> tuple[pd.Series, pd.Series, pd.Series]:
         """Calcul CPU classique des Bollinger Bands."""
         # Rolling window avec pandas pour simplicité
         price_series = pd.Series(prices, index=index)
@@ -770,7 +772,7 @@ class GPUAcceleratedIndicatorBank:
         self,
         data: pd.DataFrame,
         period: int = 14,
-        use_gpu: Optional[bool] = None,
+        use_gpu: bool | None = None,
     ) -> pd.Series:
         """
         Calcul GPU de l'Average True Range (ATR).
@@ -880,7 +882,7 @@ class GPUAcceleratedIndicatorBank:
         data: pd.DataFrame,
         period: int = 14,
         price_col: str = "close",
-        use_gpu: Optional[bool] = None,
+        use_gpu: bool | None = None,
     ) -> pd.Series:
         """
         Calcul GPU du Relative Strength Index (RSI).
@@ -1039,7 +1041,7 @@ class GPUAcceleratedIndicatorBank:
 
 # === Instance globale ===
 
-_gpu_indicator_bank: Optional[GPUAcceleratedIndicatorBank] = None
+_gpu_indicator_bank: GPUAcceleratedIndicatorBank | None = None
 
 
 def get_gpu_accelerated_bank() -> GPUAcceleratedIndicatorBank:

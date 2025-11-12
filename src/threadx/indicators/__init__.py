@@ -17,17 +17,15 @@ Caractéristiques:
 - Fallback CPU transparent
 """
 
-from .bollinger import BollingerBands, compute_bollinger_bands, compute_bollinger_batch
-
-from .xatr import ATR, compute_atr, compute_atr_batch
-
 from .bank import (
     IndicatorBank,
     IndicatorSettings,
+    batch_ensure_indicators,
     ensure_indicator,
     force_recompute_indicator,
-    batch_ensure_indicators,
 )
+from .bollinger import BollingerBands, compute_bollinger_bands, compute_bollinger_batch
+from .xatr import ATR, compute_atr, compute_atr_batch
 
 __version__ = "3.0.0"
 __all__ = [

@@ -1,9 +1,9 @@
-import os
-from pathlib import Path
-from typing import List, Tuple, Optional
-import pandas as pd
-from functools import lru_cache
 import logging
+import os
+from functools import lru_cache
+from pathlib import Path
+
+import pandas as pd
 
 # Import du module de normalisation
 try:
@@ -60,8 +60,8 @@ DATA_FOLDERS = ("crypto_data_parquet", "crypto_data_json")
 
 
 @lru_cache(maxsize=1)
-def _iter_data_files() -> Tuple[Path, ...]:
-    files: List[Path] = []
+def _iter_data_files() -> tuple[Path, ...]:
+    files: list[Path] = []
     for folder_name in DATA_FOLDERS:
         folder = DATA_DIR / folder_name
         if not folder.exists():
@@ -72,7 +72,7 @@ def _iter_data_files() -> Tuple[Path, ...]:
 
 
 @lru_cache(maxsize=1)
-def discover_tokens_and_timeframes() -> Tuple[List[str], List[str]]:
+def discover_tokens_and_timeframes() -> tuple[list[str], list[str]]:
     tokens, timeframes = set(), set()
     for file_path in _iter_data_files():
         parts = file_path.stem.split("_", 1)
@@ -82,7 +82,7 @@ def discover_tokens_and_timeframes() -> Tuple[List[str], List[str]]:
         tokens.add(symbol.upper())
         timeframes.add(timeframe)
 
-    def _tf_key(value: str) -> Tuple[int, int, str]:
+    def _tf_key(value: str) -> tuple[int, int, str]:
         if not value:
             return (5, 0, value)
         unit = value[-1]
@@ -97,7 +97,7 @@ def discover_tokens_and_timeframes() -> Tuple[List[str], List[str]]:
     return sorted(tokens), sorted(timeframes, key=_tf_key)
 
 
-def get_available_timeframes_for_token(symbol: str) -> List[str]:
+def get_available_timeframes_for_token(symbol: str) -> list[str]:
     """Retourne les timeframes disponibles pour un token specifique."""
     symbol = symbol.upper()
     timeframes = set()
@@ -110,7 +110,7 @@ def get_available_timeframes_for_token(symbol: str) -> List[str]:
         if file_symbol.upper() == symbol:
             timeframes.add(timeframe)
 
-    def _tf_key(value: str) -> Tuple[int, int, str]:
+    def _tf_key(value: str) -> tuple[int, int, str]:
         if not value:
             return (5, 0, value)
         unit = value[-1]
@@ -138,7 +138,7 @@ def _read_any(path: Path) -> pd.DataFrame:
     raise ValueError(f"Unsupported: {path}")
 
 
-def _find_ohlcv_file(symbol: str, timeframe: str) -> Optional[Path]:
+def _find_ohlcv_file(symbol: str, timeframe: str) -> Path | None:
     symbol = symbol.upper()
     target_prefix = f"{symbol}_{timeframe}"
     for file_path in _iter_data_files():

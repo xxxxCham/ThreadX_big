@@ -17,17 +17,16 @@ Caractéristiques:
 - Validation intégrée des paramètres
 """
 
-from dataclasses import dataclass, field, asdict
-from typing import Protocol, Dict, Any, Optional, List, Tuple, Union
-from typing_extensions import TypedDict, NotRequired
 import json
-import pandas as pd
-import numpy as np
-from pathlib import Path
+from dataclasses import dataclass, field
 from datetime import datetime
-import logging
+from pathlib import Path
+from typing import Any, NotRequired, Protocol
 
-from threadx.configuration.settings import S
+import numpy as np
+import pandas as pd
+from typing_extensions import TypedDict
+
 from threadx.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -51,7 +50,7 @@ class TradeDict(TypedDict):
     pnl_realized: NotRequired[float]  # PnL réalisé (optionnel)
     pnl_unrealized: NotRequired[float]  # PnL non réalisé (optionnel)
     fees_paid: NotRequired[float]  # Frais payés
-    meta: NotRequired[Dict[str, Any]]  # Métadonnées
+    meta: NotRequired[dict[str, Any]]  # Métadonnées
 
 
 @dataclass
@@ -93,13 +92,13 @@ class Trade:
     entry_price: float
     entry_time: str
     stop: float
-    exit_price: Optional[float] = None
-    exit_time: Optional[str] = None
-    take_profit: Optional[float] = None
-    pnl_realized: Optional[float] = None
-    pnl_unrealized: Optional[float] = None
+    exit_price: float | None = None
+    exit_time: str | None = None
+    take_profit: float | None = None
+    pnl_realized: float | None = None
+    pnl_unrealized: float | None = None
     fees_paid: float = 0.0
-    meta: Dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         """Validation des paramètres après initialisation"""
@@ -163,7 +162,7 @@ class Trade:
             exit_fees: Frais de sortie supplémentaires
         """
         if not self.is_open():
-            logger.warning(f"Tentative de fermeture d'une position déjà fermée")
+            logger.warning("Tentative de fermeture d'une position déjà fermée")
             return
 
         self.exit_price = exit_price
@@ -203,7 +202,7 @@ class Trade:
         else:
             return current_price <= self.take_profit
 
-    def duration_minutes(self) -> Optional[float]:
+    def duration_minutes(self) -> float | None:
         """Calcule la durée du trade en minutes"""
         if not self.exit_time:
             return None
@@ -212,7 +211,7 @@ class Trade:
         exit_dt = pd.to_datetime(self.exit_time, utc=True)
         return (exit_dt - entry_dt).total_seconds() / 60.0
 
-    def roi_percent(self) -> Optional[float]:
+    def roi_percent(self) -> float | None:
         """Calcule le ROI en pourcentage sur la mise engagée"""
         if self.pnl_realized is None:
             return None
@@ -238,7 +237,7 @@ class Trade:
         )
 
     @classmethod
-    def from_dict(cls, data: Union[Dict[str, Any], TradeDict]) -> "Trade":
+    def from_dict(cls, data: dict[str, Any] | TradeDict) -> "Trade":
         """Crée un Trade depuis un dictionnaire"""
         return cls(
             side=data["side"],
@@ -285,7 +284,7 @@ class RunStatsDict(TypedDict):
     start_time: str
     end_time: str
     bars_analyzed: int
-    meta: NotRequired[Dict[str, Any]]
+    meta: NotRequired[dict[str, Any]]
 
 
 @dataclass
@@ -335,14 +334,19 @@ class RunStats:
     start_time: str
     end_time: str
     bars_analyzed: int
-    sharpe_ratio: Optional[float] = None
-    sortino_ratio: Optional[float] = None
-    max_drawdown_duration_bars: Optional[int] = None
-    avg_win: Optional[float] = None
-    avg_loss: Optional[float] = None
-    profit_factor: Optional[float] = None
-    avg_trade_duration_minutes: Optional[float] = None
-    meta: Dict[str, Any] = field(default_factory=dict)
+    sharpe_ratio: float | None = None
+    sortino_ratio: float | None = None
+    max_drawdown_duration_bars: int | None = None
+    avg_win: float | None = None
+    avg_loss: float | None = None
+    profit_factor: float | None = None
+    avg_trade_duration_minutes: float | None = None
+    meta: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def final_capital(self) -> float:
+        """Backward-compat alias for legacy tests expecting `final_capital`."""
+        return self.final_equity
 
     @property
     def total_pnl_pct(self) -> float:
@@ -363,13 +367,13 @@ class RunStats:
         """Vérifie si des trades ont été générés"""
         return self.total_trades > 0
 
-    def risk_reward_ratio(self) -> Optional[float]:
+    def risk_reward_ratio(self) -> float | None:
         """Calcule le ratio risque/récompense"""
         if not self.avg_win or not self.avg_loss or self.avg_loss >= 0:
             return None
         return abs(self.avg_win / self.avg_loss)
 
-    def expectancy(self) -> Optional[float]:
+    def expectancy(self) -> float | None:
         """Calcule l'espérance de gain par trade"""
         if not self.has_trades:
             return None
@@ -410,7 +414,7 @@ class RunStats:
         )
 
     @classmethod
-    def from_dict(cls, data: Union[Dict[str, Any], RunStatsDict]) -> "RunStats":
+    def from_dict(cls, data: dict[str, Any] | RunStatsDict) -> "RunStats":
         """Crée RunStats depuis un dictionnaire"""
         return cls(
             final_equity=data["final_equity"],
@@ -439,12 +443,12 @@ class RunStats:
     @classmethod
     def from_trades_and_equity(
         cls,
-        trades: List[Trade],
+        trades: list[Trade],
         equity_curve: pd.Series,
         initial_capital: float,
-        start_time: Optional[str] = None,
-        end_time: Optional[str] = None,
-        meta: Optional[Dict[str, Any]] = None,
+        start_time: str | None = None,
+        end_time: str | None = None,
+        meta: dict[str, Any] | None = None,
     ) -> "RunStats":
         """
         Calcule les statistiques depuis une liste de trades et courbe d'équité.
@@ -644,7 +648,7 @@ class Strategy(Protocol):
 
     def backtest(
         self, df: pd.DataFrame, params: dict, initial_capital: float = 10000.0
-    ) -> Tuple[pd.Series, RunStats]:
+    ) -> tuple[pd.Series, RunStats]:
         """
         Exécute un backtest complet de la stratégie.
 
@@ -689,11 +693,11 @@ class ThreadXJSONEncoder(json.JSONEncoder):
 
 
 def save_run_results(
-    trades: List[Trade],
+    trades: list[Trade],
     stats: RunStats,
     equity_curve: pd.Series,
-    output_path: Union[str, Path],
-    metadata: Optional[Dict[str, Any]] = None,
+    output_path: str | Path,
+    metadata: dict[str, Any] | None = None,
 ) -> None:
     """
     Sauvegarde les résultats d'un run en JSON.
@@ -735,8 +739,8 @@ def save_run_results(
 
 
 def load_run_results(
-    file_path: Union[str, Path],
-) -> Tuple[List[Trade], RunStats, pd.Series]:
+    file_path: str | Path,
+) -> tuple[list[Trade], RunStats, pd.Series]:
     """
     Charge les résultats d'un run depuis JSON.
 
@@ -746,7 +750,7 @@ def load_run_results(
     Returns:
         Tuple contenant (trades, stats, equity_curve)
     """
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         data = json.load(f)
 
     # Reconstruction des objets
@@ -803,7 +807,7 @@ def validate_ohlcv_dataframe(df: pd.DataFrame) -> None:
     )
 
 
-def validate_strategy_params(params: dict, required_keys: List[str]) -> None:
+def validate_strategy_params(params: dict, required_keys: list[str]) -> None:
     """
     Valide les paramètres de stratégie.
 
@@ -844,6 +848,5 @@ __all__ = [
     "validate_ohlcv_dataframe",
     "validate_strategy_params",
 ]
-
 
 

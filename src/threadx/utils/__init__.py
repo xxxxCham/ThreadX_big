@@ -35,43 +35,41 @@ from . import common_imports
 # Import Phase 9 utilities with graceful fallback
 try:
     # Core timing utilities
-    from .timing import (
-        Timer,
-        PerformanceMetrics,
-        measure_throughput,
-        track_memory,
-        combined_measurement,
-        performance_context,
-    )
-
     # Caching infrastructure
     from .cache import (
+        CacheEvent,
+        CacheStats,
         LRUCache,
         TTLCache,
-        CacheStats,
-        CacheEvent,
         cached,
+        generate_stable_key,
+        indicators_cache,
         lru_cache,
         ttl_cache,
-        indicators_cache,
-        generate_stable_key,
+    )
+    from .timing import (
+        PerformanceMetrics,
+        Timer,
+        combined_measurement,
+        measure_throughput,
+        performance_context,
+        track_memory,
     )
 
     # Device-agnostic computing
     from .xp import (
-        xp,
+        ascupy,
+        asnumpy,
+        benchmark_operation,
+        clear_memory_pool,
+        device_synchronize,
+        ensure_array_type,
+        get_array_info,
         gpu_available,
-        
+        memory_pool_info,
         to_device,
         to_host,
-        device_synchronize,
-        get_array_info,
-        ensure_array_type,
-        memory_pool_info,
-        clear_memory_pool,
-        asnumpy,
-        ascupy,
-        benchmark_operation,
+        xp,
     )
 
     PHASE_9_AVAILABLE = True

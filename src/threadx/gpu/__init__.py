@@ -10,21 +10,20 @@ Modules:
 """
 
 from .device_manager import (
+    DeviceInfo,
+    check_nccl_support,
+    get_device_by_id,
+    get_device_by_name,
     is_available,
     list_devices,
-    get_device_by_name,
-    get_device_by_id,
-    check_nccl_support,
     xp,
-    DeviceInfo,
 )
-
 from .multi_gpu import (
-    MultiGPUManager,
     DeviceUnavailableError,
     GPUMemoryError,
-    ShapeMismatchError,
+    MultiGPUManager,
     NonVectorizableFunctionError,
+    ShapeMismatchError,
     get_default_manager,
 )
 

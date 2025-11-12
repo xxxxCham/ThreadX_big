@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
@@ -22,8 +21,8 @@ class NormalizationConfig:
     """Configuration for OHLCV normalization."""
 
     timezone: str = "UTC"
-    required_columns: List[str] = field(default_factory=lambda: ["open", "high", "low", "close", "volume"])
-    datetime_column: Optional[str] = None  # Auto-detect if None
+    required_columns: list[str] = field(default_factory=lambda: ["open", "high", "low", "close", "volume"])
+    datetime_column: str | None = None  # Auto-detect if None
     lowercase_columns: bool = True
     ensure_utc_index: bool = True
     sort_by_time: bool = True
@@ -34,9 +33,9 @@ class NormalizationReport:
     """Report of normalization results."""
 
     success: bool
-    transformations: List[str] = field(default_factory=list)
-    errors: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
+    transformations: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 # Default normalization configuration
@@ -50,7 +49,7 @@ DEFAULT_NORMALIZATION_CONFIG = NormalizationConfig(
 )
 
 
-def _detect_datetime_column(df: pd.DataFrame) -> Optional[str]:
+def _detect_datetime_column(df: pd.DataFrame) -> str | None:
     """
     Detect the datetime column in the dataframe.
 
@@ -70,8 +69,8 @@ def _detect_datetime_column(df: pd.DataFrame) -> Optional[str]:
 
 
 def _normalize_datetime_index(
-    df: pd.DataFrame, datetime_col: Optional[str] = None, timezone: str = "UTC"
-) -> tuple[pd.DataFrame, List[str]]:
+    df: pd.DataFrame, datetime_col: str | None = None, timezone: str = "UTC"
+) -> tuple[pd.DataFrame, list[str]]:
     """
     Normalize the datetime index of the dataframe.
 
@@ -106,7 +105,9 @@ def _normalize_datetime_index(
             unit_str = f" (unit={unit})" if unit else ""
             transformations.append(f"Set '{datetime_col}' as index with UTC timezone{unit_str}")
         except Exception as e:
-            logger.warning(f"Failed to set datetime column '{datetime_col}': {e}")
+            logger.warning(
+                f"Failed to set datetime column '{datetime_col}': {e}", exc_info=True
+            )
     elif not isinstance(df.index, pd.DatetimeIndex):
         # Try to convert index to datetime
         try:
@@ -123,7 +124,9 @@ def _normalize_datetime_index(
             unit_str = f" (unit={unit})" if unit else ""
             transformations.append(f"Converted index to datetime with UTC timezone{unit_str}")
         except Exception as e:
-            logger.warning(f"Failed to convert index to datetime: {e}")
+            logger.warning(
+                f"Failed to convert index to datetime: {e}", exc_info=True
+            )
 
     # Ensure UTC timezone
     if isinstance(df.index, pd.DatetimeIndex) and df.index.tz is None:
@@ -136,7 +139,7 @@ def _normalize_datetime_index(
     return df, transformations
 
 
-def _normalize_columns(df: pd.DataFrame, lowercase: bool = True) -> tuple[pd.DataFrame, List[str]]:
+def _normalize_columns(df: pd.DataFrame, lowercase: bool = True) -> tuple[pd.DataFrame, list[str]]:
     """
     Normalize column names.
 
@@ -159,8 +162,8 @@ def _normalize_columns(df: pd.DataFrame, lowercase: bool = True) -> tuple[pd.Dat
 
 
 def _validate_required_columns(
-    df: pd.DataFrame, required_columns: List[str]
-) -> tuple[bool, List[str]]:
+    df: pd.DataFrame, required_columns: list[str]
+) -> tuple[bool, list[str]]:
     """
     Validate that required columns are present.
 
@@ -177,7 +180,7 @@ def _validate_required_columns(
 
 def normalize_ohlcv(
     df: pd.DataFrame,
-    config: Optional[NormalizationConfig] = None,
+    config: NormalizationConfig | None = None,
 ) -> tuple[pd.DataFrame, NormalizationReport]:
     """
     Normalize OHLCV data to a standard format.

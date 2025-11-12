@@ -8,7 +8,8 @@ fallback checks presence of OHLCV columns and numeric types.
 """
 
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
+
 import pandas as pd
 
 try:
@@ -16,14 +17,14 @@ try:
     from pandera import Column, DataFrameSchema
 
     PANDERA_AVAILABLE = True
-except Exception:
+except ImportError:
     PANDERA_AVAILABLE = False
 
 
 OHLCV = ["open", "high", "low", "close", "volume"]
 
 
-def _basic_check(df: pd.DataFrame) -> Dict[str, Any]:
+def _basic_check(df: pd.DataFrame) -> dict[str, Any]:
     cols = [c.lower() for c in df.columns]
     has_ohlcv = all(c in cols for c in OHLCV)
     numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
@@ -34,7 +35,7 @@ def _basic_check(df: pd.DataFrame) -> Dict[str, Any]:
     }
 
 
-def validate_dataset(path: str) -> Dict[str, Any]:
+def validate_dataset(path: str) -> dict[str, Any]:
     """Validate dataset at path. Returns report dict.
 
     path may point to a parquet/json/csv file or a directory; when directory is provided
@@ -104,4 +105,3 @@ def validate_dataset(path: str) -> Dict[str, Any]:
     if not report["errors"]:
         report["errors"].append("No supported data files found")
     return report
-

@@ -45,7 +45,8 @@ Exemple d'usage:
 import logging
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union, Any
+from typing import Any
+
 import numpy as np
 import pandas as pd
 
@@ -83,14 +84,14 @@ except ImportError:
 
     class MockCudaRuntime:
         @staticmethod
-        def getDeviceCount():
+        def get_device_count():
             return 0
 
     class MockCuda:
         runtime = MockCudaRuntime()
 
         @staticmethod
-        def Device(device_id):
+        def device(device_id):
             return MockCudaDevice(device_id)
 
     class MockCuPy:
@@ -153,7 +154,7 @@ class BollingerSettings:
     use_gpu: bool = True
     gpu_batch_size: int = 1000
     cpu_fallback: bool = True
-    gpu_split_ratio: Tuple[float, float] = (0.75, 0.25)  # RTX 5090 / RTX 2060
+    gpu_split_ratio: tuple[float, float] = (0.75, 0.25)  # RTX 5090 / RTX 2060
 
     def __post_init__(self):
         """Validation des paramètres"""
@@ -201,7 +202,7 @@ class GPUManager:
             logger.warning(f"⚠️ Erreur détection GPU: {e}")
             self.available_gpus = []
 
-    def split_workload(self, data_size: int) -> List[Tuple[int, int, int]]:
+    def split_workload(self, data_size: int) -> list[tuple[int, int, int]]:
         """
         Split workload entre GPU selon leurs capacités
 
@@ -231,7 +232,7 @@ class GPUManager:
 class BollingerBands:
     """Calculateur Bollinger Bands vectorisé avec support GPU multi-carte"""
 
-    def __init__(self, settings: Optional[BollingerSettings] = None):
+    def __init__(self, settings: BollingerSettings | None = None):
         self.settings = settings or BollingerSettings()
         self.gpu_manager = GPUManager(self.settings)
         self._cache: dict[str, Any] = {}  # Cache pour SMA réutilisables
@@ -242,10 +243,10 @@ class BollingerBands:
 
     def compute(
         self,
-        close: Union[np.ndarray, pd.Series],
-        period: Optional[Union[int, float]] = None,
-        std: Optional[float] = None,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        close: np.ndarray | pd.Series,
+        period: int | float | None = None,
+        std: float | None = None,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Calcul Bollinger Bands pour une série de prix
 
@@ -297,7 +298,7 @@ class BollingerBands:
 
     def _compute_gpu(
         self, close: np.ndarray, period: int, std: float
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Calcul GPU avec répartition multi-carte"""
 
         # Transfert vers GPU principal
@@ -345,7 +346,7 @@ class BollingerBands:
 
     def _compute_cpu(
         self, close: np.ndarray, period: int, std: float
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Fallback CPU vectorisé"""
 
         # SMA avec pandas pour efficacité
@@ -366,9 +367,9 @@ class BollingerBands:
 
     def compute_batch(
         self,
-        close: Union[np.ndarray, pd.Series],
-        params_list: List[Dict[str, Union[int, float]]],
-    ) -> Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+        close: np.ndarray | pd.Series,
+        params_list: list[dict[str, int | float]],
+    ) -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]]:
         """
         Calcul batch pour multiples paramètres
 
@@ -429,9 +430,9 @@ class BollingerBands:
 
     def _compute_batch_multi_gpu(
         self,
-        close: Union[np.ndarray, pd.Series],
-        params_list: List[Dict[str, Union[int, float]]],
-    ) -> Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+        close: np.ndarray | pd.Series,
+        params_list: list[dict[str, int | float]],
+    ) -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]]:
         """Calcul batch multi-GPU avec répartition"""
 
         logger.info(
@@ -497,11 +498,11 @@ class BollingerBands:
 
 
 def compute_bollinger_bands(
-    close: Union[np.ndarray, pd.Series],
+    close: np.ndarray | pd.Series,
     period: int = 20,
     std: float = 2.0,
     use_gpu: bool = True,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Calcul Bollinger Bands - API simple
 
@@ -538,10 +539,10 @@ def compute_bollinger_bands(
 
 
 def compute_bollinger_batch(
-    close: Union[np.ndarray, pd.Series],
-    params_list: List[Dict[str, Union[int, float]]],
+    close: np.ndarray | pd.Series,
+    params_list: list[dict[str, int | float]],
     use_gpu: bool = True,
-) -> Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+) -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """
     Calcul Bollinger Bands batch - API simple
 
@@ -618,8 +619,8 @@ def validate_bollinger_results(
 
 
 def benchmark_bollinger_performance(
-    data_sizes: List[int] = [1000, 5000, 10000], n_runs: int = 3
-) -> Dict[str, Any]:
+    data_sizes: list[int] = [1000, 5000, 10000], n_runs: int = 3
+) -> dict[str, Any]:
     """
     Benchmark performance CPU vs GPU
 

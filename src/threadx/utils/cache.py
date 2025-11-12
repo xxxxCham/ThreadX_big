@@ -14,27 +14,20 @@ Designed for integration with ThreadX Indicators Bank without API changes.
 Windows-first, no environment variables, TOML/Settings configuration.
 """
 
-import time
-import threading
 import hashlib
+import logging
 import pickle
-from typing import (
-    Any,
-    Optional,
-    Callable,
-    Dict,
-    List,
-    Tuple,
-    Union,
-    Generic,
-    TypeVar,
-    Hashable,
-    NamedTuple,
-)
+import threading
+import time
+from collections import OrderedDict
+from collections.abc import Callable, Hashable
 from dataclasses import dataclass, field
 from functools import wraps
-from collections import OrderedDict
-import logging
+from typing import (
+    Any,
+    NamedTuple,
+    TypeVar,
+)
 
 # Import ThreadX logger - fallback to standard logging if not available
 try:
@@ -65,8 +58,8 @@ class CacheEvent(NamedTuple):
 
     event_type: str  # 'hit', 'miss', 'eviction', 'expiration', 'clear'
     key: str
-    namespace: Optional[str] = None
-    value_size: Optional[int] = None
+    namespace: str | None = None
+    value_size: int | None = None
     timestamp: float = field(default_factory=time.time)
 
 
@@ -100,7 +93,7 @@ class CacheStats:
         self.expirations = 0
 
 
-class LRUCache(Generic[K, V]):
+class LRUCache[K: Hashable, V]:
     """
     Thread-safe LRU (Least Recently Used) cache implementation.
 
@@ -131,7 +124,7 @@ class LRUCache(Generic[K, V]):
     def __init__(
         self,
         capacity: int,
-        on_cache_event: Optional[Callable[[CacheEvent], None]] = None,
+        on_cache_event: Callable[[CacheEvent], None] | None = None,
     ):
         if capacity <= 0:
             raise ValueError("Cache capacity must be positive")
@@ -142,7 +135,7 @@ class LRUCache(Generic[K, V]):
         self._lock = threading.RLock()
         self._on_cache_event = on_cache_event
 
-    def get(self, key: K, default: Optional[V] = None) -> Optional[V]:
+    def get(self, key: K, default: V | None = None) -> V | None:
         """
         Get value by key, updating LRU order.
 
@@ -256,7 +249,7 @@ class LRUCache(Generic[K, V]):
         return self._capacity
 
 
-class TTLCache(Generic[K, V]):
+class TTLCache[K: Hashable, V]:
     """
     Thread-safe TTL (Time To Live) cache implementation.
 
@@ -286,18 +279,18 @@ class TTLCache(Generic[K, V]):
     def __init__(
         self,
         ttl_seconds: float,
-        on_cache_event: Optional[Callable[[CacheEvent], None]] = None,
+        on_cache_event: Callable[[CacheEvent], None] | None = None,
     ):
         if ttl_seconds <= 0:
             raise ValueError("TTL must be positive")
 
         self._ttl_seconds = ttl_seconds
-        self._cache: Dict[K, Tuple[V, float]] = {}  # value, expiry_time
+        self._cache: dict[K, tuple[V, float]] = {}  # value, expiry_time
         self._stats = CacheStats()
         self._lock = threading.RLock()
         self._on_cache_event = on_cache_event
 
-    def get(self, key: K, default: Optional[V] = None) -> Optional[V]:
+    def get(self, key: K, default: V | None = None) -> V | None:
         """
         Get value by key, checking expiration.
 
@@ -446,9 +439,9 @@ class TTLCache(Generic[K, V]):
 
 def generate_stable_key(
     func: Callable,
-    args: Tuple[Any, ...],
-    kwargs: Dict[str, Any],
-    namespace: Optional[str] = None,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+    namespace: str | None = None,
 ) -> str:
     """
     Generate stable, deterministic cache key.
@@ -526,10 +519,10 @@ def generate_stable_key(
 
 
 def cached(
-    ttl: Optional[int] = None,
-    lru: Optional[int] = None,
-    key_fn: Optional[Callable] = None,
-    namespace: Optional[str] = None,
+    ttl: int | None = None,
+    lru: int | None = None,
+    key_fn: Callable | None = None,
+    namespace: str | None = None,
     stats_logging: bool = True,
 ) -> Callable:
     """
@@ -591,10 +584,10 @@ def cached(
     """
 
     # Cache instance storage (per decorated function)
-    _cache_registry: Dict[str, Union[LRUCache, TTLCache, Tuple[LRUCache, TTLCache]]] = (
+    _cache_registry: dict[str, LRUCache | TTLCache | tuple[LRUCache, TTLCache]] = (
         {}
     )
-    _stats_last_logged: Dict[str, float] = {}
+    _stats_last_logged: dict[str, float] = {}
 
     def _get_stats_interval() -> float:
         """Get stats logging interval from settings."""
@@ -773,12 +766,12 @@ def cached(
 
 
 # Convenience functions for common caching patterns
-def lru_cache(capacity: int, namespace: Optional[str] = None) -> Callable:
+def lru_cache(capacity: int, namespace: str | None = None) -> Callable:
     """LRU-only caching decorator."""
     return cached(lru=capacity, namespace=namespace)
 
 
-def ttl_cache(ttl_seconds: int, namespace: Optional[str] = None) -> Callable:
+def ttl_cache(ttl_seconds: int, namespace: str | None = None) -> Callable:
     """TTL-only caching decorator."""
     return cached(ttl=ttl_seconds, namespace=namespace)
 

@@ -22,22 +22,19 @@ Date: 2025
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Any, Tuple, Optional, List
-import pandas as pd
-import numpy as np
-import logging
-from pathlib import Path
+from typing import Any
 
-from threadx.configuration.settings import S
-from threadx.utils.log import get_logger
+import numpy as np
+import pandas as pd
+
+from threadx.indicators import ensure_indicator
 from threadx.strategy.model import (
-    Strategy,
-    Trade,
     RunStats,
+    Trade,
     validate_ohlcv_dataframe,
     validate_strategy_params,
 )
-from threadx.indicators import ensure_indicator
+from threadx.utils.log import get_logger
 
 logger = get_logger(__name__)
 
@@ -173,7 +170,7 @@ class AmplitudeHunterParams:
     leverage: float = 1.0
 
     # Métadonnées
-    meta: Dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         """Validation des paramètres"""
@@ -210,7 +207,7 @@ class AmplitudeHunterParams:
             )
         if self.pb_entry_threshold_min > self.pb_entry_threshold_max:
             raise ValueError(
-                f"pb_entry_threshold_min must be <= pb_entry_threshold_max"
+                "pb_entry_threshold_min must be <= pb_entry_threshold_max"
             )
 
         # MACD
@@ -278,7 +275,7 @@ class AmplitudeHunterParams:
         if self.leverage <= 0:
             raise ValueError(f"leverage must be > 0, got: {self.leverage}")
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convertit en dictionnaire pour compatibilité"""
         return {
             # Bollinger
@@ -330,7 +327,7 @@ class AmplitudeHunterParams:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AmplitudeHunterParams":
+    def from_dict(cls, data: dict[str, Any]) -> "AmplitudeHunterParams":
         """Crée depuis un dictionnaire"""
         return cls(
             # Bollinger
@@ -431,7 +428,7 @@ class AmplitudeHunterStrategy:
 
     def _calculate_macd(
         self, close: np.ndarray, fast: int, slow: int, signal: int
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Calcule MACD (ligne MACD, signal, histogramme).
 
@@ -867,7 +864,7 @@ class AmplitudeHunterStrategy:
         # Extraction indicateurs
         bb_upper = df_with_indicators["bb_upper"].values
         bb_lower = df_with_indicators["bb_lower"].values
-        bb_middle = df_with_indicators["bb_middle"].values
+        df_with_indicators["bb_middle"].values
         percent_b = df_with_indicators["percent_b"].values
         bbwidth_pct = df_with_indicators["bbwidth_percentile"].values
         macd_hist = df_with_indicators["macd_hist"].values
@@ -968,7 +965,7 @@ class AmplitudeHunterStrategy:
         initial_capital: float = 10000.0,
         fee_bps: float = 4.5,
         slippage_bps: float = 0.0,
-    ) -> Tuple[pd.Series, RunStats]:
+    ) -> tuple[pd.Series, RunStats]:
         """
         Exécute un backtest complet de la stratégie AmplitudeHunter.
 
@@ -1006,13 +1003,12 @@ class AmplitudeHunterStrategy:
         equity = np.full(n_bars, initial_capital, dtype=float)
 
         cash = initial_capital
-        positions: List[Trade] = []  # Liste des positions en cours (initial + adds)
-        closed_trades: List[Trade] = []
+        positions: list[Trade] = []  # Liste des positions en cours (initial + adds)
+        closed_trades: list[Trade] = []
 
         fee_rate = (fee_bps + slippage_bps) / 10000.0
 
         # État pour pyramiding
-        entry_bar_idx = -1
         num_adds = 0
         trailing_active = False
         bip_target_hit = False
@@ -1177,7 +1173,6 @@ class AmplitudeHunterStrategy:
 
                     # Reset état
                     positions = []
-                    entry_bar_idx = -1
                     num_adds = 0
                     trailing_active = False
                     bip_target_hit = False
@@ -1332,7 +1327,6 @@ class AmplitudeHunterStrategy:
 
                         positions.append(position)
                         cash -= entry_value + entry_fees
-                        entry_bar_idx = i
                         num_adds = 0
                         trailing_active = False
                         bip_target_hit = False
@@ -1384,7 +1378,7 @@ class AmplitudeHunterStrategy:
     # --- Helper methods pour backtest ---
 
     def _calculate_total_equity(
-        self, cash: float, positions: List[Trade], current_price: float
+        self, cash: float, positions: list[Trade], current_price: float
     ) -> float:
         """Calcule l'équité totale (cash + positions non réalisées)"""
         total_unrealized = sum(
@@ -1395,13 +1389,13 @@ class AmplitudeHunterStrategy:
 
     def _partial_exit_bip(
         self,
-        positions: List[Trade],
+        positions: list[Trade],
         exit_price: float,
         exit_time: Any,
         fee_rate: float,
         exit_pct: float,
         cash: float,
-        closed_trades: List[Trade],
+        closed_trades: list[Trade],
     ) -> float:
         """
         Sortie partielle à BIP target.
@@ -1456,7 +1450,7 @@ class AmplitudeHunterStrategy:
 
     def _add_position(
         self,
-        positions: List[Trade],
+        positions: list[Trade],
         side: str,
         entry_price: float,
         current_atr: float,
@@ -1523,7 +1517,7 @@ class AmplitudeHunterStrategy:
     # --- Optimization Presets ---
 
     @staticmethod
-    def get_optimization_ranges() -> Dict[str, Tuple[float, float]]:
+    def get_optimization_ranges() -> dict[str, tuple[float, float]]:
         """
         Retourne les plages d'optimisation recommandées pour AmplitudeHunter.
 
@@ -1556,7 +1550,7 @@ class AmplitudeHunterStrategy:
             }
 
     @staticmethod
-    def get_optimization_grid() -> Dict[str, List[Any]]:
+    def get_optimization_grid() -> dict[str, list[Any]]:
         """
         Retourne les grilles de valeurs pour grid search.
 
@@ -1588,7 +1582,7 @@ class AmplitudeHunterStrategy:
             }
 
     @staticmethod
-    def get_default_optimization_params() -> Dict[str, Any]:
+    def get_default_optimization_params() -> dict[str, Any]:
         """
         Retourne les valeurs par défaut recommandées pour l'optimisation.
 
@@ -1652,7 +1646,7 @@ def backtest(
     symbol: str = "UNKNOWN",
     timeframe: str = "1h",
     **kwargs,
-) -> Tuple[pd.Series, RunStats]:
+) -> tuple[pd.Series, RunStats]:
     """
     Fonction de convenance pour backtest AmplitudeHunter.
 

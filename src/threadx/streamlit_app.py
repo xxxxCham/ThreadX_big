@@ -14,18 +14,28 @@ Version: 2.0.0 - UI Redesign
 
 from __future__ import annotations
 
+import os
+import logging
 import sys
+import time
 from datetime import date
 from pathlib import Path
+
+# Optionally silence all logs early if requested (for performance profiling)
+if os.getenv("THREADX_SILENCE_LOGS", "0") == "1":
+    logging.disable(logging.CRITICAL)
 
 import streamlit as st
 
 # Ensure package root is on sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from threadx.data_access import DATA_DIR
-from threadx.ui.page_config_strategy import main as config_page_main
-from threadx.ui.page_backtest_optimization import main as backtest_page_main
+from threadx.data_access import DATA_DIR  # noqa: E402
+from threadx.ui.page_backtest_optimization import (
+    main as backtest_page_main,
+)  # noqa: E402
+from threadx.ui.page_config_strategy import main as config_page_main  # noqa: E402
+from threadx.ui.system_monitor import get_global_monitor  # noqa: E402
 
 # Configuration
 st.set_page_config(
@@ -35,7 +45,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Styles CSS Modernes
+# Styles CSS Modernes + Script JS pour molette sur sliders
 st.markdown(
     """
 <style>
@@ -53,13 +63,339 @@ st.markdown(
     .stTabs [data-baseweb="tab"] { background: transparent; border-radius: 8px; color: #a8b2d1; padding: 12px 24px; }
     .stTabs [aria-selected="true"] { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; color: white !important; }
     hr { margin: 2rem 0 !important; border-color: rgba(79, 195, 247, 0.2) !important; }
+    /* Curseur personnalisé pour les sliders */
+    .stSlider:hover { cursor: ew-resize !important; }
 </style>
+
+<script>
+// ===================================
+// ThreadX - Contrôle Molette Sliders
+// ===================================
+// Active l'ajustement des sliders avec la molette de la souris
+// Fonctionne sur tous les sliders de l'application (partout)
+
+(function() {
+    'use strict';
+
+    // Configuration
+    const WHEEL_SENSITIVITY = 0.05; // Sensibilité de la molette (5% par cran)
+    const UPDATE_DELAY = 50; // Délai anti-rebond en ms
+
+    let updateTimeout = null;
+    let processedSliders = new WeakSet();
+
+    /**
+     * Calcule le nouveau pas d'un slider en fonction de son range
+     */
+    function calculateStep(slider) {
+        const min = parseFloat(slider.min) || 0;
+        const max = parseFloat(slider.max) || 100;
+        const step = parseFloat(slider.step) || 1;
+        const range = max - min;
+
+        // Si step déjà défini et cohérent, l'utiliser
+        if (step > 0 && step < range) {
+            return step;
+        }
+
+        // Sinon, calculer un pas intelligent basé sur le range
+        if (range <= 1) {
+            return 0.01; // Valeurs décimales fines
+        } else if (range <= 10) {
+            return 0.1;
+        } else if (range <= 100) {
+            return 1;
+        } else if (range <= 1000) {
+            return 10;
+        } else {
+            return 100;
+        }
+    }
+
+    /**
+     * Ajoute le contrôle molette à un slider
+     */
+    function addWheelControl(slider) {
+        // Éviter de traiter plusieurs fois le même slider
+        if (processedSliders.has(slider)) {
+            return;
+        }
+
+        processedSliders.add(slider);
+
+        // Récupérer les bornes
+        const min = parseFloat(slider.min) || 0;
+        const max = parseFloat(slider.max) || 100;
+        const step = calculateStep(slider);
+
+        // Trouver le conteneur parent du slider
+        const sliderContainer = slider.closest('[data-testid="stSlider"]') ||
+                               slider.closest('.stSlider') ||
+                               slider.parentElement;
+
+        if (!sliderContainer) {
+            return;
+        }
+
+        // Fonction de mise à jour
+        function updateSlider(event) {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const currentValue = parseFloat(slider.value) || 0;
+            const delta = -Math.sign(event.deltaY);
+            const increment = delta * step;
+
+            let newValue = currentValue + increment;
+
+            // Clamper entre min et max
+            newValue = Math.max(min, Math.min(max, newValue));
+
+            // Arrondir selon le step
+            newValue = Math.round(newValue / step) * step;
+
+            // Limiter la précision pour éviter les erreurs d'arrondi
+            const decimals = (step.toString().split('.')[1] || '').length;
+            newValue = parseFloat(newValue.toFixed(decimals));
+
+            // Mettre à jour la valeur
+            if (newValue !== currentValue) {
+                slider.value = newValue;
+
+                // Déclencher les événements pour que Streamlit détecte le changement
+                slider.dispatchEvent(new Event('input', { bubbles: true }));
+                slider.dispatchEvent(new Event('change', { bubbles: true }));
+
+                // Visual feedback
+                sliderContainer.style.transition = 'transform 0.1s ease';
+                sliderContainer.style.transform = 'scale(1.02)';
+                setTimeout(() => {
+                    sliderContainer.style.transform = 'scale(1)';
+                }, 100);
+            }
+        }
+
+        // Ajouter l'event listener sur le conteneur (meilleure détection)
+        sliderContainer.addEventListener('wheel', function(event) {
+            // Vérifier si la souris est bien sur le slider
+            const rect = sliderContainer.getBoundingClientRect();
+            const mouseX = event.clientX;
+            const mouseY = event.clientY;
+
+            if (mouseX >= rect.left && mouseX <= rect.right &&
+                mouseY >= rect.top && mouseY <= rect.bottom) {
+
+                // Utiliser un debounce pour éviter trop d'événements
+                clearTimeout(updateTimeout);
+                updateTimeout = setTimeout(() => {
+                    updateSlider(event);
+                }, UPDATE_DELAY);
+            }
+        }, { passive: false });
+
+        // Changer le curseur au survol
+        sliderContainer.style.cursor = 'ew-resize';
+
+        // Log pour debug (commentable en production)
+        console.log(`[ThreadX] Slider wheel control activé: min=${min}, max=${max}, step=${step}`);
+    }
+
+    /**
+     * Scanne et active tous les sliders de la page
+     */
+    function activateAllSliders() {
+        // Sélecteurs multiples pour couvrir tous les types de sliders Streamlit
+        const selectors = [
+            'input[type="range"]',
+            '[data-baseweb="slider"] input',
+            '.stSlider input',
+            '[data-testid="stSlider"] input'
+        ];
+
+        selectors.forEach(selector => {
+            const sliders = document.querySelectorAll(selector);
+            sliders.forEach(slider => {
+                if (slider && slider.type === 'range') {
+                    addWheelControl(slider);
+                }
+            });
+        });
+    }
+
+    /**
+     * Observer pour détecter les nouveaux sliders ajoutés dynamiquement
+     */
+    function setupMutationObserver() {
+        const observer = new MutationObserver(function(mutations) {
+            let shouldReactivate = false;
+
+            mutations.forEach(function(mutation) {
+                mutation.addedNodes.forEach(function(node) {
+                    if (node.nodeType === 1) { // Element node
+                        // Vérifier si c'est un slider ou contient des sliders
+                        if (node.matches && (
+                            node.matches('input[type="range"]') ||
+                            node.matches('[data-testid="stSlider"]') ||
+                            node.matches('.stSlider')
+                        )) {
+                            shouldReactivate = true;
+                        } else if (node.querySelector) {
+                            const hasSlider = node.querySelector('input[type="range"]');
+                            if (hasSlider) {
+                                shouldReactivate = true;
+                            }
+                        }
+                    }
+                });
+            });
+
+            if (shouldReactivate) {
+                setTimeout(activateAllSliders, 100);
+            }
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+
+        console.log('[ThreadX] MutationObserver activé pour sliders dynamiques');
+    }
+
+    /**
+     * Initialisation au chargement
+     */
+    function init() {
+        console.log('[ThreadX] Initialisation contrôle molette sliders...');
+
+        // Première activation
+        activateAllSliders();
+
+        // Observer pour nouveaux sliders
+        setupMutationObserver();
+
+        // Re-scanner périodiquement (fallback)
+        setInterval(activateAllSliders, 2000);
+
+        console.log('[ThreadX] ✅ Contrôle molette sliders activé globalement');
+    }
+
+    // Démarrer quand le DOM est prêt
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+
+    // Re-scanner après les transitions Streamlit
+    window.addEventListener('load', function() {
+        setTimeout(activateAllSliders, 500);
+    });
+
+})();
+</script>
 """,
     unsafe_allow_html=True,
 )
 
-PAGE_TITLES = {"config": "📊 Chargement des Données", "backtest": "⚡ Optimisation"}
-PAGE_RENDERERS = {"config": config_page_main, "backtest": backtest_page_main}
+PAGE_TITLES = {
+    "config": "📊 Chargement des Données",
+    "backtest": "⚡ Optimisation",
+    "monitor": "🖥️ Monitoring Système",
+}
+
+
+def render_monitor_page() -> None:
+    """Page dédiée au monitoring temps réel CPU/RAM/GPU."""
+    st.markdown("# 🖥️ Monitoring Système Temps Réel")
+    st.caption(
+        "Affiche l'utilisation CPU, mémoire et GPU pendant les backtests/optimisations."
+    )
+
+    monitor = get_global_monitor()
+
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col1:
+        enabled = st.toggle(
+            "Activer le monitoring",
+            value=st.session_state.get("monitor_enabled", True),
+            key="monitor_enabled",
+        )
+    with col2:
+        auto_refresh = st.toggle(
+            "Auto-refresh",
+            value=st.session_state.get("monitor_autorefresh", True),
+            key="monitor_autorefresh",
+        )
+    with col3:
+        refresh_secs = st.slider(
+            "Intervalle (s)",
+            0.25,
+            5.0,
+            st.session_state.get("monitor_interval", 0.5),
+            0.25,
+            key="monitor_interval",
+        )
+
+    # Start/Stop en fonction de l'état
+    if enabled and not monitor.is_running():
+        monitor.start()
+    elif not enabled and monitor.is_running():
+        monitor.stop()
+
+    # Actions
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        if st.button("🧹 Vider l'historique", use_container_width=True):
+            monitor.clear_history()
+            st.toast("Historique vidé", icon="🧹")
+    with c2:
+        st.write("")
+
+    # Données et graphiques
+    df = monitor.get_history_df()
+    if df.empty:
+        st.info("Aucune donnée pour l'instant. Activez le monitoring.")
+    else:
+        # Mise en forme
+        df_time = df.set_index("time")
+        st.markdown("### CPU & Mémoire")
+        st.line_chart(df_time[["cpu", "memory"]])
+
+        st.markdown("### GPU Utilisation (%)")
+        if (df[["gpu1", "gpu2"]].max() > 0).any():
+            st.line_chart(df_time[["gpu1", "gpu2"]])
+        else:
+            st.caption("GPU inactif ou non détecté (pynvml non disponible)")
+
+        st.markdown("### GPU Mémoire (%)")
+        st.line_chart(df_time[["gpu1_mem", "gpu2_mem"]])
+
+        # Statistiques
+        with st.expander("Résumé Statistiques", expanded=False):
+            stats = monitor.get_stats_summary()
+            if stats:
+                cols = st.columns(4)
+                items = list(stats.items())
+                for i in range(0, len(items), 4):
+                    row = items[i : i + 4]
+                    for (k, v), col in zip(row, cols):
+                        with col:
+                            st.metric(k, f"{v:.2f}" if isinstance(v, float) else v)
+            else:
+                st.write("Pas de statistiques disponibles.")
+
+    # Auto-refresh non bloquant: on relance le script après une petite pause
+    if enabled and auto_refresh:
+        time.sleep(float(refresh_secs))
+        st.rerun()
+
+
+PAGE_RENDERERS = {
+    "config": config_page_main,
+    "backtest": backtest_page_main,
+    "monitor": render_monitor_page,
+}
 
 
 def init_session() -> None:
@@ -150,6 +486,62 @@ def render_sidebar() -> None:
             st.metric("Backend", "NumPy")
         with col2:
             st.metric("Config", "TOML")
+
+        # Panneau monitoring compact (activable à la demande)
+        st.markdown("---")
+        with st.expander("📡 Monitoring (sidebar)", expanded=False):
+            monitor = get_global_monitor()
+            sidebar_visible = st.checkbox(
+                "Afficher le panneau",
+                value=st.session_state.get("monitor_sidebar_visible", False),
+                key="monitor_sidebar_visible",
+            )
+            auto_refresh_sb = st.checkbox(
+                "Auto-refresh",
+                value=st.session_state.get("monitor_autorefresh_sb", False),
+                key="monitor_autorefresh_sb",
+            )
+            interval_sb = st.slider(
+                "Intervalle (s)",
+                0.25,
+                5.0,
+                st.session_state.get("monitor_interval_sb", 1.0),
+                0.25,
+                key="monitor_interval_sb",
+            )
+
+            # Gestion start/stop: actif si panneau visible OU page monitor sélectionnée
+            page_key = st.session_state.get("page", "config")
+            should_run = bool(sidebar_visible or page_key == "monitor")
+            if should_run and not monitor.is_running():
+                monitor.start()
+            elif not should_run and monitor.is_running():
+                monitor.stop()
+
+            if sidebar_visible:
+                df = monitor.get_history_df(n_last=180)
+                if df.empty:
+                    st.caption("Aucune donnée (activez l'auto-refresh)")
+                else:
+                    df_t = df.set_index("time")
+                    st.line_chart(df_t[["cpu", "memory"]])
+                    if (df[["gpu1", "gpu2"]].max() > 0).any():
+                        st.line_chart(df_t[["gpu1", "gpu2"]])
+                    else:
+                        st.caption("GPU inactif ou non détecté")
+
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    if st.button(
+                        "Vider", key="clear_hist_sb", use_container_width=True
+                    ):
+                        monitor.clear_history()
+                with col_b:
+                    st.caption("")
+
+                if auto_refresh_sb:
+                    time.sleep(float(interval_sb))
+                    st.rerun()
         st.markdown("---")
         if st.button("🔄 Rafraîchir Cache", use_container_width=True):
             st.cache_data.clear()

@@ -9,11 +9,11 @@ des méthodes pour mapper automatiquement les paramètres de stratégies aux pla
 d'optimisation recommandées.
 """
 
-from dataclasses import dataclass, field
-from typing import Dict, Any, List, Tuple, Optional, Union
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+
 import toml
-import logging
 
 from threadx.utils.log import get_logger
 
@@ -41,16 +41,16 @@ class IndicatorRangePreset:
     """
 
     name: str
-    min: Optional[float] = None
-    max: Optional[float] = None
-    step: Optional[float] = None
-    default: Optional[Any] = None
+    min: float | None = None
+    max: float | None = None
+    step: float | None = None
+    default: Any | None = None
     type: str = "numeric"  # "numeric", "boolean", "categorical", "fixed"
-    values: Optional[List[Any]] = None
-    value: Optional[Any] = None  # Pour type="fixed"
+    values: list[Any] | None = None
+    value: Any | None = None  # Pour type="fixed"
     description: str = ""
 
-    def get_range(self) -> Tuple[float, float]:
+    def get_range(self) -> tuple[float, float]:
         """Retourne la plage (min, max)"""
         if self.type != "numeric":
             raise ValueError(
@@ -60,7 +60,7 @@ class IndicatorRangePreset:
             raise ValueError(f"min ou max non défini pour {self.name}")
         return (self.min, self.max)
 
-    def get_grid_values(self) -> List[Any]:
+    def get_grid_values(self) -> list[Any]:
         """Génère une liste de valeurs pour grid search"""
         if self.type == "numeric":
             if self.min is None or self.max is None or self.step is None:
@@ -95,7 +95,7 @@ class IndicatorRangePreset:
         else:
             raise ValueError(f"Type inconnu: {self.type}")
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convertit en dictionnaire"""
         return {
             "name": self.name,
@@ -110,7 +110,7 @@ class IndicatorRangePreset:
         }
 
 
-def load_all_presets() -> Dict[str, IndicatorRangePreset]:
+def load_all_presets() -> dict[str, IndicatorRangePreset]:
     """
     Charge tous les presets depuis indicator_ranges.toml
 
@@ -161,7 +161,7 @@ def load_all_presets() -> Dict[str, IndicatorRangePreset]:
     return presets
 
 
-def get_indicator_range(indicator_name: str) -> Optional[IndicatorRangePreset]:
+def get_indicator_range(indicator_name: str) -> IndicatorRangePreset | None:
     """
     Récupère le preset pour un indicateur spécifique.
 
@@ -175,7 +175,7 @@ def get_indicator_range(indicator_name: str) -> Optional[IndicatorRangePreset]:
     return presets.get(indicator_name)
 
 
-def list_available_indicators() -> List[str]:
+def list_available_indicators() -> list[str]:
     """
     Liste tous les indicateurs disponibles dans les presets.
 
@@ -206,7 +206,7 @@ class StrategyPresetMapper:
             strategy_name: Nom de la stratégie
         """
         self.strategy_name = strategy_name
-        self.mappings: Dict[str, str] = {}  # {param_strategy: indicator_name}
+        self.mappings: dict[str, str] = {}  # {param_strategy: indicator_name}
         self.presets = load_all_presets()
         logger.info(f"StrategyPresetMapper initialisé pour: {strategy_name}")
 
@@ -228,7 +228,7 @@ class StrategyPresetMapper:
         self.mappings[strategy_param] = indicator_name
         logger.debug(f"Mapping ajouté: {strategy_param} -> {indicator_name}")
 
-    def add_mappings(self, mappings: Dict[str, str]) -> None:
+    def add_mappings(self, mappings: dict[str, str]) -> None:
         """
         Ajoute plusieurs mappings en une seule fois.
 
@@ -238,7 +238,7 @@ class StrategyPresetMapper:
         for strategy_param, indicator_name in mappings.items():
             self.add_mapping(strategy_param, indicator_name)
 
-    def get_optimization_ranges(self) -> Dict[str, Tuple[float, float]]:
+    def get_optimization_ranges(self) -> dict[str, tuple[float, float]]:
         """
         Retourne les plages d'optimisation pour les paramètres mappés.
 
@@ -262,7 +262,7 @@ class StrategyPresetMapper:
         )
         return ranges
 
-    def get_grid_parameters(self) -> Dict[str, List[Any]]:
+    def get_grid_parameters(self) -> dict[str, list[Any]]:
         """
         Retourne les grilles de paramètres pour grid search.
 
@@ -286,7 +286,7 @@ class StrategyPresetMapper:
         )
         return grid
 
-    def get_default_parameters(self) -> Dict[str, Any]:
+    def get_default_parameters(self) -> dict[str, Any]:
         """
         Retourne les valeurs par défaut pour les paramètres mappés.
 
@@ -305,7 +305,7 @@ class StrategyPresetMapper:
         )
         return defaults
 
-    def get_preset_info(self) -> Dict[str, Dict[str, Any]]:
+    def get_preset_info(self) -> dict[str, dict[str, Any]]:
         """
         Retourne les informations complètes sur les presets mappés.
 
@@ -409,7 +409,7 @@ def get_strategy_preset(strategy_name: str) -> StrategyPresetMapper:
     return mapper
 
 
-def load_execution_presets() -> Dict[str, Dict[str, Any]]:
+def load_execution_presets() -> dict[str, dict[str, Any]]:
     """
     🆕 Charge les presets d'exécution (workers, batch size, GPU targets).
 
@@ -436,7 +436,7 @@ def load_execution_presets() -> Dict[str, Dict[str, Any]]:
         return {}
 
 
-def get_execution_preset(preset_name: str = "manuel_30") -> Dict[str, Any]:
+def get_execution_preset(preset_name: str = "manuel_30") -> dict[str, Any]:
     """
     🆕 Récupère un preset d'exécution par nom.
 

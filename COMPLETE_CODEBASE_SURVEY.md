@@ -1851,3 +1851,248 @@ Pour alléger la racine et centraliser la documentation, les documents suivants 
 
 Référence: les sections « Résumé Dépendances & Optimisations », « GPU/CPU Fallbacks » et « Nettoyage complet » de ce document remplacent leurs contenus respectifs.
 
+---
+
+## 🔧 CONSOLIDATION CONFIGURATION (11 Jan 2025)
+
+### 📊 Vue d'Ensemble
+
+**Objectif** : Simplifier et centraliser tous les fichiers de configuration dispersés
+**Résultat** : -62% fichiers config à la racine (13 → 5)
+**Archivés** : 8 fichiers dans `docs/_archive/config/`
+
+### 📁 Structure Finale
+
+```
+D:\ThreadX_big\
+├── 📄 CONFIGURATION PROJET (Racine)
+│   ├── pyproject.toml         ⭐ Central - Build, pytest, mypy, ruff, coverage
+│   ├── setup.cfg              ✅ Outils secondaires (flake8, pylint, banban, isort, black)
+│   ├── pyrightconfig.json     ✅ Pyright/Pylance (VSCode)
+│   ├── cspell.yml             ✅ Spell checking (310+ mots)
+│   └── paths.toml             ⭐ Configuration ThreadX principale
+│
+└── src/threadx/optimization/presets/
+    ├── indicator_ranges.toml      ✅ Plages indicateurs (487 lignes)
+    └── execution_presets.toml     ✅ Presets workers/GPU
+
+📦 ARCHIVÉS: docs/_archive/config/
+├── README.md                  📝 Explications
+├── pytest.ini.backup          ❌ → pyproject.toml
+├── mypy.ini.backup            ❌ → pyproject.toml
+├── .cspell.json.backup        ❌ → cspell.yml
+├── .pylintrc.backup           ❌ Désactivé (disable=all)
+├── settings.toml.backup       ❌ Non utilisé
+├── default.toml.backup        ❌ Non utilisé
+├── plan.toml.backup           ❌ Non utilisé
+└── paths.toml.backup          ❌ Doublon (gardé racine)
+```
+
+### 🎯 Fichiers Actifs - Rôles
+
+#### 1. pyproject.toml ⭐ (CENTRAL - 132 lignes)
+**Emplacement** : Racine
+**Rôle** : Configuration centrale projet Python (PEP 518)
+
+**Sections** :
+- `[build-system]` - Setuptools, wheel
+- `[project]` - Métadonnées (v0.5.0, dépendances)
+- `[tool.pytest.ini_options]` - Tests (markers: slow, integration, unit, audit)
+- `[tool.coverage.*]` - Couverture de code
+- `[tool.mypy]` - Type checking (python 3.12, strict_equality)
+- `[tool.ruff]` - Linting (E, F, I, N, W, UP)
+
+**Utilisé par** : pip, setuptools, pytest, mypy, ruff, coverage
+
+#### 2. paths.toml ⭐ (APPLICATION)
+**Emplacement** : Racine
+**Rôle** : Configuration runtime ThreadX
+
+**Sections** :
+- `[paths]` - data_dir, cache_dir, logs_dir, results_dir
+- `[gpu]` - enable_cuda, preferred_devices, memory_fraction
+- `[performance]` - max_workers=24, batch_size=1000, memory_limit_mb=16384
+- `[trading]` - default_leverage=3, default_fees_bps=10
+- `[backtesting]` - warmup_period=100, enable_validation=true
+- `[logging]` - level="INFO", format, rotation
+- `[security]` - validate_paths=true, max_file_size_mb=1000
+- `[monte_carlo]` - default_simulations=10000, steps=252, seed=50
+- `[cache]` - max_size_mb=16384, ttl_seconds=16384, strategy="LRU"
+
+**Chargé par** : `src/threadx/configuration/loaders.py` (TOMLConfigLoader)
+
+**Utilisé dans** :
+- `gpu/multi_gpu.py` - Config GPU devices
+- `gpu/profile_persistence.py` - Chemins cache
+- `utils/cache.py` - Config cache TTL/size
+- `utils/timing.py` - Config performance
+
+**Correction effectuée** : Erreur syntaxe lignes 68-70 (default_steps mal formaté) ✅
+
+#### 3. setup.cfg ✅ (OUTILS - 189 lignes)
+**Emplacement** : Racine
+**Rôle** : Configuration outils ne supportant pas pyproject.toml
+
+**Sections** :
+- `[flake8]` - max-line-length=120, max-complexity=10
+- `[pylint.*]` - max-args=8, max-attributes=15, max-statements=60
+- `[bandit]` - Sécurité (exclude tests, skip B101/B601)
+- `[isort]` - Tri imports (profile=black)
+- `[black]` - Formatage (line-length=120, target py312)
+- `[radon]` - Complexité (cc_min=C, mi_min=A)
+
+**Note** : Conservé car flake8, pylint, bandit ne supportent pas tous pyproject.toml
+
+#### 4. pyrightconfig.json ✅ (IDE - 31 lignes)
+**Emplacement** : Racine
+**Config** :
+- typeCheckingMode: "basic"
+- pythonVersion: "3.12"
+- Désactive warnings non critiques (reportMissing*, reportUnknown*)
+- Exclusions : _archive, testing
+
+**Utilisé par** : Pyright, Pylance (VSCode), CLI pyright
+
+#### 5. cspell.yml ✅ (QUALITÉ - 310 lignes)
+**Emplacement** : Racine
+**Contenu** : 310+ mots techniques (backtesting, threadx, OHLCV, pyramiding, etc.)
+**Utilisé par** : CSpell (automatique), IDE extensions
+
+#### 6. indicator_ranges.toml ✅ (FONCTIONNEL - 487 lignes)
+**Emplacement** : `src/threadx/optimization/presets/`
+**Rôle** : Plages optimisation pour ~20 indicateurs techniques
+
+**Indicateurs** :
+- Bollinger Bands (period: 10-50, std: 1.5-3.0)
+- MACD (fast: 8-16, slow: 21-34, signal: 7-12)
+- RSI (period: 7-21), ATR (period: 7-21)
+- ADX, EMA, SMA, Stochastic, CCI, Williams %R
+- Stratégie AmplitudeHunter (35 paramètres)
+
+**Chargé par** : `optimization/presets/ranges.py:23`
+
+#### 7. execution_presets.toml ✅ (FONCTIONNEL - 88 lignes)
+**Emplacement** : `src/threadx/optimization/presets/`
+**Presets** :
+- `conservative` - 4 workers, batch 100, single GPU
+- `balanced` - 8 workers, batch 500
+- `aggressive` - 16 workers, batch 1000, multi-GPU
+- `manuel_30` - 30 workers, batch 1500 (optimisé multi-GPU)
+- `extreme` - 32 workers, batch 2000
+
+**Chargé par** : `optimization/presets/ranges.py:24`
+
+### 🔄 Hiérarchie de Chargement
+
+| Outil | 1er | 2ème | 3ème (archivé) |
+|-------|-----|------|----------------|
+| pytest | pyproject.toml | setup.cfg | pytest.ini ❌ |
+| mypy | pyproject.toml | setup.cfg | mypy.ini ❌ |
+| ruff | pyproject.toml | - | - |
+| coverage | pyproject.toml | setup.cfg | - |
+| flake8 | setup.cfg | - | - |
+| pylint | setup.cfg | - | .pylintrc ❌ |
+| pyright | pyrightconfig.json | - | - |
+| cspell | cspell.yml | - | .cspell.json ❌ |
+
+### 🎯 Qui Utilise Quoi
+
+#### Configuration Application
+| Module | Fichier | Méthode | Usage |
+|--------|---------|---------|-------|
+| gpu/multi_gpu.py | paths.toml | get_settings() | Config GPU devices, balance |
+| gpu/profile_persistence.py | paths.toml | get_settings() | Chemins cache GPU |
+| utils/cache.py | paths.toml | load_settings() | TTL, max_size, stratégie |
+| utils/timing.py | paths.toml | load_settings() | Performance monitoring |
+| optimization/presets/*.py | *.toml | toml.load() | Plages/presets |
+
+### ✅ Actions Effectuées
+
+1. **Corrigé** erreur syntaxe `paths.toml` lignes 68-70 :
+   ```toml
+   # Avant (ERREUR)
+   default_
+   steps = 252
+   seed =50
+
+   # Après (CORRECT)
+   default_steps = 252
+   seed = 50
+   ```
+
+2. **Archivé** 4 fichiers redondants :
+   - `pytest.ini` → Migré dans pyproject.toml
+   - `mypy.ini` → Migré dans pyproject.toml
+   - `.cspell.json` → Remplacé par cspell.yml
+   - `.pylintrc` → Désactivé (disable=all)
+
+3. **Archivé** 3 fichiers obsolètes (non utilisés) :
+   - `src/threadx/configuration/settings.toml`
+   - `src/threadx/configuration/default.toml`
+   - `src/threadx/configuration/plan.toml`
+
+4. **Archivé** 1 doublon :
+   - `src/threadx/configuration/paths.toml` → Gardé version racine
+
+5. **Migré** configs dans pyproject.toml :
+   - Section `[tool.pytest.ini_options]` complète
+   - Section `[tool.coverage.*]` complète
+   - Section `[tool.mypy]` + overrides modules externes
+
+6. **Créé** documentation :
+   - `docs/_archive/config/README.md` - Explications détaillées archivage
+
+### 📊 Statistiques
+
+| Metric | Avant | Après | Gain |
+|--------|-------|-------|------|
+| Fichiers config racine | 13 | 5 | -62% ⬇️ |
+| Doublons | 5 | 0 | -100% ✅ |
+| Obsolètes | 3 | 0 | -100% ✅ |
+| Fichiers archivés | 0 | 8 | +8 📦 |
+
+### ✅ Tests Validation
+
+```bash
+# Ruff fonctionne
+python -m ruff check src/threadx
+✅ All checks passed!
+
+# Pytest lit pyproject.toml
+python -m pytest --collect-only
+✅ configfile: pyproject.toml
+✅ collected 23 items
+
+# Paths.toml valide
+python -c "import toml; toml.load('paths.toml')"
+✅ Syntaxe correcte
+```
+
+### 🎯 Bénéfices
+
+1. **Clarté** : Configuration centralisée dans pyproject.toml (standard PEP 518)
+2. **Maintenance** : -62% fichiers à maintenir
+3. **Standards** : Adoption PEP 518 + modernisation Python 3.12
+4. **Cohérence** : Un seul fichier paths.toml (source unique de vérité)
+5. **Documentation** : Architecture claire dans ce fichier unique
+
+### 📝 Note Architecture
+
+**Système de configuration ThreadX** :
+- **Stub** : `src/threadx/config.py` (classes vides pour compatibilité)
+- **Implémentation** : `src/threadx/configuration/` (loaders.py, settings.py, errors.py)
+- **Chargement** : TOMLConfigLoader cherche paths.toml dans : CWD → CWD parent → package
+- **API** : `get_settings()`, `load_settings()` importés via config.py
+
+**⚠️ Note** : Le système config/ n'est utilisé que par 4 modules (gpu, utils). La plupart du code ThreadX fonctionne sans chargement explicite de paths.toml.
+
+### 🔗 Références
+
+- Plan complet : Voir section "CONSOLIDATION CONFIGURATION" ci-dessus
+- Archives : `docs/_archive/config/`
+- Fichiers supprimés : CONFIG_STRUCTURE.md, CONSOLIDATION_CONFIG.md (fusionnés ici)
+
+---
+
+**Fin Consolidation Configuration** | Date: 11 Jan 2025 | Version: v2.0.4
+

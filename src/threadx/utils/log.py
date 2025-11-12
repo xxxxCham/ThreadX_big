@@ -11,22 +11,24 @@ Version: Phase 7 - Sweep & Logging
 
 import logging
 import logging.handlers
+import os
 import sys
 from pathlib import Path
-from typing import Optional
-import os
 from threading import Lock
 
 # Global setup lock to prevent double initialization
 _setup_lock = Lock()
 _setup_done = False
 
+# Global kill-switch: set THREADX_SILENCE_LOGS=1 to silence logs
+SILENCE_ALL_LOGS = os.getenv("THREADX_SILENCE_LOGS", "0") == "1"
+
 # Détection du mode debug via variable d'environnement
 DEBUG_MODE = os.getenv("THREADX_DEBUG", "0") == "1"
 
 
 def configure_logging(
-    level: str = "INFO", log_file: Optional[str] = None, console: bool = True
+    level: str = "INFO", log_file: str | None = None, console: bool = True
 ) -> None:
     """
     Configure logging avec niveau et options spécifiques.
@@ -96,7 +98,7 @@ def setup_logging_once() -> None:
         try:
             # Import Settings here to avoid circular dependencies
             try:
-                from threadx.utils.settings import Settings
+                from threadx.configuration.settings import Settings
 
                 log_dir = Settings.LOG_DIR
                 log_level = Settings.LOG_LEVEL if not DEBUG_MODE else "DEBUG"
@@ -115,7 +117,11 @@ def setup_logging_once() -> None:
 
         # Configure root logger
         root_logger = logging.getLogger()
-        root_logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+        if SILENCE_ALL_LOGS:
+            logging.disable(logging.CRITICAL)
+            root_logger.setLevel(logging.CRITICAL)
+        else:
+            root_logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
 
         # Clear any existing handlers
         root_logger.handlers.clear()
@@ -127,8 +133,11 @@ def setup_logging_once() -> None:
             datefmt="%Y-%m-%d %H:%M:%S",
         )
         console_handler.setFormatter(console_formatter)
-        # Mode DEBUG: tous les logs, sinon ERROR uniquement
-        console_handler.setLevel(logging.DEBUG if DEBUG_MODE else logging.ERROR)
+        # Mode DEBUG: tous les logs, sinon ERROR uniquement (or silenced)
+        if SILENCE_ALL_LOGS:
+            console_handler.setLevel(logging.CRITICAL)
+        else:
+            console_handler.setLevel(logging.DEBUG if DEBUG_MODE else logging.ERROR)
         root_logger.addHandler(console_handler)
 
         # File handler with rotation (Windows-safe)
@@ -144,7 +153,10 @@ def setup_logging_once() -> None:
             datefmt="%Y-%m-%d %H:%M:%S",
         )
         file_handler.setFormatter(file_formatter)
-        file_handler.setLevel(logging.DEBUG)
+        if SILENCE_ALL_LOGS:
+            file_handler.setLevel(logging.CRITICAL)
+        else:
+            file_handler.setLevel(logging.DEBUG)
         root_logger.addHandler(file_handler)
 
         _setup_done = True
@@ -153,8 +165,8 @@ def setup_logging_once() -> None:
 def get_logger(
     name: str,
     *,
-    log_dir: Optional[Path] = None,
-    level: Optional[str] = None,
+    log_dir: Path | None = None,
+    level: str | None = None,
     rotate_max_bytes: int = 10 * 1024 * 1024,
     rotate_backups: int = 5,
 ) -> logging.Logger:
@@ -191,7 +203,7 @@ def get_logger(
     return logger
 
 
-def setup_logging(log_file: Optional[Path] = None, level: str = "INFO") -> None:
+def setup_logging(log_file: Path | None = None, level: str = "INFO") -> None:
     """
     Configuration globale du logging ThreadX.
 

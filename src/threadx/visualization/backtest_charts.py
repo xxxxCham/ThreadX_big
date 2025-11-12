@@ -24,7 +24,7 @@ Usage:
 """
 
 from pathlib import Path
-from typing import Dict, Optional, Union
+
 import pandas as pd
 
 from threadx.utils.log import get_logger
@@ -45,12 +45,12 @@ except ImportError:
 def generate_backtest_chart(
     results_df: pd.DataFrame,
     ohlcv_data: pd.DataFrame,
-    best_combo: Dict[str, float],
+    best_combo: dict[str, float],
     symbol: str,
     timeframe: str,
-    output_path: Union[str, Path],
+    output_path: str | Path,
     show_browser: bool = False,
-) -> Optional[Path]:
+) -> Path | None:
     """
     Génère graphique interactif Plotly avec résultats backtest.
 
@@ -330,13 +330,13 @@ def generate_backtest_chart(
 
 
 def generate_multi_timeframe_chart(
-    results_dict: Dict[str, pd.DataFrame],
-    ohlcv_dict: Dict[str, pd.DataFrame],
-    best_combos: Dict[str, Dict[str, float]],
+    results_dict: dict[str, pd.DataFrame],
+    ohlcv_dict: dict[str, pd.DataFrame],
+    best_combos: dict[str, dict[str, float]],
     symbol: str,
-    output_path: Union[str, Path],
+    output_path: str | Path,
     show_browser: bool = False,
-) -> Optional[Path]:
+) -> Path | None:
     """
     Génère graphique multi-timeframes (1h + 4h + 1d par exemple).
 
@@ -382,7 +382,7 @@ def generate_multi_timeframe_chart(
         # Pour chaque timeframe
         for i, (tf, results_df) in enumerate(results_dict.items(), start=1):
             ohlcv = ohlcv_dict[tf]
-            best_combo = best_combos[tf]
+            best_combos[tf]
 
             # Merge données
             merged = pd.merge(

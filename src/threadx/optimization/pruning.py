@@ -11,10 +11,10 @@ Author: ThreadX Framework
 Version: Phase 10 - Pareto Pruning
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Tuple, Optional, Any
 import time
+from typing import Any
+
+import pandas as pd
 
 from threadx.utils.log import get_logger
 
@@ -23,10 +23,10 @@ logger = get_logger(__name__)
 
 def pareto_soft_prune(
     df: pd.DataFrame,
-    metrics: Tuple[str, ...] = ("pnl", "max_drawdown", "sharpe"),
+    metrics: tuple[str, ...] = ("pnl", "max_drawdown", "sharpe"),
     patience: int = 200,
     quantile: float = 0.85,
-) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+) -> tuple[pd.DataFrame, dict[str, Any]]:
     """
     Pruning Pareto soft avec early stopping adaptatif.
 
@@ -90,7 +90,7 @@ def pareto_soft_prune(
         )
 
     # Algorithme de pruning itératif
-    pareto_front: List[Tuple[int, pd.Series]] = []  # noqa: SPELL
+    pareto_front: list[tuple[int, pd.Series]] = []  # noqa: SPELL
     pruned_count = 0
     stagnation_counter = 0
     last_improvement_iter = 0
@@ -214,9 +214,9 @@ def _is_maximize_metric(metric: str) -> bool:
 
 def _evaluate_pareto_candidate(
     candidate: pd.Series,
-    pareto_front: List[Tuple[int, pd.Series]],
-    metrics: Tuple[str, ...],
-    quantile_thresholds: Dict[str, float],
+    pareto_front: list[tuple[int, pd.Series]],
+    metrics: tuple[str, ...],
+    quantile_thresholds: dict[str, float],
 ) -> bool:
     """
     Évalue si un candidat doit être ajouté à la frontière Pareto.
@@ -249,7 +249,7 @@ def _evaluate_pareto_candidate(
 
 
 def _dominates(
-    solution_a: pd.Series, solution_b: pd.Series, metrics: Tuple[str, ...]
+    solution_a: pd.Series, solution_b: pd.Series, metrics: tuple[str, ...]
 ) -> bool:
     """
     Vérifie si solution_a domine solution_b selon les métriques Pareto.
@@ -283,8 +283,8 @@ def _dominates(
 
 
 def _clean_pareto_front(
-    pareto_front: List[Tuple[int, pd.Series]], metrics: Tuple[str, ...]
-) -> List[Tuple[int, pd.Series]]:
+    pareto_front: list[tuple[int, pd.Series]], metrics: tuple[str, ...]
+) -> list[tuple[int, pd.Series]]:
     """
     Nettoie la frontière Pareto en supprimant les solutions dominées.
     """
@@ -307,7 +307,7 @@ def _clean_pareto_front(
     return cleaned_front
 
 
-def _empty_prune_metadata() -> Dict[str, Any]:
+def _empty_prune_metadata() -> dict[str, Any]:
     """Retourne des métadonnées vides pour cas d'erreur."""
     return {
         "original_count": 0,
@@ -330,7 +330,7 @@ def _empty_prune_metadata() -> Dict[str, Any]:
 # === Utilitaires additionnels ===
 
 
-def analyze_pareto_front(df: pd.DataFrame, metrics: Tuple[str, ...]) -> Dict[str, Any]:
+def analyze_pareto_front(df: pd.DataFrame, metrics: tuple[str, ...]) -> dict[str, Any]:
     """
     Analyse la frontière Pareto d'un ensemble de résultats.
 

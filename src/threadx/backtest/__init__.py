@@ -38,23 +38,23 @@ Usage:
 """
 
 from threadx.backtest.performance import (
+    # GPU capability detection
+    HAS_CUPY,
+    drawdown_series,
     # Core equity and drawdown functions
     equity_curve,
+    expectancy,
     max_drawdown,
-    drawdown_series,
+    # Visualization
+    plot_drawdown,
+    # Trade-based metrics
+    profit_factor,
     # Risk-adjusted metrics
     sharpe_ratio,
     sortino_ratio,
-    # Trade-based metrics
-    profit_factor,
-    win_rate,
-    expectancy,
     # Comprehensive analysis
     summarize,
-    # Visualization
-    plot_drawdown,
-    # GPU capability detection
-    HAS_CUPY,
+    win_rate,
     xp,
 )
 

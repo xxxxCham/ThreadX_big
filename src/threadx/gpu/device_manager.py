@@ -12,11 +12,10 @@ Architecture:
 - Interface unifiée xp() pour code device-agnostic
 """
 
-import os
-import logging
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Union, Any
-from pathlib import Path
+from typing import Any
+
+import numpy as np
 
 from threadx.utils.log import get_logger
 
@@ -32,8 +31,6 @@ except ImportError:
     cp = None
     CUPY_AVAILABLE = False
     logger.info("CuPy indisponible - Fallback CPU NumPy")
-
-import numpy as np
 
 
 @dataclass(frozen=True)
@@ -142,9 +139,18 @@ def is_available() -> bool:
         return False
 
 
-def list_devices() -> List[DeviceInfo]:
+# Cache pour éviter de re-scanner les GPUs à chaque appel
+_DEVICES_CACHE: list[DeviceInfo] | None = None
+_CACHE_TIMESTAMP: float = 0
+_CACHE_TTL: float = 5.0  # Cache valide 5 secondes
+
+
+def list_devices(use_cache: bool = True) -> list[DeviceInfo]:
     """
     Liste tous les devices disponibles (GPU + CPU fallback).
+
+    Args:
+        use_cache: Si True, utilise le cache (valide 5s). Si False, force re-scan.
 
     Returns:
         Liste des DeviceInfo triés par performance décroissante
@@ -157,12 +163,21 @@ def list_devices() -> List[DeviceInfo]:
         2060: 6.0GB
         cpu: 0.0GB
     """
+    global _DEVICES_CACHE, _CACHE_TIMESTAMP
+
+    # Check cache
+    if use_cache and _DEVICES_CACHE is not None:
+        import time
+        if time.time() - _CACHE_TIMESTAMP < _CACHE_TTL:
+            logger.debug(f"Utilisation cache devices ({len(_DEVICES_CACHE)} devices)")
+            return _DEVICES_CACHE
+
     devices = []
 
     if CUPY_AVAILABLE:
         try:
             device_count = cp.cuda.runtime.getDeviceCount() if cp else 0
-            logger.info(f"Détection de {device_count} GPU(s)")
+            logger.debug(f"Détection de {device_count} GPU(s)")
 
             for device_id in range(device_count):
                 try:
@@ -194,7 +209,7 @@ def list_devices() -> List[DeviceInfo]:
                         )
 
                         devices.append(device_info)
-                        logger.info(
+                        logger.debug(
                             f"GPU {device_id} ({friendly_name}): "
                             f"{device_info.memory_total_gb:.1f}GB, "
                             f"CC {compute_cap[0]}.{compute_cap[1]}"
@@ -221,10 +236,23 @@ def list_devices() -> List[DeviceInfo]:
     # Tri par performance (mémoire totale décroissante, CPU en dernier)
     devices.sort(key=lambda d: (d.device_id == -1, -d.memory_total))
 
+    # Update cache
+    if use_cache:
+        import time
+        _DEVICES_CACHE = devices
+        _CACHE_TIMESTAMP = time.time()
+        logger.debug(f"Cache devices mis à jour ({len(devices)} devices)")
+
+    # Log initial au niveau INFO (seulement première fois ou force re-scan)
+    if not use_cache or _CACHE_TIMESTAMP == time.time():
+        gpu_devices = [d for d in devices if d.device_id >= 0]
+        if gpu_devices:
+            logger.info(f"GPUs détectés: {', '.join([f'{d.name} ({d.memory_total_gb:.1f}GB)' for d in gpu_devices])}")
+
     return devices
 
 
-def get_device_by_name(name: str) -> Optional[DeviceInfo]:
+def get_device_by_name(name: str) -> DeviceInfo | None:
     """
     Récupère un device par son nom convivial.
 
@@ -246,7 +274,7 @@ def get_device_by_name(name: str) -> Optional[DeviceInfo]:
     return None
 
 
-def get_device_by_id(device_id: int) -> Optional[DeviceInfo]:
+def get_device_by_id(device_id: int) -> DeviceInfo | None:
     """
     Récupère un device par son ID CuPy.
 
@@ -291,7 +319,7 @@ def check_nccl_support() -> bool:
         return False
 
 
-def xp(device_name: Optional[str] = None) -> Any:
+def xp(device_name: str | None = None) -> Any:
     """
     Retourne le module array approprié (CuPy ou NumPy).
 
@@ -338,7 +366,7 @@ def xp(device_name: Optional[str] = None) -> Any:
     return np
 
 
-def get_memory_info(device_name: str) -> Dict[str, float]:
+def get_memory_info(device_name: str) -> dict[str, float]:
     """
     Récupère les infos mémoire pour un device.
 
@@ -386,7 +414,7 @@ def get_memory_info(device_name: str) -> Dict[str, float]:
 
 
 # Export des exceptions CuPy si disponibles
-if CUPY_AVAILABLE and cp:
+if CUPY_AVAILABLE and cp and hasattr(cp, "cuda"):
     CudaMemoryError = cp.cuda.memory.OutOfMemoryError
     CudaRuntimeError = cp.cuda.runtime.CUDARuntimeError
 else:
@@ -400,6 +428,5 @@ else:
         """Exception pour erreurs runtime GPU (fallback)"""
 
         pass
-
 
 

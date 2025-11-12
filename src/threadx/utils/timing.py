@@ -1,5 +1,5 @@
 """
-ThreadX Utils Module 
+ThreadX Utils Module
 Timing, Profiling and Performance Measurement Utilities.
 
 Provides standardized decorators and context managers for:
@@ -11,12 +11,12 @@ Integrates with ThreadX Settings/TOML configuration for thresholds.
 No environment variables - Windows-first design.
 """
 
-import time
 import functools
 import logging
-from typing import Optional, Callable, Any, Dict, Union
+import time
+from collections.abc import Callable
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 # Import psutil with graceful fallback
 try:
@@ -55,8 +55,8 @@ class PerformanceMetrics:
     elapsed_sec: float
     tasks_completed: int = 0
     tasks_per_min: float = 0.0
-    memory_peak_mb: Optional[float] = None
-    memory_avg_mb: Optional[float] = None
+    memory_peak_mb: float | None = None
+    memory_avg_mb: float | None = None
     function_name: str = ""
     unit_of_work: str = "task"
 
@@ -84,8 +84,8 @@ class Timer:
     """
 
     def __init__(self):
-        self._start_time: Optional[float] = None
-        self._end_time: Optional[float] = None
+        self._start_time: float | None = None
+        self._end_time: float | None = None
         self._elapsed: float = 0.0
 
     def start(self) -> None:
@@ -129,8 +129,8 @@ class MemoryTracker:
     """
 
     def __init__(self):
-        self.start_memory_mb: Optional[float] = None
-        self.peak_memory_mb: Optional[float] = None
+        self.start_memory_mb: float | None = None
+        self.peak_memory_mb: float | None = None
         self.memory_samples: list = []
         self._process = None
 
@@ -168,7 +168,7 @@ class MemoryTracker:
         except Exception as e:
             logger.debug(f"Memory sampling failed: {e}")
 
-    def get_stats(self) -> Dict[str, Optional[float]]:
+    def get_stats(self) -> dict[str, float | None]:
         """Get memory usage statistics."""
         if not self.memory_samples:
             return {"peak_mb": None, "avg_mb": None, "start_mb": None}
@@ -194,7 +194,7 @@ def _get_throughput_threshold() -> int:
 
 
 def measure_throughput(
-    name: Optional[str] = None, *, unit_of_work: str = "task"
+    name: str | None = None, *, unit_of_work: str = "task"
 ) -> Callable:
     """
     Decorator to measure function throughput (tasks per minute).
@@ -295,7 +295,7 @@ def measure_throughput(
     return decorator
 
 
-def track_memory(name: Optional[str] = None) -> Callable:
+def track_memory(name: str | None = None) -> Callable:
     """
     Decorator to track memory consumption during function execution.
 
@@ -375,7 +375,7 @@ def track_memory(name: Optional[str] = None) -> Callable:
 
 
 def combined_measurement(
-    name: Optional[str] = None,
+    name: str | None = None,
     *,
     unit_of_work: str = "task",
     track_memory_usage: bool = True,

@@ -13,9 +13,10 @@ Designed for hot-path validation in indicator calculations and backtesting.
 """
 
 import logging
-import warnings
-from typing import Any, Optional, Tuple, List, Dict, Union, Callable
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
+
 import numpy as np
 
 # Import ThreadX logger - fallback to standard logging if not available
@@ -29,7 +30,7 @@ except ImportError:
 
 # Import ThreadX xp utils if available
 try:
-    from threadx.utils.xp import xp, get_array_info, asnumpy
+    from threadx.utils.xp import asnumpy, get_array_info
 
     XP_AVAILABLE = True
 except ImportError:
@@ -37,7 +38,6 @@ except ImportError:
 
 # Import ThreadX Settings - fallback if not available
 try:
-    from threadx.config import load_settings
 
     SETTINGS_AVAILABLE = True
 except Exception:  # pragma: no cover - optional dependency during tests
@@ -52,10 +52,10 @@ class ValidationResult:
     """Result of array validation."""
 
     is_valid: bool
-    warnings: List[str]
-    errors: List[str]
-    suggestions: List[str]
-    array_info: Dict[str, Any]
+    warnings: list[str]
+    errors: list[str]
+    suggestions: list[str]
+    array_info: dict[str, Any]
 
 
 class ArrayValidator:
@@ -99,16 +99,16 @@ class ArrayValidator:
         self,
         array: Any,
         *,
-        expected_shape: Optional[Tuple[int, ...]] = None,
-        expected_dtype: Optional[np.dtype] = None,
-        min_size: Optional[int] = None,
-        max_size: Optional[int] = None,
+        expected_shape: tuple[int, ...] | None = None,
+        expected_dtype: np.dtype | None = None,
+        min_size: int | None = None,
+        max_size: int | None = None,
         allow_nan: bool = False,
         allow_inf: bool = False,
         check_finite: bool = True,
         check_contiguous: bool = False,
-        callback: Optional[Callable[[ValidationResult], None]] = None,
-        name: Optional[str] = None,
+        callback: Callable[[ValidationResult], None] | None = None,
+        name: str | None = None,
     ) -> ValidationResult:
         """
         Validate array properties and data quality.
@@ -344,8 +344,8 @@ class ArrayValidator:
             )
 
     def validate_multiple(
-        self, arrays: Dict[str, Any], **validation_kwargs
-    ) -> Dict[str, ValidationResult]:
+        self, arrays: dict[str, Any], **validation_kwargs
+    ) -> dict[str, ValidationResult]:
         """
         Validate multiple arrays with same criteria.
 
@@ -406,7 +406,7 @@ def validate_price_data(
 
 def validate_indicator_params(
     period: int,
-    multiplier: Optional[float] = None,
+    multiplier: float | None = None,
     *,
     min_period: int = 1,
     max_period: int = 1000,

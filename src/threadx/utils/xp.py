@@ -5,17 +5,10 @@ from __future__ import annotations
 import importlib
 import logging
 import time
+from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from contextlib import contextmanager
 from typing import (
     Any,
-    Callable,
-    Iterable,
-    Mapping,
-    MutableMapping,
-    Optional,
-    Sequence,
-    Tuple,
-    Union,
 )
 
 import numpy as np
@@ -23,19 +16,19 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 # Public placeholders updated at runtime.
-cp: Optional[Any] = None
+cp: Any | None = None
 CUPY_AVAILABLE: bool = False
 
 # Internal caches.
-_CUPY_IMPORT_ERROR: Optional[BaseException] = None
-_CUPY_MODULE: Optional[Any] = None
+_CUPY_IMPORT_ERROR: BaseException | None = None
+_CUPY_MODULE: Any | None = None
 _XP_BACKEND: Any = np
-_BACKEND_OVERRIDE: Optional[str] = None  # "numpy", "cupy" or None (auto)
+_BACKEND_OVERRIDE: str | None = None  # "numpy", "cupy" or None (auto)
 
 
-def _get_device_manager() -> Optional[Any]:
+def _get_device_manager() -> Any | None:
     try:
-        from threadx.utils.gpu import device_manager  # type: ignore
+        from threadx.gpu import device_manager  # type: ignore
 
         return device_manager
     except Exception as exc:  # pragma: no cover - diagnostics only
@@ -43,7 +36,7 @@ def _get_device_manager() -> Optional[Any]:
         return None
 
 
-def _get_cupy() -> Optional[Any]:
+def _get_cupy() -> Any | None:
     global _CUPY_MODULE, _CUPY_IMPORT_ERROR, CUPY_AVAILABLE, cp
 
     if _CUPY_MODULE is not None:
@@ -76,7 +69,7 @@ def refresh_cupy_cache() -> None:
     cp = None
 
 
-def _sync_cupy_state() -> Optional[Any]:
+def _sync_cupy_state() -> Any | None:
     module = _get_cupy()
     return module
 
@@ -165,7 +158,7 @@ def configure_backend(preferred: str) -> None:
     get_xp(prefer_gpu=True)
 
 
-def to_device(array: Any, dtype: Optional[Any] = None) -> Any:
+def to_device(array: Any, dtype: Any | None = None) -> Any:
     backend = get_xp()
     if backend is np:
         return np.array(array, dtype=dtype, copy=False)
@@ -189,7 +182,7 @@ def asnumpy(array: Any) -> np.ndarray:
     return to_host(array)
 
 
-def ascupy(array: Any, dtype: Optional[Any] = None) -> Any:
+def ascupy(array: Any, dtype: Any | None = None) -> Any:
     module = _sync_cupy_state()
     if module is None:
         raise RuntimeError("CuPy is not available on this system")
@@ -199,7 +192,7 @@ def ascupy(array: Any, dtype: Optional[Any] = None) -> Any:
 
 
 def ensure_array_type(
-    array: Any, dtype: Optional[Any] = None, *, xp_module: Any = None
+    array: Any, dtype: Any | None = None, *, xp_module: Any = None
 ) -> Any:
     backend = xp_module or get_xp()
     if backend is np:
@@ -211,14 +204,14 @@ def ensure_array_type(
     return module.asarray(array, dtype=dtype)
 
 
-def memory_pool_info() -> Mapping[str, Union[int, float, str]]:
+def memory_pool_info() -> Mapping[str, int | float | str]:
     module = _sync_cupy_state()
     if module is None:
         return {"backend": "numpy", "used_bytes": 0, "total_bytes": 0}
 
     pool = module.get_default_memory_pool()
     pinned = module.cuda.get_default_pinned_memory_pool()
-    info: MutableMapping[str, Union[int, float, str]] = {
+    info: MutableMapping[str, int | float | str] = {
         "backend": "cupy",
         "used_bytes": pool.used_bytes(),
         "total_bytes": pool.total_bytes(),
@@ -236,7 +229,7 @@ def clear_memory_pool() -> None:
 
 
 @contextmanager
-def _gpu_timer(module: Any) -> Iterable[Tuple[Callable[[], float], Any]]:
+def _gpu_timer(module: Any) -> Iterable[tuple[Callable[[], float], Any]]:
     start = module.cuda.Event()
     end = module.cuda.Event()
     stream = module.cuda.get_current_stream()
@@ -252,7 +245,7 @@ def _elapsed_gpu_time(module: Any, start: Any, end: Any, stream: Any) -> float:
 
 def benchmark_operation(
     func: Callable[..., Any], *args: Any, **kwargs: Any
-) -> Tuple[Any, float]:
+) -> tuple[Any, float]:
     """Execute *func* and return (result, elapsed_seconds)."""
     backend = get_xp()
     if backend is np:
@@ -284,7 +277,7 @@ def device_synchronize() -> None:
 def get_array_info(array: Any) -> Mapping[str, Any]:
     module = _sync_cupy_state()
     backend = "numpy"
-    device: Union[str, int] = "cpu"
+    device: str | int = "cpu"
 
     if module is not None and isinstance(array, getattr(module, "ndarray", ())):
         backend = "cupy"

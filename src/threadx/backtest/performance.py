@@ -42,18 +42,17 @@ Data Schema:
     returns Series: datetime-indexed returns per time step
 """
 
-import logging
 import time
-from pathlib import Path
-from typing import Dict, Optional, Union, Any
 import warnings
+from pathlib import Path
+from typing import Any
 
+import matplotlib
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib
 
 matplotlib.use("Agg")  # Headless backend for Windows PowerShell compatibility
-import matplotlib.pyplot as plt
 
 # ThreadX imports
 from threadx.utils.log import get_logger
@@ -204,7 +203,7 @@ def equity_curve(returns: pd.Series, initial_capital: float) -> pd.Series:
         return equity_series
 
     except Exception as e:
-        logger.error(f"Equity curve calculation failed: {e}")
+        logger.error(f"Equity curve calculation failed: {e}", exc_info=True)
         raise
 
 
@@ -263,7 +262,8 @@ def drawdown_series(equity: pd.Series) -> pd.Series:
                 drawdown_values = cp.asnumpy(drawdown_values)
             except Exception as gpu_error:
                 logger.warning(
-                    f"GPU drawdown failed ({gpu_error}), falling back to CPU"
+                    f"GPU drawdown failed ({gpu_error}), falling back to CPU",
+                    exc_info=True,
                 )
                 # Fallback sur CPU
                 running_max = equity.expanding().max()
@@ -283,7 +283,7 @@ def drawdown_series(equity: pd.Series) -> pd.Series:
         return drawdown_series_result
 
     except Exception as e:
-        logger.error(f"Drawdown calculation failed: {e}")
+        logger.error(f"Drawdown calculation failed: {e}", exc_info=True)
         raise
 
 
@@ -436,7 +436,7 @@ def sharpe_ratio(
         return float(sharpe)
 
     except Exception as e:
-        logger.error(f"Sharpe ratio calculation failed: {e}")
+        logger.error(f"Sharpe ratio calculation failed: {e}", exc_info=True)
         return 0.0
 
 
@@ -549,7 +549,7 @@ def sortino_ratio(
         return float(sortino)
 
     except Exception as e:
-        logger.error(f"Sortino ratio calculation failed: {e}")
+        logger.error(f"Sortino ratio calculation failed: {e}", exc_info=True)
         return 0.0
 
 
@@ -655,7 +655,7 @@ def profit_factor(trades: pd.DataFrame) -> float:
         return float(pf)
 
     except Exception as e:
-        logger.error(f"Profit factor calculation failed: {e}")
+        logger.error(f"Profit factor calculation failed: {e}", exc_info=True)
         return 0.0
 
 
@@ -822,7 +822,7 @@ def summarize(
     *,
     risk_free: float = 0.0,
     periods_per_year: int = 365,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Calculate comprehensive performance summary.
 
@@ -1004,13 +1004,13 @@ def summarize(
         return summary
 
     except Exception as e:
-        logger.error(f"Performance summary failed: {e}")
+        logger.error(f"Performance summary failed: {e}", exc_info=True)
         return summary  # Return safe defaults
 
 
 def plot_drawdown(
-    equity: pd.Series, *, save_path: Optional[Path] = None
-) -> Optional[Path]:
+    equity: pd.Series, *, save_path: Path | None = None
+) -> Path | None:
     """
     Create drawdown visualization plot.
 
@@ -1169,17 +1169,17 @@ def plot_drawdown(
         return result_path
 
     except Exception as e:
-        logger.error(f"Drawdown plot generation failed: {e}")
+        logger.error(f"Drawdown plot generation failed: {e}", exc_info=True)
         # Ensure figure is closed even on error
         try:
             plt.close("all")
-        except:
+        except Exception:
             pass
         return None
 
 
 # Module-level configuration and settings integration
-def _load_performance_config() -> Dict[str, Any]:
+def _load_performance_config() -> dict[str, Any]:
     """Load performance-specific configuration with sensible defaults."""
     # Default configuration (TOML integration can be added later)
     defaults = {

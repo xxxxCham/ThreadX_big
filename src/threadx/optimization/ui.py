@@ -10,7 +10,7 @@ below keeps those imports working while reusing the unified optimisation engine.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any
 
 import pandas as pd
 
@@ -23,13 +23,13 @@ class ParametricOptimizationUI:
 
     runner: SweepRunner = field(default_factory=SweepRunner)
 
-    def run_grid(self, grid_spec: Dict[str, Any], *, reuse_cache: bool = True) -> pd.DataFrame:
+    def run_grid(self, grid_spec: dict[str, Any], *, reuse_cache: bool = True) -> pd.DataFrame:
         """Execute a grid sweep and return the resulting :class:`DataFrame`."""
         return self.runner.run_grid(grid_spec, reuse_cache=reuse_cache)
 
     def run_monte_carlo(
         self,
-        mc_spec: Dict[str, Any],
+        mc_spec: dict[str, Any],
         *,
         reuse_cache: bool = True,
     ) -> pd.DataFrame:
@@ -37,7 +37,7 @@ class ParametricOptimizationUI:
         return self.runner.run_monte_carlo(mc_spec, reuse_cache=reuse_cache)
 
 
-def create_optimization_ui(runner: Optional[SweepRunner] = None) -> ParametricOptimizationUI:
+def create_optimization_ui(runner: SweepRunner | None = None) -> ParametricOptimizationUI:
     """Factory helper used by older tooling."""
     return ParametricOptimizationUI(runner=runner or SweepRunner())
 

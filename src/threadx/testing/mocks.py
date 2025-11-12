@@ -8,9 +8,10 @@ ThreadX ne sont pas disponibles ou chargés correctement.
 
 import logging
 import time
-import pandas as pd
+from typing import Any
+
 import numpy as np
-from typing import Dict, Any, Tuple, Union, List
+import pandas as pd
 
 
 class MockSettings:
@@ -59,11 +60,11 @@ class MockBank:
     def ensure(
         self,
         indicator_type: str,
-        params: Dict[str, Any],
-        data: Union[np.ndarray, pd.Series, pd.DataFrame],
+        params: dict[str, Any],
+        data: np.ndarray | pd.Series | pd.DataFrame,
         symbol: str = "",
         timeframe: str = "",
-    ) -> Union[np.ndarray, Tuple[np.ndarray, ...]]:
+    ) -> np.ndarray | tuple[np.ndarray, ...]:
         """Simule l'assurance d'un indicateur."""
         time.sleep(0.1)  # Simule le calcul
 
@@ -91,11 +92,11 @@ class MockBank:
     def batch_ensure(
         self,
         indicator_type: str,
-        params_list: List[Dict[str, Any]],
+        params_list: list[dict[str, Any]],
         data: pd.DataFrame,
         symbol: str = "",
         timeframe: str = "",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Simule le calcul batch d'indicateurs."""
         time.sleep(len(params_list) * 0.01)
 
@@ -133,8 +134,8 @@ class MockBacktestEngine:
     def run(
         self,
         df_1m: pd.DataFrame,
-        indicators: Dict[str, Any],
-        params: Dict[str, Any],
+        indicators: dict[str, Any],
+        params: dict[str, Any],
         symbol: str = "BTCUSDC",
         timeframe: str = "1m",
         seed: int = 42,
@@ -215,7 +216,7 @@ class MockPerformanceCalculator:
     """Mock pour threadx.performance.metrics.PerformanceCalculator."""
 
     @staticmethod
-    def summarize(returns: pd.Series, trades: pd.DataFrame) -> Dict[str, float]:
+    def summarize(returns: pd.Series, trades: pd.DataFrame) -> dict[str, float]:
         """Calcule des métriques de performance mock."""
         # Simulation de métriques réalistes
         total_return = returns.sum()
@@ -246,19 +247,19 @@ class MockPerformanceCalculator:
 
 
 # Mocks pour l'UI
-def mock_plot_equity(equity: pd.Series, save_path: Union[str, None] = None) -> str:
+def mock_plot_equity(equity: pd.Series, save_path: str | None = None) -> str:
     """Mock pour threadx.ui.charts.plot_equity."""
     print(f"[MOCK] Generating equity chart with {len(equity)} points")
     return save_path or "equity_chart.png"
 
 
-def mock_plot_drawdown(equity: pd.Series, save_path: Union[str, None] = None) -> str:
+def mock_plot_drawdown(equity: pd.Series, save_path: str | None = None) -> str:
     """Mock pour threadx.ui.charts.plot_drawdown."""
     print(f"[MOCK] Generating drawdown chart from {len(equity)} points")
     return save_path or "drawdown_chart.png"
 
 
-def mock_render_trades_table(trades: pd.DataFrame) -> Dict[str, Any]:
+def mock_render_trades_table(trades: pd.DataFrame) -> dict[str, Any]:
     """Mock pour threadx.ui.tables.render_trades_table."""
     return {
         "data": trades,
@@ -271,7 +272,7 @@ def mock_render_trades_table(trades: pd.DataFrame) -> Dict[str, Any]:
     }
 
 
-def mock_render_metrics_table(metrics: Dict[str, float]) -> Dict[str, Any]:
+def mock_render_metrics_table(metrics: dict[str, float]) -> dict[str, Any]:
     """Mock pour threadx.ui.tables.render_metrics_table."""
     return {"data": pd.DataFrame(list(metrics.items()), columns=["Metric", "Value"])}
 

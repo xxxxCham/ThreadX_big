@@ -13,10 +13,10 @@ The GPU version connects to the production BacktestEngine with:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
 import logging
 import time
+from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -42,6 +42,7 @@ def _ensure_gpu_imports():
     try:
         from threadx.backtest.engine import BacktestEngine
         from threadx.indicators.bank import IndicatorBank
+
         from .system_monitor import get_global_monitor
 
         _BacktestEngine = BacktestEngine
@@ -60,12 +61,12 @@ class BacktestResult:
     """Simplified backtest result structure consumed by the UI pages."""
 
     equity: pd.Series
-    metrics: Dict[str, Any] = field(default_factory=dict)
-    trades: List[Dict[str, Any]] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metrics: dict[str, Any] = field(default_factory=dict)
+    trades: list[dict[str, Any]] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
-def _resolve_window(params: Dict[str, Any], default: int = 20) -> int:
+def _resolve_window(params: dict[str, Any], default: int = 20) -> int:
     """Extract an integer window/period from params with sensible bounds."""
     for key in ("window", "lookback", "period"):
         if key in params:
@@ -77,7 +78,7 @@ def _resolve_window(params: Dict[str, Any], default: int = 20) -> int:
     return max(int(default), 2)
 
 
-def _generate_position(close: pd.Series, params: Dict[str, Any]) -> pd.Series:
+def _generate_position(close: pd.Series, params: dict[str, Any]) -> pd.Series:
     """Generate a long-only position series based on simplified Bollinger logic."""
     window = _resolve_window(params)
     if len(close) < window:
@@ -135,7 +136,7 @@ def _generate_position(close: pd.Series, params: Dict[str, Any]) -> pd.Series:
     return position
 
 
-def _compute_equity(close: pd.Series, params: Dict[str, Any]) -> tuple[pd.Series, pd.Series]:
+def _compute_equity(close: pd.Series, params: dict[str, Any]) -> tuple[pd.Series, pd.Series]:
     """Compute equity curve and position series for the lightweight backtest."""
     position = _generate_position(close, params)
     returns = close.pct_change().fillna(0.0)
@@ -148,14 +149,14 @@ def _compute_equity(close: pd.Series, params: Dict[str, Any]) -> tuple[pd.Series
     return equity, position
 
 
-def _build_placeholder_trades(close: pd.Series, position: pd.Series) -> List[Dict[str, Any]]:
+def _build_placeholder_trades(close: pd.Series, position: pd.Series) -> list[dict[str, Any]]:
     """Convert the position series into placeholder trades for the UI."""
     if close.empty or position.empty:
         return []
 
-    trades: List[Dict[str, Any]] = []
+    trades: list[dict[str, Any]] = []
     in_trade = False
-    current: Dict[str, Any] | None = None
+    current: dict[str, Any] | None = None
 
     for timestamp, pos in position.items():
         price = float(close.loc[timestamp])
@@ -183,7 +184,7 @@ def _build_placeholder_trades(close: pd.Series, position: pd.Series) -> List[Dic
     return trades
 
 
-def run_backtest(df: pd.DataFrame, strategy: str, params: Dict[str, Any]) -> BacktestResult:
+def run_backtest(df: pd.DataFrame, strategy: str, params: dict[str, Any]) -> BacktestResult:
     """Execute a lightweight backtest on the provided OHLCV DataFrame."""
     if not isinstance(df, pd.DataFrame) or df.empty:
         raise ValueError("Le DataFrame d'entree est vide ou invalide.")
@@ -203,7 +204,7 @@ def run_backtest(df: pd.DataFrame, strategy: str, params: Dict[str, Any]) -> Bac
         equity, position = _compute_equity(close, params)
 
         returns = equity.pct_change().fillna(0.0)
-        metrics: Dict[str, Any] = {
+        metrics: dict[str, Any] = {
             "total_return": float(equity.iloc[-1] - 1.0),
             "annualized_volatility": float(np.std(returns) * np.sqrt(252)),
             "sharpe_ratio": float((returns.mean() / returns.std()) * np.sqrt(252))
@@ -234,7 +235,7 @@ def run_backtest(df: pd.DataFrame, strategy: str, params: Dict[str, Any]) -> Bac
 def run_backtest_gpu(
     df: pd.DataFrame,
     strategy: str,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     *,
     symbol: str = "BTCUSDC",
     timeframe: str = "1m",

@@ -1,3 +1,6 @@
+
+
+
 """TOML configuration loader for ThreadX."""
 # type: ignore  # Trop d'erreurs de type, analyse désactivée
 
@@ -5,8 +8,9 @@ from __future__ import annotations
 
 import argparse
 import logging
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any
 
 try:  # pragma: no cover - fallback for Python <3.11
     import tomllib
@@ -19,7 +23,7 @@ from .settings import DEFAULT_SETTINGS, Settings
 logger = logging.getLogger(__name__)
 
 
-def load_config_dict(path: Union[str, Path]) -> Dict[str, Any]:
+def load_config_dict(path: str | Path) -> dict[str, Any]:
     config_path = Path(path)
     try:
         with config_path.open("rb") as handle:
@@ -43,15 +47,15 @@ class TOMLConfigLoader:
 
     DEFAULT_CONFIG_NAME = "paths.toml"
 
-    def __init__(self, config_path: Optional[Union[str, Path]] = None):
+    def __init__(self, config_path: str | Path | None = None):
         self.config_path = self._resolve_config_path(config_path)
         self.config_data = load_config_dict(self.config_path)
-        self._validated_paths: Dict[str, str] = {}
+        self._validated_paths: dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # Path resolution helpers
     # ------------------------------------------------------------------
-    def _resolve_config_path(self, provided: Optional[Union[str, Path]]) -> Path:
+    def _resolve_config_path(self, provided: str | Path | None) -> Path:
         if provided:
             candidate = Path(provided)
             if candidate.exists():
@@ -74,7 +78,7 @@ class TOMLConfigLoader:
     # ------------------------------------------------------------------
     # Access helpers
     # ------------------------------------------------------------------
-    def get_section(self, name: str) -> Dict[str, Any]:
+    def get_section(self, name: str) -> dict[str, Any]:
         return dict(self.config_data.get(name, {}))
 
     def get_value(self, section: str, key: str, default: Any = None) -> Any:
@@ -83,8 +87,8 @@ class TOMLConfigLoader:
     # ------------------------------------------------------------------
     # Validation
     # ------------------------------------------------------------------
-    def validate_config(self) -> List[str]:
-        errors: List[str] = []
+    def validate_config(self) -> list[str]:
+        errors: list[str] = []
         self._validated_paths.clear()
         required_sections = ["paths", "gpu", "performance", "trading"]
         for section in required_sections:
@@ -96,8 +100,8 @@ class TOMLConfigLoader:
         errors.extend(self._validate_performance_config(check_only=True))
         return errors
 
-    def _validate_paths(self, check_only: bool = False) -> List[str]:
-        errors: List[str] = []
+    def _validate_paths(self, check_only: bool = False) -> list[str]:
+        errors: list[str] = []
         paths_section = self.get_section("paths")
         security = self.get_section("security")
         allow_abs = bool(security.get("allow_absolute_paths", False))
@@ -107,7 +111,7 @@ class TOMLConfigLoader:
             errors.append("paths.data_root must be a string")
             data_root = "./data"
 
-        resolved_paths: Dict[str, str] = {"data_root": data_root}
+        resolved_paths: dict[str, str] = {"data_root": data_root}
 
         for key, value in paths_section.items():
             if not isinstance(value, str):
@@ -122,8 +126,8 @@ class TOMLConfigLoader:
 
         return errors
 
-    def _validate_gpu_config(self, check_only: bool = False) -> List[str]:
-        errors: List[str] = []
+    def _validate_gpu_config(self, check_only: bool = False) -> list[str]:
+        errors: list[str] = []
         gpu_section = self.get_section("gpu")
 
         load_balance = gpu_section.get("load_balance", {})
@@ -142,8 +146,8 @@ class TOMLConfigLoader:
 
         return errors
 
-    def _validate_performance_config(self, check_only: bool = False) -> List[str]:
-        errors: List[str] = []
+    def _validate_performance_config(self, check_only: bool = False) -> list[str]:
+        errors: list[str] = []
         perf_section = self.get_section("performance")
         for key in (
             "target_tasks_per_min",
@@ -272,7 +276,7 @@ class TOMLConfigLoader:
             CACHE_STRATEGY=cache.get("strategy", defaults.CACHE_STRATEGY),
         )
 
-    def load_config(self, cli_overrides: Optional[Dict[str, Any]] = None) -> Settings:
+    def load_config(self, cli_overrides: dict[str, Any] | None = None) -> Settings:
         overrides = cli_overrides or {}
         return self.create_settings(**overrides)
 
@@ -291,19 +295,19 @@ class TOMLConfigLoader:
         return parser
 
 
-_settings_cache: Optional[Settings] = None
+_settings_cache: Settings | None = None
 
 
 def load_settings(
-    config_path: Union[str, Path] = "paths.toml",
-    cli_args: Optional[Sequence[str]] = None,
+    config_path: str | Path = "paths.toml",
+    cli_args: Sequence[str] | None = None,
 ) -> Settings:
     parser = TOMLConfigLoader.create_cli_parser()
     args = (
         parser.parse_args(cli_args) if cli_args is not None else parser.parse_args([])
     )
 
-    overrides: Dict[str, Any] = {}
+    overrides: dict[str, Any] = {}
     if args.data_root:
         overrides["data_root"] = args.data_root
     if args.log_level:
@@ -330,7 +334,7 @@ def get_settings(force_reload: bool = False) -> Settings:
     return _settings_cache
 
 
-def print_config(settings: Optional[Settings] = None) -> None:
+def print_config(settings: Settings | None = None) -> None:
     cfg = settings or get_settings()
     print("ThreadX Configuration")
     print("=" * 50)

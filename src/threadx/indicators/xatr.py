@@ -46,7 +46,8 @@ Exemple d'usage:
 import logging
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union, Any, Literal
+from typing import Any, Literal
+
 import numpy as np
 import pandas as pd
 
@@ -60,7 +61,7 @@ try:
         cp.cuda.Device(0).use()
         GPU_AVAILABLE = True
         N_GPUS = cp.cuda.runtime.getDeviceCount()
-    except:
+    except Exception:
         GPU_AVAILABLE = False
         N_GPUS = 0
 except ImportError:
@@ -84,22 +85,22 @@ except ImportError:
 
     class MockCudaRuntime:
         @staticmethod
-        def getDeviceCount():
+        def get_device_count():
             return 0
 
         @staticmethod
-        def getDeviceProperties(device_id):
+        def get_device_properties(device_id):
             return {"name": "MockGPU", "totalGlobalMem": 8 * 1024**3}
 
         @staticmethod
-        def memGetInfo():
+        def mem_get_info():
             return (0, 8 * 1024**3)  # free, total
 
     class MockCuda:
         runtime = MockCudaRuntime()
 
         @staticmethod
-        def Device(device_id):
+        def device(device_id):
             return MockCudaDevice(device_id)
 
     class MockCuPy:
@@ -169,7 +170,7 @@ class ATRSettings:
     use_gpu: bool = True
     gpu_batch_size: int = 1000
     cpu_fallback: bool = True
-    gpu_split_ratio: Tuple[float, float] = (0.75, 0.25)  # RTX 5090 / RTX 2060
+    gpu_split_ratio: tuple[float, float] = (0.75, 0.25)  # RTX 5090 / RTX 2060
 
     def __post_init__(self):
         """Validation des paramètres"""
@@ -217,7 +218,7 @@ class ATRGPUManager:
             logger.warning(f"⚠️ Erreur détection GPU ATR: {e}")
             self.available_gpus = []
 
-    def split_workload(self, data_size: int) -> List[Tuple[int, int, int]]:
+    def split_workload(self, data_size: int) -> list[tuple[int, int, int]]:
         """Split workload entre GPU selon leurs capacités"""
         if not self.available_gpus:
             return []
@@ -240,7 +241,7 @@ class ATRGPUManager:
 class ATR:
     """Calculateur ATR vectorisé avec support GPU multi-carte"""
 
-    def __init__(self, settings: Optional[ATRSettings] = None):
+    def __init__(self, settings: ATRSettings | None = None):
         self.settings = settings or ATRSettings()
         self.gpu_manager = ATRGPUManager(self.settings)
         self._cache = {}  # Cache pour True Range réutilisables
@@ -251,11 +252,11 @@ class ATR:
 
     def compute(
         self,
-        high: Union[np.ndarray, pd.Series],
-        low: Union[np.ndarray, pd.Series],
-        close: Union[np.ndarray, pd.Series],
-        period: Optional[Union[int, str]] = None,
-        method: Optional[Union[str, int]] = None,
+        high: np.ndarray | pd.Series,
+        low: np.ndarray | pd.Series,
+        close: np.ndarray | pd.Series,
+        period: int | str | None = None,
+        method: str | int | None = None,
     ) -> np.ndarray:
         """
         Calcul ATR pour une série de prix OHLC
@@ -360,7 +361,7 @@ class ATR:
 
     def _true_range_gpu(self, high_gpu, low_gpu, close_gpu):
         """Calcul True Range GPU vectorisé"""
-        n = len(high_gpu)
+        len(high_gpu)
 
         # Décalage close pour avoir prev_close
         prev_close = cp.concatenate([cp.array([close_gpu[0]]), close_gpu[:-1]])
@@ -428,7 +429,7 @@ class ATR:
         self, high: np.ndarray, low: np.ndarray, close: np.ndarray
     ) -> np.ndarray:
         """Calcul True Range CPU vectorisé"""
-        n = len(high)
+        len(high)
 
         # Décalage close pour avoir prev_close
         prev_close = np.concatenate([[close[0]], close[:-1]])
@@ -445,11 +446,11 @@ class ATR:
 
     def compute_batch(
         self,
-        high: Union[np.ndarray, pd.Series],
-        low: Union[np.ndarray, pd.Series],
-        close: Union[np.ndarray, pd.Series],
-        params_list: List[Dict[str, Union[int, str]]],
-    ) -> Dict[str, np.ndarray]:
+        high: np.ndarray | pd.Series,
+        low: np.ndarray | pd.Series,
+        close: np.ndarray | pd.Series,
+        params_list: list[dict[str, int | str]],
+    ) -> dict[str, np.ndarray]:
         """
         Calcul ATR batch pour multiples paramètres
 
@@ -515,11 +516,11 @@ class ATR:
 
     def _compute_batch_multi_gpu(
         self,
-        high: Union[np.ndarray, pd.Series],
-        low: Union[np.ndarray, pd.Series],
-        close: Union[np.ndarray, pd.Series],
-        params_list: List[Dict[str, Union[int, str]]],
-    ) -> Dict[str, np.ndarray]:
+        high: np.ndarray | pd.Series,
+        low: np.ndarray | pd.Series,
+        close: np.ndarray | pd.Series,
+        params_list: list[dict[str, int | str]],
+    ) -> dict[str, np.ndarray]:
         """Calcul ATR batch multi-GPU avec répartition"""
 
         logger.info(
@@ -604,9 +605,9 @@ class ATR:
 
 
 def compute_atr(
-    high: Union[np.ndarray, pd.Series],
-    low: Union[np.ndarray, pd.Series],
-    close: Union[np.ndarray, pd.Series],
+    high: np.ndarray | pd.Series,
+    low: np.ndarray | pd.Series,
+    close: np.ndarray | pd.Series,
     period: int = 14,
     method: Literal["ema", "sma"] = "ema",
     use_gpu: bool = True,
@@ -651,12 +652,12 @@ def compute_atr(
 
 
 def compute_atr_batch(
-    high: Union[np.ndarray, pd.Series],
-    low: Union[np.ndarray, pd.Series],
-    close: Union[np.ndarray, pd.Series],
-    params_list: List[Dict[str, Union[int, str]]],
+    high: np.ndarray | pd.Series,
+    low: np.ndarray | pd.Series,
+    close: np.ndarray | pd.Series,
+    params_list: list[dict[str, int | str]],
     use_gpu: bool = True,
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     """
     Calcul ATR batch - API simple
 
@@ -725,8 +726,8 @@ def validate_atr_results(atr_values: np.ndarray, tolerance: float = 1e-10) -> bo
 
 
 def benchmark_atr_performance(
-    data_sizes: List[int] = [1000, 5000, 10000], n_runs: int = 3
-) -> Dict[str, Any]:
+    data_sizes: list[int] = [1000, 5000, 10000], n_runs: int = 3
+) -> dict[str, Any]:
     """
     Benchmark performance ATR CPU vs GPU
 

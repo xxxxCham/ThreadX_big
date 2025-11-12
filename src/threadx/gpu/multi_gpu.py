@@ -23,42 +23,29 @@ Usage:
     >>> manager.set_balance(new_ratios)
 """
 
-import time
-import threading
-import json
-import hashlib
-import signal
 import atexit
-from datetime import datetime, timedelta
-from pathlib import Path
+import signal
+import threading
+import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Union, Callable, Any, Tuple
+from dataclasses import dataclass
+from typing import Any
+
 import numpy as np
 import pandas as pd
 
-from threadx.utils.log import get_logger
 from threadx.config import get_settings
-
-S = get_settings()  # Stub settings instance
+from threadx.utils.log import get_logger
 
 from .device_manager import (
-    is_available,
-    list_devices,
-    get_device_by_name,
-    get_device_by_id,
-    check_nccl_support,
-    xp,
-    DeviceInfo,
     CUPY_AVAILABLE,
+    check_nccl_support,
+    get_device_by_name,
+    list_devices,
 )
-from .profile_persistence import (
-    get_multigpu_ratios,
-    update_multigpu_ratios,
-    is_profile_valid,
-    PROFILES_DIR,
-    MULTIGPU_RATIOS_FILE,
-)
+
+S = get_settings()  # Stub settings instance
 
 if CUPY_AVAILABLE:
     import cupy as cp
@@ -148,10 +135,10 @@ class ComputeResult:
     """
 
     chunk: WorkloadChunk
-    result: Optional[Union[np.ndarray, pd.DataFrame]]
+    result: np.ndarray | pd.DataFrame | None
     compute_time: float
-    device_memory_used: Optional[float] = None
-    error: Optional[Exception] = None
+    device_memory_used: float | None = None
+    error: Exception | None = None
 
     @property
     def success(self) -> bool:
@@ -188,7 +175,7 @@ class MultiGPUManager:
 
     def __init__(
         self,
-        device_balance: Optional[Dict[str, float]] = None,
+        device_balance: dict[str, float] | None = None,
         use_streams: bool = True,
         enable_nccl: bool = True,
     ):
@@ -225,12 +212,12 @@ class MultiGPUManager:
         self._validate_balance()
 
         # Streams GPU (créés à la demande)
-        self._device_streams: Dict[str, Any] = {}
+        self._device_streams: dict[str, Any] = {}
         self._lock = threading.Lock()
 
         logger.info(f"Balance configurée: {self._format_balance()}")
 
-    def _get_default_balance(self) -> Dict[str, float]:
+    def _get_default_balance(self) -> dict[str, float]:
         """Calcule la balance par défaut selon devices disponibles."""
         if not self._gpu_devices:
             return {"cpu": 1.0}
@@ -288,7 +275,7 @@ class MultiGPUManager:
         parts = [f"{dev}:{ratio:.1%}" for dev, ratio in self.device_balance.items()]
         return ", ".join(parts)
 
-    def set_balance(self, new_balance: Dict[str, float]) -> None:
+    def set_balance(self, new_balance: dict[str, float]) -> None:
         """
         Met à jour la balance des devices.
 
@@ -314,7 +301,7 @@ class MultiGPUManager:
 
     def _split_workload(
         self, data_size: int, batch_axis: int = 0
-    ) -> List[WorkloadChunk]:
+    ) -> list[WorkloadChunk]:
         """
         Split proportionnel des données selon balance.
 
@@ -380,7 +367,7 @@ class MultiGPUManager:
 
         return chunks
 
-    def _get_device_stream(self, device_name: str) -> Optional[Any]:
+    def _get_device_stream(self, device_name: str) -> Any | None:
         """Récupère ou crée un stream pour le device."""
         if not self.use_streams or device_name == "cpu" or not CUPY_AVAILABLE:
             return None
@@ -402,7 +389,7 @@ class MultiGPUManager:
 
     def _compute_chunk(
         self,
-        data: Union[np.ndarray, pd.DataFrame],
+        data: np.ndarray | pd.DataFrame,
         chunk: WorkloadChunk,
         func: Callable,
         seed: int,
@@ -435,7 +422,6 @@ class MultiGPUManager:
             # Configuration device et seed
             if chunk.device_name == "cpu":
                 np.random.seed(seed + chunk.start_idx)  # Seed unique par chunk
-                xp_module = np
                 device_data = chunk_data
             else:
                 device = get_device_by_name(chunk.device_name)
@@ -464,7 +450,7 @@ class MultiGPUManager:
                         try:
                             mem_info = cp.cuda.runtime.memGetInfo()
                             device_memory_used = (mem_info[1] - mem_info[0]) / (1024**3)
-                        except:
+                        except Exception:
                             pass
 
                         # Calcul
@@ -520,10 +506,10 @@ class MultiGPUManager:
 
     def _merge_results(
         self,
-        results: List[ComputeResult],
-        original_data: Union[np.ndarray, pd.DataFrame],
+        results: list[ComputeResult],
+        original_data: np.ndarray | pd.DataFrame,
         batch_axis: int = 0,
-    ) -> Union[np.ndarray, pd.DataFrame]:
+    ) -> np.ndarray | pd.DataFrame:
         """
         Merge déterministe des résultats par ordre des chunks.
 
@@ -576,13 +562,13 @@ class MultiGPUManager:
 
     def distribute_workload(
         self,
-        data: Union[np.ndarray, pd.DataFrame],
+        data: np.ndarray | pd.DataFrame,
         func: Callable,
         *,
         stream_per_gpu: bool = False,
         batch_axis: int = 0,
         seed: int = 42,
-    ) -> Union[np.ndarray, pd.DataFrame]:
+    ) -> np.ndarray | pd.DataFrame:
         """
         Distribue un workload sur les devices selon balance configurée.
 
@@ -722,7 +708,7 @@ class MultiGPUManager:
 
     def profile_auto_balance(
         self, sample_size: int = 200_000, warmup: int = 2, runs: int = 3
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Profile automatique pour optimiser la balance des devices hétérogènes.
 
@@ -847,7 +833,7 @@ class MultiGPUManager:
 
         return optimal_ratios
 
-    def get_device_stats(self) -> Dict[str, Dict[str, Any]]:
+    def get_device_stats(self) -> dict[str, dict[str, Any]]:
         """
         Récupère les statistiques des devices.
 
@@ -879,13 +865,13 @@ class MultiGPUManager:
                     if hasattr(stream, "close"):
                         stream.close()
                 self._device_streams.clear()
-        except:
+        except Exception:
             pass
 
 
 # === Gestionnaire Global ===
 
-_default_manager: Optional[MultiGPUManager] = None
+_default_manager: MultiGPUManager | None = None
 
 
 def get_default_manager() -> MultiGPUManager:

@@ -15,20 +15,19 @@ Author: ThreadX Team
 Version: Phase B - GPU Dynamic & Multi-GPU
 """
 
-import os
-import json
-import time
-import shutil
-import logging
 import hashlib
+import json
+import os
+import shutil
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Union, Tuple
+from typing import Any
 
 import numpy as np
 
-from threadx.utils.log import get_logger
 from threadx.config import get_settings
+from threadx.utils.log import get_logger
 
 S = get_settings()  # Stub settings instance
 
@@ -68,7 +67,7 @@ def ensure_profiles_dir() -> None:
     PROFILES_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def safe_read_json(file_path: Path) -> Tuple[Dict[str, Any], bool]:
+def safe_read_json(file_path: Path) -> tuple[dict[str, Any], bool]:
     """
     Lit un fichier JSON de façon sécurisée avec gestion d'erreurs.
 
@@ -86,10 +85,10 @@ def safe_read_json(file_path: Path) -> Tuple[Dict[str, Any], bool]:
         return ({}, False)
 
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             data = json.load(f)
         return (data, True)
-    except (json.JSONDecodeError, IOError) as e:
+    except (OSError, json.JSONDecodeError) as e:
         # Créer un backup du fichier corrompu avec timestamp
         if file_path.exists():
             timestamp = int(time.time())
@@ -104,7 +103,7 @@ def safe_read_json(file_path: Path) -> Tuple[Dict[str, Any], bool]:
         return ({}, False)
 
 
-def safe_write_json(file_path: Path, data: Dict[str, Any]) -> bool:
+def safe_write_json(file_path: Path, data: dict[str, Any]) -> bool:
     """
     Écrit un fichier JSON de façon atomique et sécurisée.
 
@@ -141,12 +140,12 @@ def safe_write_json(file_path: Path, data: Dict[str, Any]) -> bool:
         if temp_path.exists():
             try:
                 temp_path.unlink()
-            except:
+            except Exception:
                 pass
         return False
 
 
-def stable_hash(params: Dict[str, Any]) -> str:
+def stable_hash(params: dict[str, Any]) -> str:
     """
     Génère un hash stable pour des paramètres.
 
@@ -184,7 +183,7 @@ def stable_hash(params: Dict[str, Any]) -> str:
     return hashlib.sha1(canonical.encode("utf-8")).hexdigest()[:12]
 
 
-def get_gpu_thresholds() -> Dict[str, Any]:
+def get_gpu_thresholds() -> dict[str, Any]:
     """
     Récupère les seuils GPU, crée le fichier s'il n'existe pas.
 
@@ -203,7 +202,7 @@ def get_gpu_thresholds() -> Dict[str, Any]:
 
 def update_gpu_threshold_entry(
     signature: str, cpu_ms: float, gpu_ms: float, n_samples: int = 1
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Met à jour une entrée de seuil GPU dans le fichier de profils.
 
@@ -262,7 +261,7 @@ def update_gpu_threshold_entry(
     return data
 
 
-def get_multigpu_ratios() -> Dict[str, Any]:
+def get_multigpu_ratios() -> dict[str, Any]:
     """
     Récupère les ratios multi-GPU, crée le fichier s'il n'existe pas.
 
@@ -280,12 +279,12 @@ def get_multigpu_ratios() -> Dict[str, Any]:
 
 
 def update_multigpu_ratios(
-    devices: List[Dict[str, Any]],
-    ratios: Dict[str, float],
+    devices: list[dict[str, Any]],
+    ratios: dict[str, float],
     sample_size: int = 3,
     workload_tag: str = "indicators/batch_default",
     ttl_days: int = 14,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Met à jour les ratios multi-GPU dans le fichier de profils.
 
@@ -314,7 +313,7 @@ def update_multigpu_ratios(
     return data
 
 
-def is_profile_valid(profile: Dict[str, Any], ttl_days: int = None) -> bool:
+def is_profile_valid(profile: dict[str, Any], ttl_days: int = None) -> bool:
     """
     Vérifie si un profil est valide selon sa date.
 
@@ -341,5 +340,5 @@ def is_profile_valid(profile: Dict[str, Any], ttl_days: int = None) -> bool:
 
         # Vérifier si le profil est plus récent que le TTL
         return age < timedelta(days=ttl_days)
-    except:
+    except Exception:
         return False

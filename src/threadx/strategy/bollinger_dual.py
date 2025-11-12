@@ -12,21 +12,19 @@ Version: 1.0.0
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Any, Tuple, Optional, List
-import pandas as pd
-import numpy as np
-import logging
+from typing import Any
 
-from threadx.configuration.settings import S
-from threadx.utils.log import get_logger
+import numpy as np
+import pandas as pd
+
+from threadx.indicators import ensure_indicator
 from threadx.strategy.model import (
-    Strategy,
-    Trade,
     RunStats,
+    Trade,
     validate_ohlcv_dataframe,
     validate_strategy_params,
 )
-from threadx.indicators import ensure_indicator
+from threadx.utils.log import get_logger
 
 logger = get_logger(__name__)
 
@@ -80,7 +78,7 @@ class BollingerDualParams:
     max_hold_bars: int = 100
 
     # Métadonnées
-    meta: Dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         """Validation des paramètres"""
@@ -101,7 +99,7 @@ class BollingerDualParams:
         if self.max_hold_bars < 1:
             raise ValueError(f"max_hold_bars must be >= 1, got: {self.max_hold_bars}")
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convertit en dictionnaire pour compatibilité"""
         return {
             "bb_window": self.bb_window,
@@ -117,7 +115,7 @@ class BollingerDualParams:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "BollingerDualParams":
+    def from_dict(cls, data: dict[str, Any]) -> "BollingerDualParams":
         """Crée depuis un dictionnaire"""
         return cls(
             bb_window=data.get("bb_window", 20),
@@ -160,7 +158,7 @@ class BollingerDualStrategy:
 
     def _ensure_indicators(
         self, df: pd.DataFrame, params: BollingerDualParams
-    ) -> Tuple[pd.DataFrame, np.ndarray]:
+    ) -> tuple[pd.DataFrame, np.ndarray]:
         """
         Garantit la disponibilité des indicateurs via IndicatorBank.
 
@@ -307,7 +305,7 @@ class BollingerDualStrategy:
         initial_capital: float = 10000.0,
         fee_bps: float = 4.5,
         slippage_bps: float = 0.0,
-    ) -> Tuple[pd.Series, RunStats]:
+    ) -> tuple[pd.Series, RunStats]:
         """
         Exécute un backtest complet de la stratégie Bollinger Dual.
 
@@ -343,7 +341,7 @@ class BollingerDualStrategy:
 
         cash = initial_capital
         position = None
-        trades: List[Trade] = []
+        trades: list[Trade] = []
         median_reached = False  # Flag pour tracking médiane
 
         fee_rate = (fee_bps + slippage_bps) / 10000.0

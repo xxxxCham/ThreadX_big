@@ -22,49 +22,60 @@ Améliorations vs TradXPro:
 - Filtrage min PnL et micro-optimisations
 """
 
+from .amplitude_hunter import (
+    # Paramètres et implémentation
+    AmplitudeHunterParams,
+    AmplitudeHunterStrategy,
+)
+from .amplitude_hunter import (
+    backtest as amplitude_hunter_backtest,
+)
+from .amplitude_hunter import (
+    create_default_params as amplitude_hunter_create_default_params,
+)
+from .amplitude_hunter import (
+    # Fonctions de convenance
+    generate_signals as amplitude_hunter_generate_signals,
+)
+from .bb_atr import (
+    # Paramètres et implémentation
+    BBAtrParams,
+    BBAtrStrategy,
+)
+from .bb_atr import (
+    backtest as bb_atr_backtest,
+)
+from .bb_atr import (
+    create_default_params as bb_atr_create_default_params,
+)
+from .bb_atr import (
+    # Fonctions de convenance (préfixées pour éviter les conflits)
+    generate_signals as bb_atr_generate_signals,
+)
+from .bollinger_dual import (
+    # Paramètres et implémentation
+    BollingerDualParams,
+    BollingerDualStrategy,
+)
+from .bollinger_dual import (
+    # Fonctions de convenance
+    create_default_params as bollinger_dual_create_default_params,
+)
 from .model import (
-    # Types de données
-    Trade,
-    TradeDict,
     RunStats,
     RunStatsDict,
     # Protocol interface
     Strategy,
     # JSON utilities
     ThreadXJSONEncoder,
-    save_run_results,
+    # Types de données
+    Trade,
+    TradeDict,
     load_run_results,
+    save_run_results,
     # Validation
     validate_ohlcv_dataframe,
     validate_strategy_params,
-)
-
-from .bb_atr import (
-    # Paramètres et implémentation
-    BBAtrParams,
-    BBAtrStrategy,
-    # Fonctions de convenance (préfixées pour éviter les conflits)
-    generate_signals as bb_atr_generate_signals,
-    backtest as bb_atr_backtest,
-    create_default_params as bb_atr_create_default_params,
-)
-
-from .bollinger_dual import (
-    # Paramètres et implémentation
-    BollingerDualParams,
-    BollingerDualStrategy,
-    # Fonctions de convenance
-    create_default_params as bollinger_dual_create_default_params,
-)
-
-from .amplitude_hunter import (
-    # Paramètres et implémentation
-    AmplitudeHunterParams,
-    AmplitudeHunterStrategy,
-    # Fonctions de convenance
-    generate_signals as amplitude_hunter_generate_signals,
-    backtest as amplitude_hunter_backtest,
-    create_default_params as amplitude_hunter_create_default_params,
 )
 
 __version__ = "4.0.0"

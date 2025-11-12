@@ -27,21 +27,17 @@ Author: ThreadX Framework
 Version: Phase 10 - Production Engine
 """
 
-import logging
+# logging peut être importé plus bas si nécessaire (cleanup de l'import inutile)
 import time
 from dataclasses import dataclass, field
 
 # ThreadX Common Imports (DRY refactoring)
 from threadx.utils.common_imports import (
-    pd,
-    np,
-    Dict,
     Any,
     Optional,
-    Tuple,
-    List,
-    Union,
-    create_logger,
+    get_logger,
+    np,
+    pd,
 )
 
 # Validation backtest anti-overfitting
@@ -86,39 +82,59 @@ try:
     from threadx.utils import xp as xp_module
 
     XP_AVAILABLE = True
-
-    # Couche xp unifiée
-    def get_xp_module():
-        return xp_module.get_xp()
-
 except ImportError:
     XP_AVAILABLE = False
     xp_module = None
 
-    # Fallback NumPy pur
-    def get_xp_module():
-        return np
+
+def get_xp_module():
+    """Retourne le module array (CuPy ou NumPy) via couche xp.
+
+    Fallback automatique sur NumPy si couche xp indisponible ou échoue.
+    """
+    if XP_AVAILABLE and xp_module is not None:
+        try:
+            return xp_module.get_xp()
+        except Exception as e:
+            # Log en debug avec stacktrace et fallback NumPy
+            import logging
+
+            logging.getLogger(__name__).debug("xp.get_xp() failed: %s", e, exc_info=True)
+    return np
 
 
 # GPU management avec fallback gracieux
 try:
-    from threadx.utils.gpu.device_manager import (
-        list_devices,
+    from threadx.gpu.device_manager import (
         get_device_by_name,
+        list_devices,
+    )
+    from threadx.gpu.device_manager import (
         is_available as gpu_available,
     )
-    from threadx.utils.gpu.multi_gpu import MultiGPUManager, get_default_manager
+    from threadx.gpu.multi_gpu import MultiGPUManager, get_default_manager
 
     GPU_UTILS_AVAILABLE = True
 except ImportError:
     GPU_UTILS_AVAILABLE = False
-    list_devices = lambda: []
-    get_device_by_name = lambda x: None
-    gpu_available = lambda: False
-    MultiGPUManager = None
-    get_default_manager = lambda: None
 
-logger = create_logger(__name__)
+    def list_devices():
+        return []
+
+    def get_device_by_name(_name: str):
+        return None
+
+    def gpu_available():
+        return False
+
+    class MultiGPUManager:  # stub minimal
+        pass
+
+    def get_default_manager():
+        return None
+
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -145,7 +161,7 @@ class RunResult:
     equity: pd.Series
     returns: pd.Series
     trades: pd.DataFrame
-    meta: Dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         """Validation stricte des données retournées."""
@@ -234,7 +250,7 @@ class BacktestEngine:
     """
 
     def __init__(
-        self, gpu_balance: Optional[Dict[str, float]] = None, use_multi_gpu: bool = True
+        self, gpu_balance: Optional[dict[str, float]] = None, use_multi_gpu: bool = True
     ):
         """
         Initialise le moteur de backtesting.
@@ -244,7 +260,7 @@ class BacktestEngine:
                         Si None, utilise balance par défaut du MultiGPUManager
             use_multi_gpu: Active la distribution multi-GPU si plusieurs devices
         """
-        self.logger = create_logger(__name__)
+        self.logger = get_logger(__name__)
 
         # Device detection et setup
         self.gpu_available = gpu_available() if GPU_UTILS_AVAILABLE else False
@@ -305,9 +321,9 @@ class BacktestEngine:
     def run(
         self,
         df_1m: pd.DataFrame,
-        indicators: Dict[str, Any],
+        indicators: dict[str, Any],
         *,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         symbol: str,
         timeframe: str,
         seed: int = 42,
@@ -399,9 +415,10 @@ class BacktestEngine:
 
         except Exception as e:
             self.logger.error(f"❌ Erreur backtest {symbol}: {e}")
+            self.logger.debug("Backtest exception traceback", exc_info=True)
             raise
 
-    def _setup_compute_backend(self, use_gpu: Optional[bool]) -> Dict[str, Any]:
+    def _setup_compute_backend(self, use_gpu: Optional[bool]) -> dict[str, Any]:
         """
         Configure le backend de calcul avec fallback gracieux.
 
@@ -461,7 +478,7 @@ class BacktestEngine:
         return device_info
 
     def _validate_inputs(
-        self, df_1m: pd.DataFrame, indicators: Dict[str, Any], params: Dict[str, Any]
+        self, df_1m: pd.DataFrame, indicators: dict[str, Any], params: dict[str, Any]
     ):
         """Validation stricte des données d'entrée."""
         # Validation DataFrame OHLCV
@@ -501,7 +518,7 @@ class BacktestEngine:
 
     @measure_throughput("signal_generation")
     def _generate_trading_signals(
-        self, df_1m: pd.DataFrame, indicators: Dict[str, Any], params: Dict[str, Any]
+        self, df_1m: pd.DataFrame, indicators: dict[str, Any], params: dict[str, Any]
     ) -> pd.Series:
         """
         Génère signaux de trading via stratégie Bollinger Bands + ATR.
@@ -614,7 +631,7 @@ class BacktestEngine:
 
     @track_memory("trade_simulation")
     def _simulate_trades(
-        self, df_1m: pd.DataFrame, signals: pd.Series, params: Dict[str, Any]
+        self, df_1m: pd.DataFrame, signals: pd.Series, params: dict[str, Any]
     ) -> pd.DataFrame:
         """
         Simule l'exécution des trades avec gestion positions réaliste.
@@ -665,7 +682,7 @@ class BacktestEngine:
                 entry_time = timestamp
 
                 self.logger.debug(
-                    f"   Entrée {['FLAT','LONG','SHORT'][int(position + 1)]} @ {entry_price:.2f} le {entry_time}"
+                    f"   Entrée {['FLAT', 'LONG', 'SHORT'][int(position + 1)]} @ {entry_price:.2f} le {entry_time}"
                 )
 
             # === Sortie de position ===
@@ -805,8 +822,8 @@ class BacktestEngine:
         return trades_df
 
     def _calculate_equity_returns(
-        self, df_1m: pd.DataFrame, trades_df: pd.DataFrame, params: Dict[str, Any]
-    ) -> Tuple[pd.Series, pd.Series]:
+        self, df_1m: pd.DataFrame, trades_df: pd.DataFrame, params: dict[str, Any]
+    ) -> tuple[pd.Series, pd.Series]:
         """
         Calcule l'equity curve et les returns séries.
 
@@ -822,7 +839,7 @@ class BacktestEngine:
             params: Paramètres avec initial_capital
 
         Returns:
-            Tuple[pd.Series, pd.Series]: (equity, returns)
+            tuple[pd.Series, pd.Series]: (equity, returns)
         """
         self.logger.debug("📈 Calcul equity curve et returns")
 
@@ -866,13 +883,13 @@ class BacktestEngine:
 
     def _build_metadata(
         self,
-        device_info: Dict[str, Any],
+        device_info: dict[str, Any],
         duration: float,
         df_1m: pd.DataFrame,
         trades_df: pd.DataFrame,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         seed: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Construit les métadonnées complètes d'exécution.
 
@@ -964,15 +981,15 @@ class BacktestEngine:
     def run_backtest_with_validation(
         self,
         df_1m: pd.DataFrame,
-        indicators: Dict[str, Any],
+        indicators: dict[str, Any],
         *,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         symbol: str,
         timeframe: str,
         validation_config: Optional[ValidationConfig] = None,
         seed: int = 42,
         use_gpu: Optional[bool] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Exécute backtest avec validation anti-overfitting complète.
 
@@ -1058,8 +1075,8 @@ class BacktestEngine:
 
         # Définir fonction de backtest à valider
         def backtest_func(
-            data: pd.DataFrame, params_dict: Dict[str, Any]
-        ) -> Dict[str, float]:
+            data: pd.DataFrame, params_dict: dict[str, Any]
+        ) -> dict[str, float]:
             """
             Wrapper pour exécuter self.run() et extraire métriques nécessaires.
 
@@ -1189,7 +1206,7 @@ class BacktestEngine:
 
 
 def create_engine(
-    gpu_balance: Optional[Dict[str, float]] = None, use_multi_gpu: bool = True
+    gpu_balance: Optional[dict[str, float]] = None, use_multi_gpu: bool = True
 ) -> BacktestEngine:
     """
     Factory function pour créer une instance BacktestEngine.
@@ -1216,14 +1233,14 @@ def create_engine(
 
 def run(
     df_1m: pd.DataFrame,
-    indicators: Dict[str, Any],
+    indicators: dict[str, Any],
     *,
-    params: Dict[str, Any],
+    params: dict[str, Any],
     symbol: str,
     timeframe: str,
     seed: int = 42,
     use_gpu: Optional[bool] = None,
-    gpu_balance: Optional[Dict[str, float]] = None,
+    gpu_balance: Optional[dict[str, float]] = None,
 ) -> RunResult:
     """
     Fonction de convenience pour exécution directe sans instanciation.
@@ -1266,10 +1283,7 @@ def run(
 
 
 # === Module Initialization ===
-logger.info(f"ThreadX Backtest Engine v10 loaded")
+logger.info("ThreadX Backtest Engine v10 loaded")
 logger.debug(f"   GPU utils: {'✅' if GPU_UTILS_AVAILABLE else '❌'}")
 logger.debug(f"   XP utils: {'✅' if XP_AVAILABLE else '❌'}")
 logger.debug(f"   Timing utils: {'✅' if 'measure_throughput' in globals() else '❌'}")
-
-
-

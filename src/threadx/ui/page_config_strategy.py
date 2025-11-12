@@ -12,19 +12,17 @@ Version: 2.0.0 - UI Redesign
 from __future__ import annotations
 
 from datetime import date
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
 from ..data_access import (
-    DATA_DIR,
     discover_tokens_and_timeframes,
     get_available_timeframes_for_token,
     load_ohlcv,
 )
-from ..dataset.validate import validate_dataset
 from .strategy_registry import indicator_specs_for, list_strategies, parameter_specs_for
 
 DEFAULT_SYMBOL = "BTCUSDC"
@@ -182,7 +180,7 @@ def _render_data_section() -> None:
         )
 
 
-def _normalize_spec(spec: Any) -> Dict[str, Any]:
+def _normalize_spec(spec: Any) -> dict[str, Any]:
     if isinstance(spec, dict):
         normalized = dict(spec)
         if "type" not in normalized:
@@ -221,10 +219,10 @@ def _normalize_spec(spec: Any) -> Dict[str, Any]:
 def _render_param_control(
     label: str,
     widget_key: str,
-    spec: Dict[str, Any],
+    spec: dict[str, Any],
     prefill: Any,
-    range_store: Optional[Dict[str, Tuple[Any, Any]]] = None,
-    store_key: Optional[str] = None,
+    range_store: dict[str, tuple[Any, Any]] | None = None,
+    store_key: str | None = None,
 ) -> Any:
     normalized = _normalize_spec(spec)
     param_type = normalized.get("type", "text")
@@ -391,11 +389,11 @@ def _render_param_control(
     return st.text_input(label, value=str(prefill) if prefill is not None else "", key=widget_key)
 
 
-def _render_indicator_inputs(name: str, specs: Dict[str, Any], range_store: Dict[str, Tuple[Any, Any]]) -> Dict[str, Any]:
+def _render_indicator_inputs(name: str, specs: dict[str, Any], range_store: dict[str, tuple[Any, Any]]) -> dict[str, Any]:
     """Rendu des inputs pour un indicateur."""
     prev_indicators = st.session_state.get("indicators", {})
     saved = prev_indicators.get(name, {})
-    result: Dict[str, Any] = {}
+    result: dict[str, Any] = {}
 
     for key, spec in specs.items():
         normalized = _normalize_spec(spec)

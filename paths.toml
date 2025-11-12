@@ -14,7 +14,7 @@ logs = "./logs"
 cache = "./cache"
 config = "./config"
 
-[gpu] 
+[gpu]
 # Configuration GPU multi-cartes
 devices = ["5090", "2060"]
 load_balance = {"5090" = 0.75, "2060" = 0.25}
@@ -27,8 +27,8 @@ enable_gpu = true
 target_tasks_per_min = 2500
 vectorization_batch_size = 10000
 cache_ttl_sec = 3600
-max_workers = 4
-memory_limit_mb = 8192
+max_workers = 24
+memory_limit_mb =16384
 
 [trading]
 # Configuration trading
@@ -66,13 +66,13 @@ max_file_size_mb = 1000
 default_simulations = 10000
 max_simulations = 1000000
 default_steps = 252
-seed = 42
+seed = 50
 confidence_levels = [0.95, 0.99]
 
 [cache]
 # Configuration cache
 enable = true
-max_size_mb = 2048
-ttl_seconds = 3600
-compression = true
+max_size_mb = 16384
+ttl_seconds = 16384
+compression = false
 strategy = "LRU"

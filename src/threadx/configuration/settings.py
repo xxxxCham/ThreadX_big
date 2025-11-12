@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
 
 
 @dataclass(frozen=True)
@@ -21,8 +20,8 @@ class Settings:
     CONFIG: str = "./config"
 
     # GPU
-    GPU_DEVICES: List[str] = field(default_factory=lambda: ["5090", "2060"])
-    LOAD_BALANCE: Dict[str, float] = field(
+    GPU_DEVICES: list[str] = field(default_factory=lambda: ["5090", "2060"])
+    LOAD_BALANCE: dict[str, float] = field(
         default_factory=lambda: {"5090": 0.75, "2060": 0.25}
     )
     MEMORY_THRESHOLD: float = 0.8
@@ -37,7 +36,7 @@ class Settings:
     MEMORY_LIMIT_MB: int = 8192
 
     # Trading
-    SUPPORTED_TF: Tuple[str, ...] = (
+    SUPPORTED_TF: tuple[str, ...] = (
         "1m",
         "3m",
         "5m",
@@ -81,7 +80,7 @@ class Settings:
     MAX_SIMULATIONS: int = 1000000
     DEFAULT_STEPS: int = 252
     MC_SEED: int = 42
-    CONFIDENCE_LEVELS: List[float] = field(default_factory=lambda: [0.95, 0.99])
+    CONFIDENCE_LEVELS: list[float] = field(default_factory=lambda: [0.95, 0.99])
 
     # Cache
     CACHE_ENABLE: bool = True

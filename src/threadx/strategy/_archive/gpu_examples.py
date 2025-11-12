@@ -20,15 +20,16 @@ Usage:
 """
 
 import time
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Any
+
 import numpy as np
 import pandas as pd
+from threadx.utils.gpu import MultiGPUManager, get_default_manager
 
-from threadx.utils.log import get_logger
-from threadx.utils.gpu import get_default_manager, MultiGPUManager
-from threadx.strategy.bb_atr import BBAtrStrategy, BBAtrParams
-from threadx.strategy.model import Trade, RunStats
 from threadx.indicators.gpu_integration import get_gpu_accelerated_bank
+from threadx.strategy.bb_atr import BBAtrStrategy
+from threadx.strategy.model import RunStats
+from threadx.utils.log import get_logger
 
 logger = get_logger(__name__)
 
@@ -44,7 +45,7 @@ class GPUAcceleratedBBAtr(BBAtrStrategy):
     """
 
     def __init__(
-        self, symbol: str, timeframe: str, gpu_manager: Optional[MultiGPUManager] = None
+        self, symbol: str, timeframe: str, gpu_manager: MultiGPUManager | None = None
     ):
         """
         Initialise la stratégie BB+ATR avec accélération GPU.
@@ -76,8 +77,8 @@ class GPUAcceleratedBBAtr(BBAtrStrategy):
         logger.info(f"Accélération GPU activée (seuil: {min_samples} échantillons)")
 
     def compute_indicators_gpu(
-        self, df: pd.DataFrame, params: Dict[str, Any]
-    ) -> Dict[str, pd.Series]:
+        self, df: pd.DataFrame, params: dict[str, Any]
+    ) -> dict[str, pd.Series]:
         """
         Calcul des indicateurs avec accélération multi-GPU.
 
@@ -121,8 +122,8 @@ class GPUAcceleratedBBAtr(BBAtrStrategy):
         }
 
     def generate_signals_batch_gpu(
-        self, df: pd.DataFrame, param_grid: List[Dict[str, Any]]
-    ) -> List[pd.DataFrame]:
+        self, df: pd.DataFrame, param_grid: list[dict[str, Any]]
+    ) -> list[pd.DataFrame]:
         """
         Génération de signaux en batch avec distribution GPU.
 
@@ -230,7 +231,7 @@ class GPUAcceleratedBBAtr(BBAtrStrategy):
             # Reconstruction par paramètre
             signal_idx = 0
             for param_idx, params in enumerate(param_grid):
-                param_signals = signal_results[signal_idx : signal_idx + len(df)]
+                signal_signals = signal_results[signal_idx : signal_idx + len(df)]
                 signal_idx += len(df)
 
                 # Création DataFrame signaux
@@ -265,10 +266,10 @@ class GPUAcceleratedBBAtr(BBAtrStrategy):
     def backtest_monte_carlo_gpu(
         self,
         df: pd.DataFrame,
-        base_params: Dict[str, Any],
+        base_params: dict[str, Any],
         n_simulations: int = 1000,
-        param_ranges: Optional[Dict[str, Tuple[float, float]]] = None,
-    ) -> List[RunStats]:
+        param_ranges: dict[str, tuple[float, float]] | None = None,
+    ) -> list[RunStats]:
         """
         Backtest Monte Carlo multi-GPU avec variations de paramètres.
 
@@ -436,7 +437,7 @@ class GPUAcceleratedBBAtr(BBAtrStrategy):
 
     def optimize_gpu_balance_for_strategy(
         self, sample_df: pd.DataFrame
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Optimise la balance GPU spécifiquement pour cette stratégie.
 
@@ -456,7 +457,7 @@ class GPUAcceleratedBBAtr(BBAtrStrategy):
 
         return optimal_ratios
 
-    def get_gpu_performance_report(self) -> Dict[str, Any]:
+    def get_gpu_performance_report(self) -> dict[str, Any]:
         """
         Rapport de performance GPU pour cette stratégie.
 
@@ -477,7 +478,7 @@ class GPUAcceleratedBBAtr(BBAtrStrategy):
             "recommendations": self._get_performance_recommendations(gpu_stats),
         }
 
-    def _get_performance_recommendations(self, gpu_stats: Dict) -> List[str]:
+    def _get_performance_recommendations(self, gpu_stats: dict) -> list[str]:
         """Génère des recommandations d'optimisation."""
         recommendations = []
 
@@ -530,8 +531,8 @@ def create_gpu_strategy(symbol: str, timeframe: str) -> GPUAcceleratedBBAtr:
 
 
 def benchmark_gpu_vs_cpu(
-    df: pd.DataFrame, params: Dict[str, Any], n_runs: int = 5
-) -> Dict[str, float]:
+    df: pd.DataFrame, params: dict[str, Any], n_runs: int = 5
+) -> dict[str, float]:
     """
     Benchmark GPU vs CPU pour la stratégie BB+ATR.
 

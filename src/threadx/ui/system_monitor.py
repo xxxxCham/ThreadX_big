@@ -16,29 +16,31 @@ Author: ThreadX Framework
 Version: 1.0
 """
 
-import time
-import threading
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
-from collections import deque
 import logging
+import threading
+import time
+from collections import deque
+from dataclasses import dataclass
+from typing import Any
 
-import psutil
-import numpy as np
 import pandas as pd
+import psutil
 
 logger = logging.getLogger(__name__)
 
 # Import GPU monitoring
 try:
-    import cupy as cp
+    import cupy as cp  # noqa: F401
 
     CUPY_AVAILABLE = True
 except ImportError:
     CUPY_AVAILABLE = False
 
 try:
-    from threadx.utils.gpu.device_manager import list_devices, get_device_by_name
+    from threadx.gpu.device_manager import (  # noqa: F401
+        get_device_by_name,
+        list_devices,
+    )
 
     GPU_MANAGER_AVAILABLE = True
 except ImportError:
@@ -84,7 +86,7 @@ class SystemSnapshot:
     gpu2_temperature: float = 0.0
     gpu2_power_usage: float = 0.0
 
-    def to_dict(self) -> Dict[str, float]:
+    def to_dict(self) -> dict[str, float]:
         """Convertit en dictionnaire."""
         return {
             "timestamp": self.timestamp,
@@ -129,7 +131,7 @@ class SystemMonitor:
 
         # Thread de collecte
         self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
 
         # Historique des snapshots
@@ -162,7 +164,7 @@ class SystemMonitor:
                 )
 
             except Exception as e:
-                logger.warning(f"Erreur initialisation pynvml: {e}")
+                logger.warning(f"Erreur initialisation pynvml: {e}", exc_info=True)
                 self._gpu_available = False
         else:
             logger.info("pynvml non disponible - monitoring GPU désactivé")
@@ -171,7 +173,7 @@ class SystemMonitor:
             f"SystemMonitor initialisé: interval={interval}s, max_history={max_history}"
         )
 
-    def _collect_cpu_metrics(self) -> Dict[str, float]:
+    def _collect_cpu_metrics(self) -> dict[str, float]:
         """Collecte les métriques CPU/RAM."""
         try:
             cpu_percent = psutil.cpu_percent(interval=None)
@@ -183,10 +185,10 @@ class SystemMonitor:
                 "memory_percent": memory_percent,
             }
         except Exception as e:
-            logger.warning(f"Erreur collecte CPU: {e}")
+            logger.warning(f"Erreur collecte CPU: {e}", exc_info=True)
             return {"cpu_percent": 0.0, "memory_percent": 0.0}
 
-    def _collect_gpu_metrics(self) -> Dict[str, float]:
+    def _collect_gpu_metrics(self) -> dict[str, float]:
         """Collecte les métriques GPU via pynvml."""
         metrics = {
             "gpu1_percent": 0.0,
@@ -250,7 +252,7 @@ class SystemMonitor:
                 metrics["gpu2_power_usage"] = float(power)
 
         except Exception as e:
-            logger.warning(f"Erreur collecte GPU: {e}")
+            logger.warning(f"Erreur collecte GPU: {e}", exc_info=True)
 
         return metrics
 
@@ -292,7 +294,7 @@ class SystemMonitor:
                 time.sleep(self.interval)
 
             except Exception as e:
-                logger.error(f"Erreur dans monitoring loop: {e}")
+                logger.error(f"Erreur dans monitoring loop: {e}", exc_info=True)
                 time.sleep(self.interval)
 
         logger.info("Thread monitoring arrêté")
@@ -324,7 +326,7 @@ class SystemMonitor:
 
         logger.info("Monitoring arrêté")
 
-    def get_latest_snapshot(self) -> Optional[SystemSnapshot]:
+    def get_latest_snapshot(self) -> SystemSnapshot | None:
         """
         Récupère le snapshot le plus récent.
 
@@ -336,7 +338,7 @@ class SystemMonitor:
                 return None
             return self._history[-1]
 
-    def get_history(self, n_last: Optional[int] = None) -> List[SystemSnapshot]:
+    def get_history(self, n_last: int | None = None) -> list[SystemSnapshot]:
         """
         Récupère l'historique des snapshots.
 
@@ -354,7 +356,7 @@ class SystemMonitor:
 
             return history
 
-    def get_history_df(self, n_last: Optional[int] = None) -> pd.DataFrame:
+    def get_history_df(self, n_last: int | None = None) -> pd.DataFrame:
         """
         Récupère l'historique sous forme de DataFrame.
 
@@ -392,7 +394,7 @@ class SystemMonitor:
 
         return df
 
-    def get_history_dataframe(self, n_last: Optional[int] = None) -> pd.DataFrame:
+    def get_history_dataframe(self, n_last: int | None = None) -> pd.DataFrame:
         """Alias de get_history_df() pour compatibilité."""
         return self.get_history_df(n_last)
 
@@ -403,7 +405,7 @@ class SystemMonitor:
 
         logger.info("Historique monitoring vidé")
 
-    def get_stats_summary(self) -> Dict[str, Any]:
+    def get_stats_summary(self) -> dict[str, Any]:
         """
         Calcule les statistiques résumées sur l'historique.
 
@@ -449,7 +451,7 @@ class SystemMonitor:
 
 
 # Singleton global pour partage entre composants
-_global_monitor: Optional[SystemMonitor] = None
+_global_monitor: SystemMonitor | None = None
 
 
 def get_global_monitor() -> SystemMonitor:

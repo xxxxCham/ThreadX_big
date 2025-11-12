@@ -3,16 +3,16 @@ Analyseur de performance pour le moteur de backtest ThreadX.
 Mesure, diagnostique et génère des rapports visuels.
 """
 
-import time
 import json
-import psutil
 import os
-from dataclasses import dataclass, asdict
-from typing import Dict, List, Optional, Any, Callable
-from contextlib import contextmanager
-from collections import defaultdict
 import threading
-from pathlib import Path
+import time
+from collections import defaultdict
+from contextlib import contextmanager
+from dataclasses import asdict, dataclass
+from typing import Any
+
+import psutil
 
 
 @dataclass
@@ -30,7 +30,7 @@ class ComponentMetrics:
     diagnostic: str  # "optimize", "monitor", "ok"
     potential_gain: str  # Description du gain potentiel
     priority: int  # 1=haute, 2=moyenne, 3=basse
-    details: Dict[str, Any]  # Infos supplémentaires
+    details: dict[str, Any]  # Infos supplémentaires
 
 
 class PerformanceAnalyzer:
@@ -51,10 +51,10 @@ class PerformanceAnalyzer:
     """
 
     def __init__(self):
-        self.components: Dict[str, List[float]] = defaultdict(list)
-        self.memory_snapshots: Dict[str, tuple] = {}
-        self.start_time: Optional[float] = None
-        self.end_time: Optional[float] = None
+        self.components: dict[str, list[float]] = defaultdict(list)
+        self.memory_snapshots: dict[str, tuple] = {}
+        self.start_time: float | None = None
+        self.end_time: float | None = None
         self.total_duration: float = 0
         self.process = psutil.Process(os.getpid())
         self._lock = threading.Lock()
@@ -98,7 +98,7 @@ class PerformanceAnalyzer:
                     metadata,
                 )
 
-    def _diagnose_component(self, name: str, metrics: Dict) -> tuple[str, str, int]:
+    def _diagnose_component(self, name: str, metrics: dict) -> tuple[str, str, int]:
         """
         Diagnostique automatique d'un composant.
 
@@ -172,7 +172,7 @@ class PerformanceAnalyzer:
                 3,
             )
 
-    def generate_report(self) -> Dict[str, Any]:
+    def generate_report(self) -> dict[str, Any]:
         """
         Génère un rapport complet avec diagnostic.
 
@@ -255,8 +255,8 @@ class PerformanceAnalyzer:
         return report
 
     def _generate_recommendations(
-        self, components: List[ComponentMetrics]
-    ) -> List[Dict[str, str]]:
+        self, components: list[ComponentMetrics]
+    ) -> list[dict[str, str]]:
         """Génère des recommandations d'optimisation."""
         recommendations = []
 
@@ -330,7 +330,7 @@ class PerformanceAnalyzer:
 
         webbrowser.open(f"file://{os.path.abspath(filepath)}")
 
-    def _generate_html(self, report: Dict) -> str:
+    def _generate_html(self, report: dict) -> str:
         """Génère le HTML du rapport."""
         components = report["components"]
         summary = report["summary"]

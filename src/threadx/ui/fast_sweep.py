@@ -14,11 +14,13 @@ Author: ThreadX Framework
 Version: 1.0
 """
 
+import logging
 import time
-from typing import Dict, List, Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
+
 import numpy as np
 import pandas as pd
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -33,13 +35,13 @@ except Exception:
 def fast_parameter_sweep(
     data: pd.DataFrame,
     param_name: str,
-    param_values: List[Any],
+    param_values: list[Any],
     strategy_func: Callable,
     *,
     capital_initial: float = 10000.0,
-    update_callback: Optional[Callable] = None,
+    update_callback: Callable | None = None,
     update_frequency: int = 50,
-    should_cancel: Optional[Callable[[], bool]] = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> pd.DataFrame:
     """
     Sweep ultra-rapide avec batch processing.
@@ -183,7 +185,7 @@ def fast_parameter_sweep(
     return results_df
 
 
-def simple_bollinger_strategy(data: pd.DataFrame, params: Dict[str, Any]) -> np.ndarray:
+def simple_bollinger_strategy(data: pd.DataFrame, params: dict[str, Any]) -> np.ndarray:
     """
     Stratégie Bollinger simple ultra-rapide (vectorisée).
 
@@ -221,10 +223,10 @@ def simple_bollinger_strategy(data: pd.DataFrame, params: Dict[str, Any]) -> np.
     positions = np.zeros(len(close))
 
     # Mean reversion: long quand prix touche bande basse
-    long_signal = (close <= lower).astype(int)
+    (close <= lower).astype(int)
 
     # Exit/flat quand prix revient au milieu
-    flat_signal = (close > lower) & (close < upper)
+    (close > lower) & (close < upper)
 
     # Stratégie simple: long dans oversold, flat sinon
     # (on pourrait améliorer avec gestion d'état mais restons vectorisé)
@@ -235,7 +237,7 @@ def simple_bollinger_strategy(data: pd.DataFrame, params: Dict[str, Any]) -> np.
     return positions
 
 
-def bollinger_zscore_strategy(data: pd.DataFrame, params: Dict[str, Any]) -> np.ndarray:
+def bollinger_zscore_strategy(data: pd.DataFrame, params: dict[str, Any]) -> np.ndarray:
     """
     Stratégie Bollinger avec Z-score (plus sophistiquée mais toujours vectorisée).
 
@@ -247,7 +249,7 @@ def bollinger_zscore_strategy(data: pd.DataFrame, params: Dict[str, Any]) -> np.
         Positions array
     """
     window = params.get("window", params.get("period", 20))
-    std_mult = params.get("std", params.get("bb_std", 2.0))
+    params.get("std", params.get("bb_std", 2.0))
     entry_z = params.get("entry_z", 2.0)
 
     close = data["close"]
@@ -277,7 +279,7 @@ def bollinger_zscore_strategy(data: pd.DataFrame, params: Dict[str, Any]) -> np.
     return positions
 
 
-def adaptive_ma_strategy(data: pd.DataFrame, params: Dict[str, Any]) -> np.ndarray:
+def adaptive_ma_strategy(data: pd.DataFrame, params: dict[str, Any]) -> np.ndarray:
     """
     Stratégie moving average adaptative (trend following).
 

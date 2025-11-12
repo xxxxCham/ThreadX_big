@@ -49,19 +49,17 @@ Exemple d'usage:
 import hashlib
 import json
 import logging
-import os
-import pickle
-import time
-import threading
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
-import numpy as np
-import pandas as pd
 
 # FIX B1: File locking cross-platform
 import platform
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
 
 if platform.system() == "Windows":
     import msvcrt
@@ -74,8 +72,8 @@ from .xatr import ATR, ATRSettings
 
 # Import Phase 2 Data
 try:
-    from ..dataset.registry import quick_inventory
-    from ..dataset.io import write_frame, read_frame
+    from ..dataset.io import read_frame  # noqa: F401
+    from ..dataset.registry import quick_inventory  # noqa: F401
 
     HAS_THREADX_DATA = True
 except ImportError:
@@ -99,7 +97,7 @@ class IndicatorSettings:
     compression_level: int = 6  # Pour cache Parquet
 
     # GPU settings (hérités des modules indicateurs)
-    gpu_split_ratio: Tuple[float, float] = (0.75, 0.25)
+    gpu_split_ratio: tuple[float, float] = (0.75, 0.25)
     gpu_batch_size: int = 1000
 
     def __post_init__(self):
@@ -123,10 +121,10 @@ class CacheManager:
         self.settings = settings
         self.cache_path = Path(settings.cache_dir)
 
-    def _read_metadata(self, meta_file: Path) -> Optional[Dict]:
+    def _read_metadata(self, meta_file: Path) -> dict | None:
         """Helper: Lit metadata JSON (élimine duplication)"""
         try:
-            with open(meta_file, "r") as f:
+            with open(meta_file) as f:
                 return json.load(f)
         except Exception as e:
             logger.warning(f"Failed to read metadata {meta_file}: {e}")
@@ -135,7 +133,7 @@ class CacheManager:
     def _generate_cache_key(
         self,
         indicator_type: str,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         symbol: str = "",
         timeframe: str = "",
         data_hash: str = "",
@@ -162,7 +160,7 @@ class CacheManager:
         return "_".join(key_parts)
 
     def _compute_data_hash(
-        self, data: Union[np.ndarray, pd.Series, pd.DataFrame]
+        self, data: np.ndarray | pd.Series | pd.DataFrame
     ) -> str:
         """Calcul hash des données pour cache key"""
         if isinstance(data, pd.DataFrame):
@@ -227,7 +225,7 @@ class CacheManager:
                 hash_md5.update(chunk)
         return hash_md5.hexdigest()
 
-    def load_from_cache(self, cache_key: str, indicator_type: str) -> Optional[Any]:
+    def load_from_cache(self, cache_key: str, indicator_type: str) -> Any | None:
         """Chargement depuis cache"""
         if not self.is_cache_valid(cache_key, indicator_type):
             return None
@@ -254,8 +252,8 @@ class CacheManager:
         self,
         cache_key: str,
         indicator_type: str,
-        result: Union[np.ndarray, Tuple[np.ndarray, ...]],
-        params: Dict[str, Any],
+        result: np.ndarray | tuple[np.ndarray, ...],
+        params: dict[str, Any],
         symbol: str = "",
         timeframe: str = "",
     ) -> bool:
@@ -286,8 +284,9 @@ class CacheManager:
                     # Single array (ex: ATR)
                     df = pd.DataFrame({"result_0": result})
 
-                # Sauvegarde Parquet avec compression
-                df.to_parquet(cache_file, compression="snappy", index=False)
+                # Sauvegarde Parquet atomique: écrire dans un temp puis replace
+                tmp_cache = cache_file.with_suffix(".parquet.tmp")
+                df.to_parquet(tmp_cache, compression="snappy", index=False)
 
                 # Métadonnées
                 metadata = {
@@ -301,20 +300,24 @@ class CacheManager:
                     "columns": list(df.columns),
                 }
 
-                # Checksum si activé
+                # Checksum si activé (sur le temp avant remplacement)
                 if self.settings.checksum_validation:
-                    metadata["checksum"] = self._compute_file_checksum(cache_file)
+                    metadata["checksum"] = self._compute_file_checksum(tmp_cache)
 
-                # Sauvegarde métadonnées
-                with open(meta_file, "w") as f:
+                # Sauvegarde métadonnées (temp puis replace)
+                tmp_meta = meta_file.with_suffix(".tmp")
+                with open(tmp_meta, "w") as f:
                     json.dump(metadata, f, indent=2)
+                import os as _os
+                _os.replace(tmp_cache, cache_file)
+                _os.replace(tmp_meta, meta_file)
 
                 logger.debug(f"💾 Cache sauvé: {cache_key}")
 
                 # Lock released automatically on file close
                 return True
 
-        except (IOError, OSError) as e:
+        except OSError as e:
             # Lock conflict ou erreur I/O
             logger.warning(f"⚠️ Cache write conflict {cache_key}: {e}")
             return False
@@ -367,7 +370,7 @@ class CacheManager:
 class IndicatorBank:
     """Banque d'indicateurs avec cache intelligent et batch processing"""
 
-    def __init__(self, settings: Optional[IndicatorSettings] = None):
+    def __init__(self, settings: IndicatorSettings | None = None):
         self.settings = settings or IndicatorSettings()
         self.cache_manager = CacheManager(self.settings)
 
@@ -392,11 +395,11 @@ class IndicatorBank:
     def ensure(
         self,
         indicator_type: str,
-        params: Dict[str, Any],
-        data: Union[np.ndarray, pd.Series, pd.DataFrame],
+        params: dict[str, Any],
+        data: np.ndarray | pd.Series | pd.DataFrame,
         symbol: str = "",
         timeframe: str = "",
-    ) -> Union[np.ndarray, Tuple[np.ndarray, ...]]:
+    ) -> np.ndarray | tuple[np.ndarray, ...]:
         """
         Ensure indicateur: vérifie cache → calcule si nécessaire
 
@@ -489,9 +492,9 @@ class IndicatorBank:
     def _compute_indicator(
         self,
         indicator_type: str,
-        params: Dict[str, Any],
-        data: Union[np.ndarray, pd.Series, pd.DataFrame],
-    ) -> Union[np.ndarray, Tuple[np.ndarray, ...]]:
+        params: dict[str, Any],
+        data: np.ndarray | pd.Series | pd.DataFrame,
+    ) -> np.ndarray | tuple[np.ndarray, ...]:
         """Calcul effectif d'un indicateur selon son type"""
 
         calculator = self.calculators[indicator_type]
@@ -543,11 +546,11 @@ class IndicatorBank:
     def batch_ensure(
         self,
         indicator_type: str,
-        params_list: List[Dict[str, Any]],
-        data: Union[np.ndarray, pd.Series, pd.DataFrame],
+        params_list: list[dict[str, Any]],
+        data: np.ndarray | pd.Series | pd.DataFrame,
         symbol: str = "",
         timeframe: str = "",
-    ) -> Dict[str, Union[np.ndarray, Tuple[np.ndarray, ...]]]:
+    ) -> dict[str, np.ndarray | tuple[np.ndarray, ...]]:
         """
         Calcul batch d'indicateurs avec mutualisation des intermédiaires.
 
@@ -650,11 +653,11 @@ class IndicatorBank:
 
     def compute_batch(
         self,
-        data: Union[np.ndarray, pd.Series, pd.DataFrame],
-        indicators: List[str],
+        data: np.ndarray | pd.Series | pd.DataFrame,
+        indicators: list[str],
         symbol: str = "",
         timeframe: str = "",
-    ) -> Dict[str, Union[np.ndarray, Tuple[np.ndarray, ...]]]:
+    ) -> dict[str, np.ndarray | tuple[np.ndarray, ...]]:
         """
         Calcule plusieurs indicateurs en batch (API simplifiée).
 
@@ -731,7 +734,7 @@ class IndicatorBank:
         logger.info(f"compute_batch: {len(all_results)} résultats calculés")
         return all_results
 
-    def _parse_indicator_string(self, indicator_str: str) -> Tuple[str, Dict[str, Any]]:
+    def _parse_indicator_string(self, indicator_str: str) -> tuple[str, dict[str, Any]]:
         """
         Parse une chaîne d'indicateur au format "type_param1_param2".
 
@@ -806,9 +809,9 @@ class IndicatorBank:
     def _compute_batch_with_intermediates(
         self,
         indicator_type: str,
-        params_list: List[Dict[str, Any]],
-        data: Union[np.ndarray, pd.Series, pd.DataFrame],
-    ) -> List[Union[np.ndarray, Tuple[np.ndarray, ...]]]:
+        params_list: list[dict[str, Any]],
+        data: np.ndarray | pd.Series | pd.DataFrame,
+    ) -> list[np.ndarray | tuple[np.ndarray, ...]]:
         """Calcule en batch avec mutualisation des intermédiaires."""
 
         if indicator_type == "bollinger":
@@ -825,9 +828,9 @@ class IndicatorBank:
 
     def _batch_bollinger_with_sma_sharing(
         self,
-        params_list: List[Dict[str, Any]],
-        data: Union[np.ndarray, pd.Series, pd.DataFrame],
-    ) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+        params_list: list[dict[str, Any]],
+        data: np.ndarray | pd.Series | pd.DataFrame,
+    ) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
         """Calcul batch Bollinger avec partage des SMA."""
 
         # Extraction des périodes uniques
@@ -874,9 +877,9 @@ class IndicatorBank:
 
     def _batch_atr_with_tr_sharing(
         self,
-        params_list: List[Dict[str, Any]],
-        data: Union[np.ndarray, pd.Series, pd.DataFrame],
-    ) -> List[np.ndarray]:
+        params_list: list[dict[str, Any]],
+        data: np.ndarray | pd.Series | pd.DataFrame,
+    ) -> list[np.ndarray]:
         """Calcul batch ATR avec partage du True Range."""
 
         # Calcul du True Range une seule fois
@@ -924,7 +927,7 @@ class IndicatorBank:
 
         return results
 
-    def _params_to_cache_key(self, params: Dict[str, Any]) -> str:
+    def _params_to_cache_key(self, params: dict[str, Any]) -> str:
         """Convertit les paramètres en clé de cache stable."""
         import json
 
@@ -933,7 +936,7 @@ class IndicatorBank:
     def _update_registry_batch(
         self,
         indicator_type: str,
-        params_list: List[Dict[str, Any]],
+        params_list: list[dict[str, Any]],
         symbol: str,
         timeframe: str,
     ) -> None:
@@ -944,11 +947,11 @@ class IndicatorBank:
     def force_recompute(
         self,
         indicator_type: str,
-        params: Dict[str, Any],
-        data: Union[np.ndarray, pd.Series, pd.DataFrame],
+        params: dict[str, Any],
+        data: np.ndarray | pd.Series | pd.DataFrame,
         symbol: str = "",
         timeframe: str = "",
-    ) -> Union[np.ndarray, Tuple[np.ndarray, ...]]:
+    ) -> np.ndarray | tuple[np.ndarray, ...]:
         """
         Recompute forcé (ignore cache)
 
@@ -1001,11 +1004,11 @@ class IndicatorBank:
     def _batch_ensure_parallel(
         self,
         indicator_type: str,
-        params_list: List[Dict[str, Any]],
-        data: Union[np.ndarray, pd.Series, pd.DataFrame],
+        params_list: list[dict[str, Any]],
+        data: np.ndarray | pd.Series | pd.DataFrame,
         symbol: str,
         timeframe: str,
-    ) -> Dict[str, Union[np.ndarray, Tuple[np.ndarray, ...]]]:
+    ) -> dict[str, np.ndarray | tuple[np.ndarray, ...]]:
         """Batch ensure parallèle avec ThreadPoolExecutor"""
 
         logger.info(
@@ -1037,7 +1040,7 @@ class IndicatorBank:
 
         return results
 
-    def _params_to_key(self, params: Dict[str, Any]) -> str:
+    def _params_to_key(self, params: dict[str, Any]) -> str:
         """Conversion paramètres en clé string"""
         sorted_params = dict(sorted(params.items()))
         key_parts = []
@@ -1052,7 +1055,7 @@ class IndicatorBank:
         self,
         indicator_type: str,
         cache_key: str,
-        params: Dict[str, Any],
+        params: dict[str, Any],
         symbol: str,
         timeframe: str,
     ):
@@ -1095,7 +1098,7 @@ class IndicatorBank:
         except Exception as e:
             logger.warning(f"⚠️ Erreur mise à jour registry: {e}")
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Statistiques d'utilisation"""
         total_requests = self.stats["cache_hits"] + self.stats["cache_misses"]
         cache_hit_rate = (
@@ -1120,7 +1123,7 @@ class IndicatorBank:
 # ========================================
 
 # Instance globale pour API simplifiée
-_global_bank: Optional[IndicatorBank] = None
+_global_bank: IndicatorBank | None = None
 
 
 def _get_global_bank(cache_dir: str = "indicators_cache") -> IndicatorBank:
@@ -1134,12 +1137,12 @@ def _get_global_bank(cache_dir: str = "indicators_cache") -> IndicatorBank:
 
 def ensure_indicator(
     indicator_type: str,
-    params: Dict[str, Any],
-    data: Union[np.ndarray, pd.Series, pd.DataFrame],
+    params: dict[str, Any],
+    data: np.ndarray | pd.Series | pd.DataFrame,
     symbol: str = "",
     timeframe: str = "",
     cache_dir: str = "indicators_cache",
-) -> Optional[Union[np.ndarray, Tuple[np.ndarray, ...]]]:
+) -> np.ndarray | tuple[np.ndarray, ...] | None:
     """
     API simple pour ensure indicateur
 
@@ -1195,12 +1198,12 @@ def ensure_indicator(
 
 def force_recompute_indicator(
     indicator_type: str,
-    params: Dict[str, Any],
-    data: Union[np.ndarray, pd.Series, pd.DataFrame],
+    params: dict[str, Any],
+    data: np.ndarray | pd.Series | pd.DataFrame,
     symbol: str = "",
     timeframe: str = "",
     cache_dir: str = "indicators_cache",
-) -> Optional[Union[np.ndarray, Tuple[np.ndarray, ...]]]:
+) -> np.ndarray | tuple[np.ndarray, ...] | None:
     """
     API simple pour force recompute indicateur
 
@@ -1226,12 +1229,12 @@ def force_recompute_indicator(
 
 def batch_ensure_indicators(
     indicator_type: str,
-    params_list: List[Dict[str, Any]],
-    data: Union[np.ndarray, pd.Series, pd.DataFrame],
+    params_list: list[dict[str, Any]],
+    data: np.ndarray | pd.Series | pd.DataFrame,
     symbol: str = "",
     timeframe: str = "",
     cache_dir: str = "indicators_cache",
-) -> Dict[str, Union[np.ndarray, Tuple[np.ndarray, ...]]]:
+) -> dict[str, np.ndarray | tuple[np.ndarray, ...]]:
     """
     API simple pour batch ensure
 
@@ -1266,7 +1269,7 @@ def batch_ensure_indicators(
     return bank.batch_ensure(indicator_type, params_list, data, symbol, timeframe)
 
 
-def get_bank_stats(cache_dir: str = "indicators_cache") -> Dict[str, Any]:
+def get_bank_stats(cache_dir: str = "indicators_cache") -> dict[str, Any]:
     """Statistiques de la banque d'indicateurs"""
     bank = _get_global_bank(cache_dir)
     return bank.get_stats()
@@ -1283,7 +1286,7 @@ def cleanup_indicators_cache(cache_dir: str = "indicators_cache") -> int:
 # ========================================
 
 
-def validate_bank_integrity(cache_dir: str = "indicators_cache") -> Dict[str, Any]:
+def validate_bank_integrity(cache_dir: str = "indicators_cache") -> dict[str, Any]:
     """
     Validation intégrité complète de la banque
 
@@ -1364,7 +1367,7 @@ def validate_bank_integrity(cache_dir: str = "indicators_cache") -> Dict[str, An
 
 def benchmark_bank_performance(
     cache_dir: str = "indicators_cache", n_indicators: int = 100, data_size: int = 1000
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Benchmark performance de la banque d'indicateurs
 
@@ -1535,6 +1538,5 @@ if __name__ == "__main__":
     print(f"   Computations: {stats['computations']}")
 
     print("\n✅ Tests terminés!")
-
 
 

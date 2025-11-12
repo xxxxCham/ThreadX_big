@@ -7,6 +7,12 @@ configuration subsystem. Replace with real implementations when available.
 
 from __future__ import annotations
 
+import os
+
+# Global switch to silence logs by default during current session.
+# Set to "0" to re-enable logs.
+os.environ.setdefault("THREADX_SILENCE_LOGS", "1")
+
 
 class Settings:  # noqa: D401 - simple stub
     """Container for application settings (stub)."""

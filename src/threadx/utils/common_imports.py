@@ -9,7 +9,7 @@ créer des dépendances circulaires (bridge, optimization, backtest, etc.).
 Seuls les imports standards et typing sont autorisés ici.
 
 Usage:
-    from threadx.utils.common_imports import pd, np, create_logger
+    from threadx.utils.common_imports import pd, np, get_logger
     # ou:
     from threadx.utils.common_imports import *
 
@@ -18,21 +18,18 @@ Phase: Phase 2 Step 3.1 - DRY Refactoring
 """
 
 # === Data Science Libraries ===
-import pandas as pd
-import numpy as np
-
 # === Typing ===
+from collections.abc import Callable
 from typing import (
     Any,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    Union,
-    Callable,
-    TypeVar,
     Generic,
+    Optional,
+    TypeVar,
+    Union,
 )
+
+import numpy as np
+import pandas as pd
 
 # === Logging (safe - no circular dependency) ===
 from threadx.utils.log import get_logger
@@ -44,39 +41,15 @@ __all__ = [
     "np",
     # Typing
     "Any",
-    "Dict",
-    "List",
     "Optional",
-    "Tuple",
     "Union",
     "Callable",
     "TypeVar",
     "Generic",
     # Logging
     "get_logger",
-    "create_logger",
 ]
-
-
-def create_logger(name: str):
-    """
-    Helper pour créer un logger avec le bon nom.
-
-    Args:
-        name: Nom du module (ex: "threadx.dataset.loader")
-
-    Returns:
-        Logger configuré
-
-    Examples:
-        >>> logger = create_logger(__name__)
-        >>> logger.info("Message")
-    """
-    return get_logger(name)
 
 
 # === Default logger pour usage simple ===
 logger = get_logger("threadx")
-
-
-

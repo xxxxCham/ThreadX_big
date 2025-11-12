@@ -17,15 +17,15 @@ Usage:
 Author: ThreadX Framework - Phase 2 Step 3.3 DRY Refactoring
 """
 
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Callable, Tuple
-from datetime import datetime
 import time
+from abc import ABC, abstractmethod
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any
 
-from threadx.utils.common_imports import pd, np, create_logger
+from threadx.utils.common_imports import get_logger, np, pd
 
-logger = create_logger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -42,13 +42,14 @@ class OptimizationResult:
         convergence_history: Historique des meilleurs scores
         metadata: Métadonnées additionnelles (optimizer_type, etc.)
     """
-    best_params: Dict[str, Any]
+
+    best_params: dict[str, Any]
     best_score: float
     all_results: pd.DataFrame
     iterations: int
     duration_sec: float
-    convergence_history: List[float] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    convergence_history: list[float] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class BaseOptimizer(ABC):
@@ -70,11 +71,11 @@ class BaseOptimizer(ABC):
 
     def __init__(
         self,
-        objective_fn: Callable[[Dict[str, Any]], float],
+        objective_fn: Callable[[dict[str, Any]], float],
         maximize: bool = True,
         verbose: bool = True,
-        early_stopping: Optional[int] = None,
-        tolerance: float = 1e-6
+        early_stopping: int | None = None,
+        tolerance: float = 1e-6,
     ):
         """
         Initialize base optimizer.
@@ -94,14 +95,14 @@ class BaseOptimizer(ABC):
         self.tolerance = tolerance
 
         # État interne
-        self.logger = create_logger(f"{__name__}.{self.__class__.__name__}")
-        self.results: List[Dict[str, Any]] = []
-        self.convergence_history: List[float] = []
-        self.best_params: Optional[Dict[str, Any]] = None
-        self.best_score: Optional[float] = None
+        self.logger = get_logger(f"{__name__}.{self.__class__.__name__}")
+        self.results: list[dict[str, Any]] = []
+        self.convergence_history: list[float] = []
+        self.best_params: dict[str, Any] | None = None
+        self.best_score: float | None = None
         self.iterations_count = 0
         self.iterations_without_improvement = 0
-        self.start_time: Optional[float] = None
+        self.start_time: float | None = None
 
         self.logger.info(
             f"🔧 {self.__class__.__name__} initialized "
@@ -127,7 +128,7 @@ class BaseOptimizer(ABC):
         self.iterations_without_improvement = 0
 
     @abstractmethod
-    def run_iteration(self, iteration: int) -> Tuple[Dict[str, Any], float]:
+    def run_iteration(self, iteration: int) -> tuple[dict[str, Any], float]:
         """
         Exécute une itération d'optimization (à implémenter).
 
@@ -162,13 +163,13 @@ class BaseOptimizer(ABC):
         # Trouver meilleur si pas déjà fait
         if self.best_params is None and len(results_df) > 0:
             if self.maximize:
-                best_idx = results_df['score'].idxmax()
+                best_idx = results_df["score"].idxmax()
             else:
-                best_idx = results_df['score'].idxmin()
+                best_idx = results_df["score"].idxmin()
 
             best_row = results_df.loc[best_idx]
-            self.best_params = best_row.drop('score').to_dict()
-            self.best_score = best_row['score']
+            self.best_params = best_row.drop("score").to_dict()
+            self.best_score = best_row["score"]
 
         self.logger.info(
             f"✅ Optimization complete: "
@@ -184,10 +185,11 @@ class BaseOptimizer(ABC):
             duration_sec=duration,
             convergence_history=self.convergence_history,
             metadata={
-                'optimizer_type': self.__class__.__name__,
-                'maximize': self.maximize,
-                'early_stopped': self.iterations_without_improvement >= (self.early_stopping or float('inf'))
-            }
+                "optimizer_type": self.__class__.__name__,
+                "maximize": self.maximize,
+                "early_stopped": self.iterations_without_improvement
+                >= (self.early_stopping or float("inf")),
+            },
         )
 
     def optimize(self, max_iterations: int) -> OptimizationResult:
@@ -221,11 +223,11 @@ class BaseOptimizer(ABC):
                 params, score = self.run_iteration(iteration)
 
                 # Enregistrer résultat
-                self.results.append({**params, 'score': score})
+                self.results.append({**params, "score": score})
                 self.iterations_count += 1
 
                 # Mettre à jour meilleur
-                is_improvement = self._update_best(params, score)
+                self._update_best(params, score)
 
                 # Tracking convergence
                 self.convergence_history.append(self.best_score)
@@ -238,7 +240,10 @@ class BaseOptimizer(ABC):
                     )
 
                 # Early stopping
-                if self.early_stopping and self.iterations_without_improvement >= self.early_stopping:
+                if (
+                    self.early_stopping
+                    and self.iterations_without_improvement >= self.early_stopping
+                ):
                     self.logger.info(
                         f"⏹️  Early stopping after {self.early_stopping} "
                         f"iterations without improvement"
@@ -251,8 +256,7 @@ class BaseOptimizer(ABC):
 
             except Exception as e:
                 self.logger.error(
-                    f"Iteration {iteration} failed: {e}",
-                    exc_info=self.verbose
+                    f"Iteration {iteration} failed: {e}", exc_info=self.verbose
                 )
                 # Continue malgré erreur d'une itération
                 continue
@@ -264,7 +268,7 @@ class BaseOptimizer(ABC):
             self.logger.error(f"Finalization failed: {e}", exc_info=True)
             raise
 
-    def _update_best(self, params: Dict[str, Any], score: float) -> bool:
+    def _update_best(self, params: dict[str, Any], score: float) -> bool:
         """
         Met à jour le meilleur résultat si amélioration.
 
@@ -303,7 +307,7 @@ class BaseOptimizer(ABC):
             self.iterations_without_improvement += 1
             return False
 
-    def get_summary(self) -> Dict[str, Any]:
+    def get_summary(self) -> dict[str, Any]:
         """
         Retourne un résumé de l'optimization.
 
@@ -313,26 +317,24 @@ class BaseOptimizer(ABC):
         if not self.results:
             return {}
 
-        scores = [r['score'] for r in self.results]
+        scores = [r["score"] for r in self.results]
 
         return {
-            'optimizer': self.__class__.__name__,
-            'iterations': self.iterations_count,
-            'best_score': self.best_score,
-            'best_params': self.best_params,
-            'score_mean': np.mean(scores),
-            'score_std': np.std(scores),
-            'score_min': np.min(scores),
-            'score_max': np.max(scores),
-            'convergence_rate': len(self.convergence_history) / max(self.iterations_count, 1)
+            "optimizer": self.__class__.__name__,
+            "iterations": self.iterations_count,
+            "best_score": self.best_score,
+            "best_params": self.best_params,
+            "score_mean": np.mean(scores),
+            "score_std": np.std(scores),
+            "score_min": np.min(scores),
+            "score_max": np.max(scores),
+            "convergence_rate": len(self.convergence_history)
+            / max(self.iterations_count, 1),
         }
 
 
 # Exports
 __all__ = [
-    'BaseOptimizer',
-    'OptimizationResult',
+    "BaseOptimizer",
+    "OptimizationResult",
 ]
-
-
-

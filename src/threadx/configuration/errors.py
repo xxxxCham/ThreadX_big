@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
 class ConfigurationError(Exception):
-    path: Optional[str]
+    path: str | None
     reason: str
-    details: Optional[str] = None
+    details: str | None = None
 
     def __post_init__(self) -> None:  # pragma: no cover - dataclass validation trivial
         super().__init__(self.reason)

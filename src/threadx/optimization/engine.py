@@ -14,28 +14,26 @@ Author: ThreadX Framework
 Version: Phase 10 - Unified Compute Engine
 """
 
-import json
-import logging
 import hashlib
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 import itertools
+import json
+import time
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any
 
-import pandas as pd
 import numpy as np
-import toml
+import pandas as pd
 
 from threadx.indicators.bank import IndicatorBank
 from threadx.utils.log import get_logger
-from .scenarios import ScenarioSpec, generate_param_grid, generate_monte_carlo
+
 from .pruning import pareto_soft_prune
-from .reporting import write_reports, summarize_distribution
+from .scenarios import ScenarioSpec, generate_monte_carlo, generate_param_grid
 
 # Multi-GPU support
 try:
-    from threadx.gpu.multi_gpu import get_default_manager, MultiGPUManager
+    from threadx.gpu.multi_gpu import get_default_manager
 
     MULTIGPU_AVAILABLE = True
 except ImportError:
@@ -90,8 +88,8 @@ class SweepRunner:
 
     def __init__(
         self,
-        indicator_bank: Optional[IndicatorBank] = None,
-        max_workers: Optional[int] = None,
+        indicator_bank: IndicatorBank | None = None,
+        max_workers: int | None = None,
         use_multigpu: bool = True,
     ):
         """
@@ -365,7 +363,7 @@ class SweepRunner:
 
     def _execute_combinations(
         self,
-        combinations: List[Dict],
+        combinations: list[dict],
         real_data: pd.DataFrame,
         symbol: str,
         timeframe: str,
@@ -510,7 +508,7 @@ class SweepRunner:
 
     def _execute_combinations_with_pruning(
         self,
-        combinations: List[Dict],
+        combinations: list[dict],
         real_data: pd.DataFrame,
         symbol: str,
         timeframe: str,
@@ -599,8 +597,8 @@ class SweepRunner:
         return results_df
 
     def _extract_unique_indicators(
-        self, combinations: List[Dict]
-    ) -> Dict[str, List[Dict]]:
+        self, combinations: list[dict]
+    ) -> dict[str, list[dict]]:
         """Extrait les indicateurs uniques pour batch processing."""
         indicators_by_type = {}
 
@@ -648,13 +646,13 @@ class SweepRunner:
 
     def _compute_batch_indicators(
         self,
-        unique_indicators: Dict[str, List[Dict]],
+        unique_indicators: dict[str, list[dict]],
         real_data: pd.DataFrame,
         symbol: str,
         timeframe: str,
         *,
         reuse_cache: bool = True,
-    ) -> Dict[str, Dict]:
+    ) -> dict[str, dict]:
         """Calcule les indicateurs en batch avec VRAIES données."""
         computed = {}
 
@@ -698,13 +696,13 @@ class SweepRunner:
 
     def _evaluate_single_combination(
         self,
-        combo: Dict,
-        computed_indicators: Dict,
+        combo: dict,
+        computed_indicators: dict,
         real_data: pd.DataFrame,
         symbol: str,
         timeframe: str,
         strategy_name: str = "Bollinger_Breakout",
-    ) -> Dict:
+    ) -> dict:
         """
         Évaluation avec VRAI backtest de stratégie.
 
@@ -725,7 +723,7 @@ class SweepRunner:
             # Priorité: param "strategy" dans combo, sinon stratégie par défaut
             strat_name = combo.get("strategy", strategy_name)
 
-            StrategyClass = strategy_classes.get(strat_name, BBAtrStrategy)
+            strategy_class = strategy_classes.get(strat_name, BBAtrStrategy)
 
             # 🚀 OPTIMISATION CRITIQUE: Réutiliser instance existante si disponible
             # Évite de recréer GPU Manager, Bollinger, ATR, IndicatorBank pour chaque combo
@@ -734,7 +732,7 @@ class SweepRunner:
 
             cache_key = (strat_name, symbol, timeframe)
             if cache_key not in self._cached_strategy_instances:
-                self._cached_strategy_instances[cache_key] = StrategyClass(
+                self._cached_strategy_instances[cache_key] = strategy_class(
                     symbol=symbol, timeframe=timeframe
                 )
 
@@ -811,7 +809,7 @@ class SweepRunner:
             )
             return result
 
-    def _params_to_key(self, params: Dict) -> str:
+    def _params_to_key(self, params: dict) -> str:
         """Convertit des paramètres en clé de cache."""
         return json.dumps(params, sort_keys=True, separators=(",", ":"))
 
@@ -848,7 +846,7 @@ class SweepRunner:
                 f"({progress:.1%}) - ETA: {eta:.1f}s"
             )
 
-    def _log_final_stats(self, pruning_metadata: Optional[Dict] = None):
+    def _log_final_stats(self, pruning_metadata: dict | None = None):
         """Log des statistiques finales."""
         total_time = time.time() - self.start_time if self.start_time else 0
 
@@ -882,7 +880,7 @@ class UnifiedOptimizationEngine:
     """
 
     def __init__(
-        self, indicator_bank: Optional[IndicatorBank] = None, max_workers: int = 4
+        self, indicator_bank: IndicatorBank | None = None, max_workers: int = 4
     ):
         """
         Initialise le moteur d'optimisation unifié.
@@ -899,18 +897,18 @@ class UnifiedOptimizationEngine:
         # État d'exécution
         self.is_running = False
         self.should_pause = False
-        self.progress_callback: Optional[Callable] = None
+        self.progress_callback: Callable | None = None
 
         # Métriques
         self.total_combos = 0
         self.completed_combos = 0
-        self.start_time: Optional[float] = None
+        self.start_time: float | None = None
 
         self.logger.info(
             "🚀 UnifiedOptimizationEngine initialisé avec IndicatorBank centralisé"
         )
 
-    def run_parameter_sweep(self, config: Dict, data: pd.DataFrame) -> pd.DataFrame:
+    def run_parameter_sweep(self, config: dict, data: pd.DataFrame) -> pd.DataFrame:
         """
         Execute un sweep de paramètres en utilisant uniquement IndicatorBank.
 
@@ -1024,7 +1022,7 @@ class UnifiedOptimizationEngine:
             self.is_running = False
             clear_global_stop()
 
-    def _expand_parameter_grid(self, grid_config: Dict) -> List[Dict]:
+    def _expand_parameter_grid(self, grid_config: dict) -> list[dict]:
         """Expanse la configuration de grille en combinaisons."""
         all_combinations = []
 
@@ -1074,7 +1072,7 @@ class UnifiedOptimizationEngine:
         )
         return unique_combinations
 
-    def _generate_range(self, start: float, stop: float, step: float) -> List[float]:
+    def _generate_range(self, start: float, stop: float, step: float) -> list[float]:
         """Génère une plage de valeurs avec gestion des flottants."""
         values = []
         current = start
@@ -1083,7 +1081,7 @@ class UnifiedOptimizationEngine:
             current += step
         return values
 
-    def _make_combination_key(self, combo: Dict) -> str:
+    def _make_combination_key(self, combo: dict) -> str:
         """Crée une clé unique pour une combinaison."""
         key_data = {
             "type": combo["indicator_type"],
@@ -1092,8 +1090,8 @@ class UnifiedOptimizationEngine:
         return hashlib.md5(str(key_data).encode()).hexdigest()
 
     def _execute_single_combination(
-        self, data: pd.DataFrame, combo: Dict, config: Dict
-    ) -> Dict:
+        self, data: pd.DataFrame, combo: dict, config: dict
+    ) -> dict:
         """
         Exécute une combinaison de paramètres via IndicatorBank.
 
@@ -1151,7 +1149,7 @@ class UnifiedOptimizationEngine:
             }
 
     def _generate_signals_from_indicator(
-        self, data: pd.DataFrame, indicator_result: Any, combo: Dict
+        self, data: pd.DataFrame, indicator_result: Any, combo: dict
     ) -> pd.Series:
         """Génère des signaux de trading à partir des résultats d'indicateurs."""
         # Stratégie simple pour démonstration
@@ -1195,7 +1193,7 @@ class UnifiedOptimizationEngine:
 
     def _calculate_performance_metrics(
         self, data: pd.DataFrame, signals: pd.Series
-    ) -> Dict:
+    ) -> dict:
         """Calcule les métriques de performance à partir des signaux."""
         # Calcul simple des returns basé sur les signaux
         price_returns = data["close"].pct_change()
@@ -1264,7 +1262,7 @@ class UnifiedOptimizationEngine:
             "volatility": volatility,
         }
 
-    def _empty_metrics(self) -> Dict:
+    def _empty_metrics(self) -> dict:
         """Métriques par défaut quand aucune donnée."""
         return {
             "total_pnl": 0.0,
@@ -1277,7 +1275,7 @@ class UnifiedOptimizationEngine:
         }
 
     def _score_and_rank_results(
-        self, df: pd.DataFrame, scoring_config: Dict
+        self, df: pd.DataFrame, scoring_config: dict
     ) -> pd.DataFrame:
         """Score et classe les résultats selon les critères."""
         if df.empty:
@@ -1347,7 +1345,7 @@ class UnifiedOptimizationEngine:
         self.is_running = False
 
     # Accès aux statistiques du moteur principal
-    def get_indicator_bank_stats(self) -> Dict:
+    def get_indicator_bank_stats(self) -> dict:
         """Retourne les statistiques de l'IndicatorBank."""
         return self.indicator_bank.stats.copy()
 
@@ -1357,7 +1355,7 @@ class UnifiedOptimizationEngine:
 
 
 def create_unified_engine(
-    indicator_bank: Optional[IndicatorBank] = None,
+    indicator_bank: IndicatorBank | None = None,
 ) -> UnifiedOptimizationEngine:
     """
     Factory function pour créer un moteur d'optimisation unifié.

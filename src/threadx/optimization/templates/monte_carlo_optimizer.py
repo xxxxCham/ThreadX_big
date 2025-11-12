@@ -7,13 +7,16 @@ Monte Carlo (random search) implementation using BaseOptimizer template.
 Author: ThreadX Framework - Phase 2 Step 3.3
 """
 
-from typing import Any, Dict, Tuple, Callable
+from collections.abc import Callable
+from typing import Any
+
 import numpy as np
 
-from threadx.utils.common_imports import create_logger
-from .base_optimizer import BaseOptimizer
+from threadx.utils.common_imports import get_logger
 
-logger = create_logger(__name__)
+from .base_optimizer import BaseOptimizer, OptimizationResult
+
+logger = get_logger(__name__)
 
 
 class MonteCarloOptimizer(BaseOptimizer):
@@ -36,13 +39,13 @@ class MonteCarloOptimizer(BaseOptimizer):
 
     def __init__(
         self,
-        param_ranges: Dict[str, Tuple[float, float]],
-        objective_fn: Callable[[Dict[str, Any]], float],
+        param_ranges: dict[str, tuple[float, float]],
+        objective_fn: Callable[[dict[str, Any]], float],
         n_trials: int = 100,
         maximize: bool = True,
         verbose: bool = True,
         seed: int = 42,
-        early_stopping: int = None
+        early_stopping: int = None,
     ):
         """
         Initialize Monte Carlo optimizer.
@@ -61,7 +64,7 @@ class MonteCarloOptimizer(BaseOptimizer):
             objective_fn=objective_fn,
             maximize=maximize,
             verbose=verbose,
-            early_stopping=early_stopping
+            early_stopping=early_stopping,
         )
 
         self.param_ranges = param_ranges
@@ -72,8 +75,7 @@ class MonteCarloOptimizer(BaseOptimizer):
         self.rng = np.random.RandomState(seed)
 
         self.logger.info(
-            f"Monte Carlo initialized: {n_trials} trials "
-            f"(seed={seed})"
+            f"Monte Carlo initialized: {n_trials} trials " f"(seed={seed})"
         )
 
     def prepare_data(self) -> None:
@@ -94,7 +96,7 @@ class MonteCarloOptimizer(BaseOptimizer):
         # Réinitialiser RNG avec seed
         self.rng = np.random.RandomState(self.seed)
 
-    def run_iteration(self, iteration: int) -> Tuple[Dict[str, Any], float]:
+    def run_iteration(self, iteration: int) -> tuple[dict[str, Any], float]:
         """
         Exécute une itération Monte Carlo.
 
@@ -113,21 +115,18 @@ class MonteCarloOptimizer(BaseOptimizer):
 
             if self.verbose and (iteration + 1) % 20 == 0:
                 self.logger.debug(
-                    f"Trial {iteration + 1}/{self.n_trials}: "
-                    f"{params} → {score:.4f}"
+                    f"Trial {iteration + 1}/{self.n_trials}: " f"{params} → {score:.4f}"
                 )
 
             return params, score
 
         except Exception as e:
-            self.logger.warning(
-                f"Objective function failed for {params}: {e}"
-            )
+            self.logger.warning(f"Objective function failed for {params}: {e}")
             # Retourner score worst possible
-            score = float('-inf') if self.maximize else float('inf')
+            score = float("-inf") if self.maximize else float("inf")
             return params, score
 
-    def _sample_params(self) -> Dict[str, Any]:
+    def _sample_params(self) -> dict[str, Any]:
         """
         Tire aléatoirement des paramètres dans les ranges.
 
@@ -158,7 +157,7 @@ class MonteCarloOptimizer(BaseOptimizer):
             Résultat de l'optimisation
         """
         # Valider d'abord les ranges
-        if not hasattr(self, '_prepared'):
+        if not hasattr(self, "_prepared"):
             self.prepare_data()
             self._prepared = True
 
@@ -167,7 +166,7 @@ class MonteCarloOptimizer(BaseOptimizer):
 
         return super().optimize(max_iterations)
 
-    def get_param_distributions(self) -> Dict[str, Dict[str, float]]:
+    def get_param_distributions(self) -> dict[str, dict[str, float]]:
         """
         Analyse la distribution des paramètres testés.
 
@@ -178,22 +177,23 @@ class MonteCarloOptimizer(BaseOptimizer):
             return {}
 
         import pandas as pd
+
         df = pd.DataFrame(self.results)
 
         distributions = {}
         for param in self.param_ranges.keys():
             values = df[param]
             distributions[param] = {
-                'mean': values.mean(),
-                'std': values.std(),
-                'min': values.min(),
-                'max': values.max(),
-                'median': values.median()
+                "mean": values.mean(),
+                "std": values.std(),
+                "min": values.min(),
+                "max": values.max(),
+                "median": values.median(),
             }
 
         return distributions
 
-    def get_best_region(self, percentile: float = 90) -> Dict[str, Tuple[float, float]]:
+    def get_best_region(self, percentile: float = 90) -> dict[str, tuple[float, float]]:
         """
         Identifie la région des meilleurs paramètres.
 
@@ -207,15 +207,16 @@ class MonteCarloOptimizer(BaseOptimizer):
             return {}
 
         import pandas as pd
+
         df = pd.DataFrame(self.results)
 
         # Filtrer top percentile
         if self.maximize:
-            threshold = df['score'].quantile(percentile / 100)
-            top_df = df[df['score'] >= threshold]
+            threshold = df["score"].quantile(percentile / 100)
+            top_df = df[df["score"] >= threshold]
         else:
-            threshold = df['score'].quantile(1 - percentile / 100)
-            top_df = df[df['score'] <= threshold]
+            threshold = df["score"].quantile(1 - percentile / 100)
+            top_df = df[df["score"] <= threshold]
 
         # Calculer ranges pour chaque param
         best_region = {}
@@ -228,13 +229,13 @@ class MonteCarloOptimizer(BaseOptimizer):
 
 # Convenience function
 def monte_carlo_search(
-    param_ranges: Dict[str, Tuple[float, float]],
-    objective_fn: Callable[[Dict[str, Any]], float],
+    param_ranges: dict[str, tuple[float, float]],
+    objective_fn: Callable[[dict[str, Any]], float],
     n_trials: int = 100,
     maximize: bool = True,
     seed: int = 42,
-    verbose: bool = True
-) -> 'OptimizationResult':
+    verbose: bool = True,
+) -> "OptimizationResult":
     """
     Fonction helper pour Monte Carlo search rapide.
 
@@ -264,9 +265,6 @@ def monte_carlo_search(
         n_trials=n_trials,
         maximize=maximize,
         seed=seed,
-        verbose=verbose
+        verbose=verbose,
     )
     return optimizer.optimize()
-
-
-

@@ -20,23 +20,20 @@ Améliorations vs TradXPro:
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Any, Tuple, Optional, List
-import pandas as pd
+from typing import Any
+
 import numpy as np
-import logging
-from pathlib import Path
+import pandas as pd
 from numba import njit
 
-from threadx.configuration.settings import S
-from threadx.utils.log import get_logger
+from threadx.indicators import ensure_indicator
 from threadx.strategy.model import (
-    Strategy,
-    Trade,
     RunStats,
+    Trade,
     validate_ohlcv_dataframe,
     validate_strategy_params,
 )
-from threadx.indicators import ensure_indicator, batch_ensure_indicators
+from threadx.utils.log import get_logger
 
 logger = get_logger(__name__)
 
@@ -59,7 +56,7 @@ def _backtest_loop_numba(
     max_hold_bars: int,
     min_pnl_pct: float,
     trailing_stop: bool,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Boucle de backtest optimisée Numba (JIT compilée).
 
@@ -352,7 +349,7 @@ class BBAtrParams:
     trend_period: int = 0  # 0 = pas de filtre tendance
 
     # Métadonnées
-    meta: Dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         """Validation des paramètres"""
@@ -393,7 +390,7 @@ class BBAtrParams:
         if self.spacing_bars < 0:
             raise ValueError(f"spacing_bars must be >= 0, got: {self.spacing_bars}")
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convertit en dictionnaire pour compatibilité"""
         return {
             "bb_period": self.bb_period,
@@ -413,7 +410,7 @@ class BBAtrParams:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "BBAtrParams":
+    def from_dict(cls, data: dict[str, Any]) -> "BBAtrParams":
         """Crée depuis un dictionnaire"""
         return cls(
             bb_period=data.get("bb_period", 20),
@@ -483,8 +480,8 @@ class BBAtrStrategy:
         self,
         df: pd.DataFrame,
         params: BBAtrParams,
-        precomputed_indicators: Optional[Dict] = None,
-    ) -> Tuple[pd.DataFrame, np.ndarray]:
+        precomputed_indicators: dict | None = None,
+    ) -> tuple[pd.DataFrame, np.ndarray]:
         """
         Garantit la disponibilité des indicateurs via IndicatorBank.
 
@@ -601,7 +598,7 @@ class BBAtrStrategy:
 
     def _calculate_trend_filter(
         self, close: np.ndarray, trend_period: int
-    ) -> Optional[np.ndarray]:
+    ) -> np.ndarray | None:
         """
         Calcule le filtre de tendance EMA optionnel.
 
@@ -628,7 +625,7 @@ class BBAtrStrategy:
         self,
         df: pd.DataFrame,
         params: dict,
-        precomputed_indicators: Optional[Dict] = None,
+        precomputed_indicators: dict | None = None,
     ) -> pd.DataFrame:
         """
         Génère les signaux de trading basés sur Bollinger+ATR.
@@ -766,8 +763,8 @@ class BBAtrStrategy:
         initial_capital: float = 10000.0,
         fee_bps: float = 4.5,
         slippage_bps: float = 0.0,
-        precomputed_indicators: Optional[Dict] = None,
-    ) -> Tuple[pd.Series, RunStats]:
+        precomputed_indicators: dict | None = None,
+    ) -> tuple[pd.Series, RunStats]:
         """
         Exécute un backtest complet de la stratégie BB+ATR avec Numba JIT.
 
@@ -841,7 +838,7 @@ class BBAtrStrategy:
         # ========================================
         # PASS 2: RECONSTRUCTION TRADE OBJECTS
         # ========================================
-        trades: List[Trade] = []
+        trades: list[Trade] = []
         has_tz = df.index.tz is not None
 
         for trade_data in trade_results:
@@ -853,7 +850,7 @@ class BBAtrStrategy:
             exit_price = trade_data[5]
             entry_fees = trade_data[6]
             exit_fees = trade_data[7]
-            pnl = trade_data[8]
+            trade_data[8]
             stop_price = trade_data[9]
 
             # Conversion side code
@@ -957,7 +954,7 @@ def backtest(
     symbol: str = "UNKNOWN",
     timeframe: str = "15m",
     **kwargs,
-) -> Tuple[pd.Series, RunStats]:
+) -> tuple[pd.Series, RunStats]:
     """
     Fonction de convenance pour backtest BB+ATR.
 
