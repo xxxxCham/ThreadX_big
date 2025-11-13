@@ -839,6 +839,9 @@ def _run_sweep_with_progress(
         "start_time": time.time(),
         "should_stop": False,  # Signal d'arrêt
     }
+    # Valeurs par défaut pour éviter KeyError
+    shared_state["error"] = None
+    shared_state["results"] = None
 
     # Démarrer le sweep dans un thread pour ne pas bloquer Streamlit
     def run_sweep_thread():
@@ -879,6 +882,9 @@ def _run_sweep_with_progress(
     completed_placeholder = stats_cols[3].empty()
 
     # Progress initial
+    # Throttle des mises a jour UI
+    last_current = -1
+    last_ui_update = 0.0
     progress_placeholder.progress(0, text="🚀 Initialisation du Sweep...")
     status_placeholder.metric("📊 Status", "Initialisation...", delta=None)
 
@@ -906,12 +912,15 @@ def _run_sweep_with_progress(
                 progress = min(current / total, 0.99)
                 elapsed = time.time() - start_time
 
-                if current > 0 and elapsed > 0:
+                now = time.time()
+                if current > 0 and elapsed > 0 and (current != last_current or (now - last_ui_update) >= 0.2):
                     speed = current / elapsed
                     remaining = total - current
                     eta_seconds = remaining / speed if speed > 0 else 0
                     eta_minutes, eta_secs = divmod(eta_seconds, 60)
                     eta_str = f"{int(eta_minutes)}m {int(eta_secs)}s"
+                    last_ui_update = now
+                    last_current = current
 
                     # Mise à jour UI (thread principal)
                     progress_placeholder.progress(
@@ -923,8 +932,8 @@ def _run_sweep_with_progress(
                     completed_placeholder.metric("📈 Complétés", f"{current}")
 
             time.sleep(
-                0.1
-            )  # Mettre à jour plus fréquemment (100ms) pour réactivité d'arrêt
+                0.2
+            )  # Légère réduction de fréquence (200ms) pour alléger l'UI
         except Exception:
             pass  # Ignorer erreurs de mise à jour
 
@@ -977,6 +986,9 @@ def _run_monte_carlo_with_progress(
         "start_time": time.time(),
         "should_stop": False,  # Signal d'arrêt
     }
+    # Valeurs par défaut pour éviter KeyError
+    shared_state["error"] = None
+    shared_state["results"] = None
 
     # Démarrer le Monte-Carlo dans un thread
     def run_monte_carlo_thread():
@@ -1043,12 +1055,15 @@ def _run_monte_carlo_with_progress(
                 progress = min(current / total, 0.99)
                 elapsed = time.time() - start_time
 
-                if current > 0 and elapsed > 0:
+                now = time.time()
+                if current > 0 and elapsed > 0 and (current != last_current or (now - last_ui_update) >= 0.2):
                     speed = current / elapsed
                     remaining = total - current
                     eta_seconds = remaining / speed if speed > 0 else 0
                     eta_minutes, eta_secs = divmod(eta_seconds, 60)
                     eta_str = f"{int(eta_minutes)}m {int(eta_secs)}s"
+                    last_ui_update = now
+                    last_current = current
 
                     # Mise à jour UI (thread principal)
                     progress_placeholder.progress(
@@ -1060,8 +1075,8 @@ def _run_monte_carlo_with_progress(
                     completed_placeholder.metric("📈 Complétés", f"{current}")
 
             time.sleep(
-                0.1
-            )  # Mettre à jour plus fréquemment (100ms) pour réactivité d'arrêt
+                0.2
+            )  # Légère réduction de fréquence (200ms) pour alléger l'UI
         except Exception:
             pass  # Ignorer erreurs de mise à jour
 
