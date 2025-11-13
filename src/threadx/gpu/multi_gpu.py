@@ -224,17 +224,24 @@ class MultiGPUManager:
 
         balance = {}
 
-        # Recherche des devices cibles
+        # Recherche des devices cibles (supporter RTX 5090 ET 5080)
         gpu_5090 = get_device_by_name("5090")
+        gpu_5080 = get_device_by_name("5080")
         gpu_2060 = get_device_by_name("2060")
 
-        if gpu_5090 and gpu_2060:
-            # Configuration idéale RTX 5090 + RTX 2060
-            balance["5090"] = 0.75
-            balance["2060"] = 0.25
-        elif gpu_5090:
-            # Seulement RTX 5090
-            balance["5090"] = 1.0
+        # GPU principal = RTX 5090 OU RTX 5080
+        gpu_primary = gpu_5090 or gpu_5080
+
+        if gpu_primary and gpu_2060:
+            # Configuration idéale: RTX 5080/5090 + RTX 2060
+            # Balance selon VRAM: 16GB / 8GB = 2:1 ratio = 66%:34%
+            primary_name = gpu_primary.name
+            balance[primary_name] = 0.66  # RTX 5080 (16GB) → 66%
+            balance["2060"] = 0.34         # RTX 2060 (8GB) → 34%
+            logger.info(f"💎 Multi-GPU optimal: {primary_name} (66%) + 2060 (34%)")
+        elif gpu_primary:
+            # Seulement RTX 5090/5080
+            balance[gpu_primary.name] = 1.0
         elif gpu_2060:
             # Seulement RTX 2060
             balance["2060"] = 1.0

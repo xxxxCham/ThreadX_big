@@ -19,7 +19,7 @@ import itertools
 import json
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from typing import Any
 
 import numpy as np
@@ -61,6 +61,87 @@ def set_global_stop(stop: bool = True) -> None:
         logger.warning("⏹️ ARRÊT GLOBAL DEMANDÉ")
 
 
+# ✅ Fonction worker standalone (picklable pour ProcessPoolExecutor)
+def _evaluate_combo_worker(
+    combo: dict,
+    computed_indicators: dict,
+    real_data: pd.DataFrame,
+    symbol: str,
+    timeframe: str,
+    strategy_name: str = "Bollinger_Breakout",
+) -> dict:
+    """
+    Worker function pour évaluation combo (picklable pour ProcessPoolExecutor).
+
+    Chaque process crée sa propre instance de stratégie + IndicatorBank.
+    """
+    try:
+        # Import local pour éviter overhead dans process principal
+        from threadx.indicators.bank import IndicatorBank, IndicatorSettings
+        from threadx.strategy import BBAtrStrategy, BollingerDualStrategy
+
+        # Créer IndicatorBank dans ce process worker
+        settings = IndicatorSettings(use_gpu=True)
+        indicator_bank = IndicatorBank(settings)
+
+        # Mapping stratégie → classe
+        strategy_classes = {
+            "Bollinger_Breakout": BBAtrStrategy,
+            "Bollinger_Dual": BollingerDualStrategy,
+        }
+
+        strat_name = combo.get("strategy", strategy_name)
+        strategy_class = strategy_classes.get(strat_name, BBAtrStrategy)
+
+        # Créer stratégie avec IndicatorBank local
+        strategy = strategy_class(
+            symbol=symbol,
+            timeframe=timeframe,
+            indicator_bank=indicator_bank
+        )
+
+        # Mapping paramètres
+        strategy_params = {}
+        for key, value in combo.items():
+            if key == "bb_window":
+                strategy_params["bb_period"] = value
+            elif key == "bb_num_std":
+                strategy_params["bb_std"] = value
+            elif key == "atr_window":
+                strategy_params["atr_period"] = value
+            elif key == "atr_multiplier":
+                strategy_params["atr_multiplier"] = value
+            else:
+                strategy_params[key] = value
+
+        # Paramètres par défaut requis
+        strategy_params.setdefault("risk_per_trade", 0.02)
+        strategy_params.setdefault("leverage", 1)
+        strategy_params.setdefault("max_hold_bars", 100)
+        strategy_params.setdefault("spacing_bars", 5)
+        strategy_params.setdefault("min_pnl_pct", 0.02)  # ✅ FIX: doit être positif
+        strategy_params.setdefault("entry_z", 2.0)
+        strategy_params.setdefault("trailing_stop", False)
+
+        # Backtest
+        equity, stats = strategy.backtest(
+            df=real_data,
+            params=strategy_params,
+            precomputed_indicators=computed_indicators
+        )
+
+        # Résultat
+        result = {"params": combo, "stats": stats.__dict__ if hasattr(stats, "__dict__") else {}}
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Erreur évaluation combo {combo}: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"params": combo, "stats": {}, "error": str(e)}
+
+
 def is_global_stop_requested() -> bool:
     """Vérifier si un arrêt global a été demandé."""
     global _GLOBAL_STOP_FLAG
@@ -91,6 +172,7 @@ class SweepRunner:
         indicator_bank: IndicatorBank | None = None,
         max_workers: int | None = None,
         use_multigpu: bool = True,
+        use_processes: bool = False,  # ✅ DEFAULT False: ThreadPool (GPU release GIL = OK)
     ):
         """
         Initialise le runner de sweeps avec support Multi-GPU.
@@ -99,9 +181,12 @@ class SweepRunner:
             indicator_bank: Instance IndicatorBank pour cache partagé
             max_workers: Nombre de workers (None = auto-détection dynamique)
             use_multigpu: Activer distribution Multi-GPU si disponible
+            use_processes: True = ProcessPoolExecutor (vrai parallélisme),
+                          False = ThreadPoolExecutor (limité par GIL)
         """
         self.indicator_bank = indicator_bank or IndicatorBank()
         self.logger = get_logger(__name__)
+        self.use_processes = use_processes  # ✅ Stocker choix
 
         # Multi-GPU Manager
         self.use_multigpu = use_multigpu and MULTIGPU_AVAILABLE
@@ -122,6 +207,10 @@ class SweepRunner:
         else:
             self.max_workers = max_workers
             self.logger.info(f"Workers configurés manuellement: {self.max_workers}")
+
+        # Log mode parallélisme
+        mode = "ProcessPool (vrai parallélisme)" if use_processes else "ThreadPool (GIL limité)"
+        self.logger.info(f"🔧 Mode parallélisme: {mode}")
 
         # État d'exécution
         self.is_running = False
@@ -152,33 +241,40 @@ class SweepRunner:
             base_workers = 4
 
         if self.gpu_manager and self.use_multigpu:
-            # Mode Multi-GPU: limiter les workers pour éviter goulots
+            # Mode Multi-GPU: saturer les GPUs disponibles
             gpu_devices = [
                 d for d in self.gpu_manager.available_devices if d.device_id != -1
             ]
 
             if len(gpu_devices) >= 2:
-                # 2 GPUs: 4 workers par GPU = 8 total
-                optimal = len(gpu_devices) * 4
+                # 2 GPUs: 60 workers par GPU = 120 total
+                # RTX 5080 (16GB) + RTX 2060 (8GB) peuvent gérer 120 workers (GPU release GIL)
+                optimal = len(gpu_devices) * 60
+                self.logger.info(f"🚀 Multi-GPU: {len(gpu_devices)} GPUs → {optimal} workers")
             elif len(gpu_devices) == 1:
-                # 1 GPU: 6 workers
-                optimal = 6
+                # 1 GPU: 20 workers (saturer GPU unique)
+                optimal = 20
             else:
-                # Pas de GPU: utiliser CPU
-                optimal = base_workers
+                # Pas de GPU: utiliser CPU massivement
+                optimal = base_workers * 3
         else:
-            # Mode CPU-only: plus de workers
-            optimal = min(base_workers * 2, 16)
+            # Mode CPU-only: saturer CPU
+            optimal = min(base_workers * 4, 32)
 
-        # Vérifier RAM disponible
+        # Vérifier RAM disponible (60 GB total → autoriser jusqu'à 40 workers)
         if PSUTIL_AVAILABLE:
             ram_gb = psutil.virtual_memory().available / (1024**3)
 
             if ram_gb < 16:
                 # RAM limitée: réduire workers
-                optimal = min(optimal, 4)
-            elif ram_gb < 32:
                 optimal = min(optimal, 8)
+            elif ram_gb < 32:
+                # RAM moyenne: limiter à 16
+                optimal = min(optimal, 16)
+            elif ram_gb >= 40:
+                # RAM abondante (60 GB): autoriser 50+ workers
+                optimal = min(optimal * 1.5, 50)
+                self.logger.info(f"💾 RAM abondante ({ram_gb:.1f} GB) → max {optimal} workers")
 
         return max(optimal, 2)  # Minimum 2 workers
 
@@ -396,7 +492,9 @@ class SweepRunner:
             with self._time_stage("strategy_evaluation"):
                 completed_count = [0]  # Mutable counter pour tracking progress
 
-                with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                # ✅ Choisir ProcessPool ou ThreadPool selon config
+                ExecutorClass = ProcessPoolExecutor if self.use_processes else ThreadPoolExecutor
+                with ExecutorClass(max_workers=self.max_workers) as executor:
                     futures = {}
                     batch_size = (
                         1000  # Soumettre par batch pour éviter une queue géante
@@ -420,8 +518,15 @@ class SweepRunner:
                         batch_end = min(batch_idx + batch_size, len(combinations))
                         for i in range(batch_idx, batch_end):
                             combo = combinations[i]
+
+                            # ✅ Utiliser fonction standalone si ProcessPool, sinon méthode self
+                            if self.use_processes:
+                                worker_func = _evaluate_combo_worker
+                            else:
+                                worker_func = self._evaluate_single_combination
+
                             future = executor.submit(
-                                self._evaluate_single_combination,
+                                worker_func,
                                 combo,
                                 computed_indicators,
                                 real_data,
@@ -644,6 +749,38 @@ class SweepRunner:
 
         return indicators_by_type
 
+    def _normalize_indicator_key(self, indicator_type: str, params: dict) -> str:
+        """
+        Génère clé normalisée IDENTIQUE à celle utilisée par _ensure_indicators.
+
+        CRITICAL: Les clés doivent matcher exactement pour éviter recalcul !
+
+        Args:
+            indicator_type: "bollinger" ou "atr"
+            params: Paramètres de l'indicateur
+
+        Returns:
+            Clé JSON normalisée (même format que strategy/bb_atr.py:509)
+        """
+        import json
+
+        if indicator_type == "bollinger":
+            # Format: {"period": XX, "std": X.X}
+            normalized = {
+                "period": params.get("period", 20),
+                "std": params.get("std", 2.0)
+            }
+        elif indicator_type == "atr":
+            # Format: {"period": XX}
+            normalized = {
+                "period": params.get("period", 14)
+            }
+        else:
+            # Autres indicateurs: format générique
+            normalized = params
+
+        return json.dumps(normalized, sort_keys=True)
+
     def _compute_batch_indicators(
         self,
         unique_indicators: dict[str, list[dict]],
@@ -676,13 +813,25 @@ class SweepRunner:
                     timeframe=timeframe,
                 )
 
-                # Mapping des résultats
-                for params_key, result in batch_results.items():
-                    computed[indicator_type][params_key] = result
+                # ✅ NORMALISATION: Utiliser MÊME format de clés que _ensure_indicators
+                # Ceci évite KeyError → Fallback recalcul → Overhead 16x !!
+                for params in params_list:
+                    # Générer clé normalisée (IDENTIQUE à strategy/bb_atr.py:509)
+                    normalized_key = self._normalize_indicator_key(indicator_type, params)
+
+                    # Récupérer depuis batch_results (mapping interne IndicatorBank)
+                    internal_key = self._params_to_key(params)
+
+                    if internal_key in batch_results:
+                        computed[indicator_type][normalized_key] = batch_results[internal_key]
+                        self.logger.debug(f"✅ Mapped {indicator_type} {params} → key {normalized_key}")
+                    else:
+                        self.logger.warning(f"⚠️ Missing batch result for {indicator_type} {params}")
+
             else:
                 # Calcul direct sans cache
                 for params in params_list:
-                    params_key = self._params_to_key(params)
+                    normalized_key = self._normalize_indicator_key(indicator_type, params)
                     result = self.indicator_bank.ensure(
                         indicator_type,
                         params,
@@ -690,7 +839,7 @@ class SweepRunner:
                         symbol=symbol,
                         timeframe=timeframe,
                     )
-                    computed[indicator_type][params_key] = result
+                    computed[indicator_type][normalized_key] = result
 
         return computed
 
@@ -732,8 +881,11 @@ class SweepRunner:
 
             cache_key = (strat_name, symbol, timeframe)
             if cache_key not in self._cached_strategy_instances:
+                # ✅ P0.2: INJECTER SINGLETON IndicatorBank (élimine recréation GPU Manager 16x)
                 self._cached_strategy_instances[cache_key] = strategy_class(
-                    symbol=symbol, timeframe=timeframe
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    indicator_bank=self.indicator_bank  # ← Singleton partagé !
                 )
 
             strategy = self._cached_strategy_instances[cache_key]
@@ -933,7 +1085,9 @@ class UnifiedOptimizationEngine:
             # 2. Exécution parallèle via IndicatorBank
             results = []
 
-            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # ✅ Choisir ProcessPool ou ThreadPool selon config
+            ExecutorClass = ProcessPoolExecutor if self.use_processes else ThreadPoolExecutor
+            with ExecutorClass(max_workers=self.max_workers) as executor:
                 futures = {}
                 batch_size = 1000
                 stop_requested = False

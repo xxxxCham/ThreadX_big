@@ -464,16 +464,23 @@ class BBAtrStrategy:
         >>> equity, stats = strategy.backtest(df, params.to_dict(), 10000)
     """
 
-    def __init__(self, symbol: str = "UNKNOWN", timeframe: str = "15m"):
+    def __init__(
+        self,
+        symbol: str = "UNKNOWN",
+        timeframe: str = "15m",
+        indicator_bank: Any = None  # ✅ OPTIMISATION: Injecter singleton IndicatorBank
+    ):
         """
         Initialise la stratégie.
 
         Args:
             symbol: Symbole pour cache d'indicateurs
             timeframe: Timeframe pour cache d'indicateurs
+            indicator_bank: Instance IndicatorBank partagée (évite recréation)
         """
         self.symbol = symbol
         self.timeframe = timeframe
+        self.indicator_bank = indicator_bank  # ✅ Singleton partagé
         logger.debug(f"Stratégie BB+ATR initialisée: {symbol}/{timeframe}")
 
     def _ensure_indicators(
@@ -551,14 +558,25 @@ class BBAtrStrategy:
             f"Calcul indicateurs: BB(period={params.bb_period}, std={params.bb_std}), ATR(period={params.atr_period})"
         )
 
-        # Bollinger Bands via IndicatorBank
-        bb_result = ensure_indicator(
-            "bollinger",
-            {"period": params.bb_period, "std": params.bb_std},
-            df,
-            symbol=self.symbol,
-            timeframe=self.timeframe,
-        )
+        # ✅ OPTIMISATION: Utiliser singleton IndicatorBank si fourni
+        if self.indicator_bank is not None:
+            # Utiliser instance partagée (évite recréation GPU Manager)
+            bb_result = self.indicator_bank.ensure(
+                "bollinger",
+                {"period": params.bb_period, "std": params.bb_std},
+                df["close"].values,
+                symbol=self.symbol,
+                timeframe=self.timeframe,
+            )
+        else:
+            # Fallback: créer IndicatorBank (ancien comportement)
+            bb_result = ensure_indicator(
+                "bollinger",
+                {"period": params.bb_period, "std": params.bb_std},
+                df,
+                symbol=self.symbol,
+                timeframe=self.timeframe,
+            )
 
         if isinstance(bb_result, tuple) and len(bb_result) == 3:
             # Format (upper, middle, lower)
@@ -576,14 +594,26 @@ class BBAtrStrategy:
         else:
             raise ValueError(f"Bollinger result format invalide: {type(bb_result)}")
 
-        # ATR via IndicatorBank
-        atr_result = ensure_indicator(
-            "atr",
-            {"period": params.atr_period, "method": "ema"},  # Plus réactif que SMA
-            df,
-            symbol=self.symbol,
-            timeframe=self.timeframe,
-        )
+        # ✅ OPTIMISATION: Utiliser singleton IndicatorBank si fourni
+        if self.indicator_bank is not None:
+            # Utiliser instance partagée (évite recréation GPU Manager)
+            # Note: IndicatorBank.ensure() accepte DataFrame (extrait high/low automatiquement)
+            atr_result = self.indicator_bank.ensure(
+                "atr",
+                {"period": params.atr_period, "method": "ema"},
+                df,  # ← DataFrame complet (pas array)
+                symbol=self.symbol,
+                timeframe=self.timeframe,
+            )
+        else:
+            # Fallback: créer IndicatorBank (ancien comportement)
+            atr_result = ensure_indicator(
+                "atr",
+                {"period": params.atr_period, "method": "ema"},
+                df,
+                symbol=self.symbol,
+                timeframe=self.timeframe,
+            )
 
         if isinstance(atr_result, np.ndarray):
             atr_array = atr_result
