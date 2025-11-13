@@ -19,7 +19,12 @@ import itertools
 import json
 import time
 from collections.abc import Callable
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from concurrent.futures import (
+    ProcessPoolExecutor,
+    ThreadPoolExecutor,
+    as_completed,
+    TimeoutError as FuturesTimeout,
+)
 from typing import Any
 
 import numpy as np
@@ -52,6 +57,28 @@ logger = get_logger(__name__)
 # Global stop flag to allow UI-triggered cancellation without direct runner reference
 _GLOBAL_STOP_FLAG = False
 
+# Optional process-global payloads to reduce per-task serialization overhead
+_G_INDICATORS = None
+_G_REAL_DATA = None
+_G_SYMBOL = None
+_G_TIMEFRAME = None
+_G_STRATEGY_NAME = None
+
+
+def _init_process_globals(
+    computed_indicators: dict,
+    real_data: pd.DataFrame,
+    symbol: str,
+    timeframe: str,
+    strategy_name: str,
+) -> None:
+    global _G_INDICATORS, _G_REAL_DATA, _G_SYMBOL, _G_TIMEFRAME, _G_STRATEGY_NAME
+    _G_INDICATORS = computed_indicators
+    _G_REAL_DATA = real_data
+    _G_SYMBOL = symbol
+    _G_TIMEFRAME = timeframe
+    _G_STRATEGY_NAME = strategy_name
+
 
 def set_global_stop(stop: bool = True) -> None:
     """Définir le flag global pour arrêter l'exécution."""
@@ -64,10 +91,10 @@ def set_global_stop(stop: bool = True) -> None:
 # ✅ Fonction worker standalone (picklable pour ProcessPoolExecutor)
 def _evaluate_combo_worker(
     combo: dict,
-    computed_indicators: dict,
-    real_data: pd.DataFrame,
-    symbol: str,
-    timeframe: str,
+    computed_indicators: dict | None,
+    real_data: pd.DataFrame | None,
+    symbol: str | None,
+    timeframe: str | None,
     strategy_name: str = "Bollinger_Breakout",
 ) -> dict:
     """
@@ -90,15 +117,16 @@ def _evaluate_combo_worker(
             "Bollinger_Dual": BollingerDualStrategy,
         }
 
-        strat_name = combo.get("strategy", strategy_name)
+        # Fallback to process globals if args are None (ProcessPool with initializer)
+        ci = computed_indicators if computed_indicators is not None else _G_INDICATORS
+        rd = real_data if real_data is not None else _G_REAL_DATA
+        sym = symbol if symbol is not None else _G_SYMBOL
+        tf = timeframe if timeframe is not None else _G_TIMEFRAME
+        strat_name = combo.get("strategy", (strategy_name or _G_STRATEGY_NAME))
         strategy_class = strategy_classes.get(strat_name, BBAtrStrategy)
 
         # Créer stratégie avec IndicatorBank local
-        strategy = strategy_class(
-            symbol=symbol,
-            timeframe=timeframe,
-            indicator_bank=indicator_bank
-        )
+        strategy = strategy_class(symbol=sym, timeframe=tf, indicator_bank=indicator_bank)
 
         # Mapping paramètres
         strategy_params = {}
@@ -125,9 +153,9 @@ def _evaluate_combo_worker(
 
         # Backtest
         equity, stats = strategy.backtest(
-            df=real_data,
+            df=rd,
             params=strategy_params,
-            precomputed_indicators=computed_indicators
+            precomputed_indicators=ci,
         )
 
         # Résultat
@@ -382,8 +410,8 @@ class SweepRunner:
         self.total_scenarios = len(combinations)
         self.logger.info(f"Grille générée: {self.total_scenarios} combinaisons")
 
-        # Exécution batch
-        results_df = self._execute_combinations(
+        # Exécution (bounded feeder pour meilleures perfs mémoire/latence)
+        results_df = self._execute_combinations_bounded(
             combinations,
             real_data,
             symbol,
@@ -601,6 +629,137 @@ class SweepRunner:
                             )
 
             # Construction du DataFrame final
+            with self._time_stage("results_compilation"):
+                results_df = pd.DataFrame(results)
+
+        finally:
+            self.is_running = False
+            clear_global_stop()
+            self._log_final_stats()
+
+        return results_df
+
+    def _execute_combinations_bounded(
+        self,
+        combinations: list[dict],
+        real_data: pd.DataFrame,
+        symbol: str,
+        timeframe: str,
+        strategy_name: str = "Bollinger_Breakout",
+        *,
+        reuse_cache: bool = True,
+    ) -> pd.DataFrame:
+        """Exécute les combinaisons avec un flux de tâches borné (feed/drain).
+
+        Objectif: limiter la file de futures et la sérialisation, améliorer réactivité.
+        """
+        self.is_running = True
+        self.start_time = time.time()
+
+        results: list[dict] = []
+
+        try:
+            with self._time_stage("indicator_extraction"):
+                unique_indicators = self._extract_unique_indicators(combinations)
+
+            with self._time_stage("batch_indicators"):
+                computed_indicators = self._compute_batch_indicators(
+                    unique_indicators,
+                    real_data,
+                    symbol,
+                    timeframe,
+                    reuse_cache=reuse_cache,
+                )
+
+            with self._time_stage("strategy_evaluation"):
+                completed_count = [0]
+                ExecutorClass = ProcessPoolExecutor if self.use_processes else ThreadPoolExecutor
+
+                inflight_limit = max(int(self.max_workers) * 4, 64)
+                exec_kwargs = {}
+                if self.use_processes:
+                    exec_kwargs["initializer"] = _init_process_globals
+                    exec_kwargs["initargs"] = (
+                        computed_indicators,
+                        real_data,
+                        symbol,
+                        timeframe,
+                        strategy_name,
+                    )
+
+                with ExecutorClass(max_workers=self.max_workers, **exec_kwargs) as executor:
+                    futures = {}
+                    stop_requested = False
+
+                    def submit_one(idx: int) -> None:
+                        combo = combinations[idx]
+                        if self.use_processes:
+                            fut = executor.submit(
+                                _evaluate_combo_worker, combo, None, None, None, None, strategy_name
+                            )
+                        else:
+                            fut = executor.submit(
+                                self._evaluate_single_combination,
+                                combo,
+                                computed_indicators,
+                                real_data,
+                                symbol,
+                                timeframe,
+                                strategy_name,
+                            )
+                        futures[fut] = idx
+
+                    next_index = 0
+                    prefill = min(inflight_limit, len(combinations))
+                    for i in range(prefill):
+                        submit_one(i)
+                    next_index = prefill
+
+                    while futures:
+                        if self.should_pause or is_global_stop_requested():
+                            stop_requested = True
+
+                        try:
+                            for fut in as_completed(list(futures.keys()), timeout=0.5):
+                                futures.pop(fut, None)
+                                try:
+                                    result = fut.result()
+                                except Exception as e:
+                                    self.logger.error(f"Erreur exécution combo: {e}")
+                                    completed_count[0] += 1
+                                    results.append(
+                                        {
+                                            "error": str(e),
+                                            "pnl": 0.0,
+                                            "pnl_pct": 0.0,
+                                            "sharpe": 0.0,
+                                            "max_drawdown": 0.0,
+                                            "win_rate": 0.0,
+                                            "total_trades": 0,
+                                        }
+                                    )
+                                else:
+                                    results.append(result)
+                                    completed_count[0] += 1
+                                    self.current_scenario = completed_count[0]
+                                    if completed_count[0] % 100 == 0:
+                                        self._log_progress()
+                        except FuturesTimeout:
+                            pass
+
+                        while (
+                            not stop_requested
+                            and next_index < len(combinations)
+                            and len(futures) < inflight_limit
+                        ):
+                            submit_one(next_index)
+                            next_index += 1
+
+                    if stop_requested:
+                        self.logger.warning(
+                            f"⏹️ Arrêt demandé après {completed_count[0]} combos terminés"
+                        )
+
             with self._time_stage("results_compilation"):
                 results_df = pd.DataFrame(results)
 
