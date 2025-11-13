@@ -675,7 +675,7 @@ class SweepRunner:
                 completed_count = [0]
                 ExecutorClass = ProcessPoolExecutor if self.use_processes else ThreadPoolExecutor
 
-                inflight_limit = max(int(self.max_workers) * 4, 64)
+                inflight_limit = max(int(self.max_workers) * 8, 64)
                 exec_kwargs = {}
                 if self.use_processes:
                     exec_kwargs["initializer"] = _init_process_globals
@@ -687,7 +687,92 @@ class SweepRunner:
                         strategy_name,
                     )
 
-                with ExecutorClass(max_workers=self.max_workers, **exec_kwargs) as executor:
+                import gc
+                gc_was_enabled = gc.isenabled()
+                try:
+                    # Réduire la pression GC pendant l'évaluation, collecter par paliers
+                    if gc_was_enabled:
+                        gc.disable()
+
+                    with ExecutorClass(max_workers=self.max_workers, **exec_kwargs) as executor:
+                        futures = {}
+                        stop_requested = False
+
+                        def submit_one(idx: int) -> None:
+                            combo = combinations[idx]
+                            if self.use_processes:
+                                fut = executor.submit(
+                                    _evaluate_combo_worker, combo, None, None, None, None, strategy_name
+                                )
+                            else:
+                                fut = executor.submit(
+                                    self._evaluate_single_combination,
+                                    combo,
+                                    computed_indicators,
+                                    real_data,
+                                    symbol,
+                                    timeframe,
+                                    strategy_name,
+                                )
+                            futures[fut] = idx
+
+                        next_index = 0
+                        prefill = min(inflight_limit, len(combinations))
+                        for i in range(prefill):
+                            submit_one(i)
+                        next_index = prefill
+
+                        while futures:
+                            if self.should_pause or is_global_stop_requested():
+                                stop_requested = True
+
+                            try:
+                                for fut in as_completed(list(futures.keys()), timeout=0.5):
+                                    futures.pop(fut, None)
+                                    try:
+                                        result = fut.result()
+                                    except Exception as e:
+                                        self.logger.error(f"Erreur exécution combo: {e}")
+                                        completed_count[0] += 1
+                                        results.append(
+                                            {
+                                                "error": str(e),
+                                                "pnl": 0.0,
+                                                "pnl_pct": 0.0,
+                                                "sharpe": 0.0,
+                                                "max_drawdown": 0.0,
+                                                "win_rate": 0.0,
+                                                "total_trades": 0,
+                                            }
+                                        )
+                                    else:
+                                        results.append(result)
+                                        completed_count[0] += 1
+                                        self.current_scenario = completed_count[0]
+                                        if completed_count[0] % 100 == 0:
+                                            self._log_progress()
+
+                                    # Collecte GC opportuniste toutes les 2000 itérations
+                                    if completed_count[0] % 2000 == 0 and not gc_was_enabled:
+                                        gc.collect()
+                            except FuturesTimeout:
+                                pass
+
+                            while (
+                                not stop_requested
+                                and next_index < len(combinations)
+                                and len(futures) < inflight_limit
+                            ):
+                                submit_one(next_index)
+                                next_index += 1
+
+                        if stop_requested:
+                            self.logger.warning(
+                                f"⏹️ Arrêt demandé après {completed_count[0]} combos terminés"
+                            )
+                finally:
+                    if gc_was_enabled:
+                        gc.enable()
                     futures = {}
                     stop_requested = False
 

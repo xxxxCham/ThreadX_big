@@ -914,7 +914,11 @@ def _run_sweep_with_progress(
 
                 now = time.time()
                 if current > 0 and elapsed > 0 and (current != last_current or (now - last_ui_update) >= 0.2):
-                    speed = current / elapsed
+                    # Débit instantané sur la fenêtre depuis dernière MAJ
+                    delta_c = (current - last_current) if last_current >= 0 else 0
+                    delta_t = (now - last_ui_update) if last_ui_update > 0 else elapsed
+                    inst_speed = (delta_c / delta_t) if delta_t > 0 else 0.0
+                    speed = inst_speed if inst_speed > 0 else (current / elapsed)
                     remaining = total - current
                     eta_seconds = remaining / speed if speed > 0 else 0
                     eta_minutes, eta_secs = divmod(eta_seconds, 60)
