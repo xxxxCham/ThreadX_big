@@ -45,6 +45,88 @@ from threadx.utils.log import get_logger
 logger = get_logger(__name__)
 
 
+def _get_param_description(key: str) -> str:
+    """Retourne une description détaillée pour un paramètre donné."""
+    descriptions = {
+        # Bollinger Bands
+        "bb_period": "Nombre de périodes pour calculer la moyenne mobile (SMA) des Bandes de Bollinger. Plus élevé = bandes plus lisses.",
+        "bb_std": "Multiplicateur de l'écart-type (σ) pour les bandes supérieure et inférieure. 2.0 = ±2 écarts-types (95% de confiance).",
+        "bb_window": "Nombre de périodes pour la moyenne mobile des Bandes de Bollinger.",
+
+        # ATR (Average True Range)
+        "atr_period": "Nombre de périodes pour calculer l'Average True Range (volatilité). Classique : 14 périodes.",
+        "atr_multiplier": "Multiplicateur de l'ATR pour définir les stops/trailing stops. Plus élevé = stops plus larges.",
+        "atr_window": "Fenêtre de calcul pour l'Average True Range.",
+        "sl_atr_multiplier": "Multiplicateur ATR pour le Stop Loss initial (ex: 2.0 × ATR = stop à 2 ATR de distance).",
+
+        # Entrées/Sorties
+        "entry_z": "Seuil de Z-score pour déclencher une entrée. Plus bas = entrées plus agressives. 1.0 = 1 écart-type.",
+        "entry_logic": "Logique pour combiner les conditions d'entrée : AND (toutes) ou OR (au moins une).",
+        "pb_entry_threshold_min": "Valeur %B minimale pour entrée (0.0 = bande basse, 1.0 = bande haute).",
+        "pb_entry_threshold_max": "Valeur %B maximale pour entrée.",
+
+        # Risk Management
+        "risk_per_trade": "Fraction du capital risquée par trade. 0.02 = 2% du capital par position.",
+        "min_pnl_pct": "Filtre de profit/perte minimum en %. Trades < ce seuil sont ignorés. 0.0 = désactivé.",
+        "max_hold_bars": "Durée maximale d'une position en nombre de barres (chandelier). Force la sortie après expiration.",
+        "spacing_bars": "Nombre minimal de barres à attendre entre deux trades consécutifs (anti-overtrading).",
+        "min_spacing_bars": "Espacement minimum entre trades pour éviter le surtrading.",
+        "stop_loss_pct": "Stop Loss fixe en pourcentage du prix d'entrée (ex: 2.0 = -2%).",
+        "take_profit_pct": "Take Profit fixe en pourcentage du prix d'entrée (ex: 4.0 = +4%).",
+        "leverage": "Effet de levier appliqué. 1.0 = sans levier, 2.0 = doublement de l'exposition.",
+        "short_stop_pct": "Stop Loss spécifique pour les positions SHORT, en %.",
+        "sl_min_pct": "Stop Loss minimum en % pour protéger le capital.",
+
+        # Trailing Stops
+        "trailing_stop": "Active/désactive le Trailing Stop basé sur ATR.",
+        "trailing_activation_pb_threshold": "Seuil %B pour activer le trailing stop (ex: 1.0 = au-dessus de la bande haute).",
+        "trailing_activation_gain_r": "Gain en ratio R (Risk/Reward) nécessaire pour activer le trailing.",
+        "trailing_type": "Type de trailing stop : chandelier (ATR), pb_floor (%B), ou macd_fade (MACD).",
+        "trailing_chandelier_atr_mult": "Multiplicateur ATR pour le Chandelier Exit (trailing stop ATR).",
+        "trailing_pb_floor": "Valeur %B plancher pour sortie via trailing stop.",
+
+        # Filtres et Tendance
+        "trend_period": "Période de l'EMA pour filtrer la tendance. 0 = désactivé. Évite les trades contre-tendance.",
+        "ema_filter_period": "Période EMA pour filtrer les trades par tendance. 0 = pas de filtre.",
+        "bbwidth_percentile_threshold": "Percentile de BBWidth pour filtrer les régimes de volatilité (30-70 = médian).",
+        "bbwidth_lookback": "Nombre de barres pour calculer le percentile de BBWidth.",
+        "volume_zscore_threshold": "Seuil de Z-score pour le volume (filtre d'activité du marché).",
+        "volume_lookback": "Fenêtre de calcul pour le Z-score du volume.",
+        "use_adx_filter": "Active le filtre ADX (Average Directional Index) pour détecter les tendances.",
+        "adx_threshold": "Seuil ADX pour considérer une tendance. < 20 = range, > 25 = tendance.",
+        "adx_period": "Période de calcul de l'ADX.",
+
+        # Moyennes Mobiles
+        "fast_period": "Période de la moyenne mobile rapide (SMA).",
+        "slow_period": "Période de la moyenne mobile lente (SMA).",
+        "fast_window": "Fenêtre EMA rapide pour croisements.",
+        "slow_window": "Fenêtre EMA lente pour croisements.",
+        "atr_mult": "Multiplicateur ATR pour les canaux de prix.",
+
+        # MACD
+        "macd_fast": "Période rapide du MACD (généralement 12).",
+        "macd_slow": "Période lente du MACD (généralement 26).",
+        "macd_signal": "Période de la ligne de signal MACD (généralement 9).",
+
+        # AmplitudeHunter spécifique
+        "spring_lookback": "Nombre de barres pour détecter un 'spring' (fausse cassure).",
+        "amplitude_score_threshold": "Seuil du score d'amplitude pour valider une opportunité (0-1).",
+        "amplitude_w1_bbwidth": "Poids de BBWidth dans le score d'amplitude (0-1).",
+        "amplitude_w2_pb": "Poids de %B dans le score d'amplitude (0-1).",
+        "amplitude_w3_macd_slope": "Poids de la pente MACD dans le score d'amplitude (0-1).",
+        "amplitude_w4_volume": "Poids du volume dans le score d'amplitude (0-1).",
+        "pyramiding_enabled": "Active/désactive l'ajout de positions (pyramiding).",
+        "pyramiding_max_adds": "Nombre maximum d'ajouts de positions (1-2).",
+        "use_bip_target": "Active la sortie partielle à la cible BIP (Break-In-Profit).",
+        "bip_partial_exit_pct": "Pourcentage de la position à clôturer à la cible BIP (ex: 0.5 = 50%).",
+
+        # Frais
+        "fee_bps": "Frais de transaction en basis points (1 bp = 0.01%). Ex: 4.5 = 0.045%.",
+        "slippage_bps": "Slippage estimé en basis points.",
+    }
+    return descriptions.get(key, f"Paramètre {key.replace('_', ' ').title()}")
+
+
 def _sort_results_by_pnl(df: pd.DataFrame) -> pd.DataFrame:
     """Trie les résultats par PNL décroissant, avec fallback robuste.
 
@@ -502,7 +584,9 @@ def _render_monte_carlo_tab() -> None:
         help="0.5x = Moins de combinaisons (rapide), 2.0x = Plus de combinaisons (précis)",
     )
 
-    st.markdown("##### Plages de paramètres")
+    st.markdown("##### 🎲 Plages de Paramètres À ÉCHANTILLONNER")
+    st.caption("Définissez les intervalles pour l'échantillonnage Monte-Carlo (tirages aléatoires)")
+
     param_ranges: dict[str, tuple[float, float]] = {}
     param_types: dict[str, str] = {}
 
@@ -535,6 +619,13 @@ def _render_monte_carlo_tab() -> None:
 
         stored_range = range_preferences.get(key)
 
+        # Récupérer la description détaillée
+        param_description = _get_param_description(key)
+
+        # Séparateur visuel entre les paramètres
+        st.markdown(f"**{label}** ({key})")
+        st.caption(param_description)
+
         # Créer 2 colonnes: plage + sensibilité (Monte-Carlo)
         col_range, col_sense = st.columns([3, 1])
 
@@ -555,12 +646,13 @@ def _render_monte_carlo_tab() -> None:
                         else (min_val, max_val)
                     )
                 selected_range = st.slider(
-                    label,
+                    "Plage",
                     min_value=min_val,
                     max_value=max_val,
                     value=(int(default_tuple[0]), int(default_tuple[1])),
                     step=1,
                     key=f"mc_range_{key}",
+                    label_visibility="collapsed",
                 )
             else:
                 min_val = float(min_val)
@@ -584,12 +676,13 @@ def _render_monte_carlo_tab() -> None:
                     else:
                         default_tuple = (min_val, max_val)
                 selected_range = st.slider(
-                    label,
+                    "Plage",
                     min_value=min_val,
                     max_value=max_val,
                     value=(float(default_tuple[0]), float(default_tuple[1])),
                     step=float_step,
                     key=f"mc_range_{key}",
+                    label_visibility="collapsed",
                 )
 
         # Sensibilité : Appliquer le multiplicateur global au step de base - Monte-Carlo
@@ -637,6 +730,9 @@ def _render_monte_carlo_tab() -> None:
         # Show the combination count with adjusted step
         comb_text = f"📊 Plage: {range_min} → {range_max} | Step ajusté: {adjusted_step} | Combinaisons: {n_combinations:.1f}"
         st.caption(comb_text)
+
+        # Séparateur visuel entre paramètres
+        st.markdown("---")
 
     st.session_state["strategy_param_ranges"] = range_preferences
     st.markdown("##### Paramètres d'échantillonnage")
@@ -1386,7 +1482,8 @@ def _render_optimization_tab() -> None:
         help="0.5x = Moins de combinaisons (rapide), 2.0x = Plus de combinaisons (précis)",
     )
 
-    st.markdown("##### Plages de paramètres à optimiser")
+    st.markdown("##### 📊 Plages de Paramètres À OPTIMISER")
+    st.caption("Définissez les intervalles à explorer pour trouver la meilleure configuration")
 
     param_ranges: dict[str, tuple[float, float]] = {}
     param_types: dict[str, str] = {}
@@ -1421,6 +1518,13 @@ def _render_optimization_tab() -> None:
 
         stored_range = range_preferences.get(key)
 
+        # Récupérer la description détaillée
+        param_description = _get_param_description(key)
+
+        # Séparateur visuel entre les paramètres
+        st.markdown(f"**{label}** ({key})")
+        st.caption(param_description)
+
         # Créer 2 colonnes: plage + sensibilité
         col_range, col_sense = st.columns([3, 1])
 
@@ -1440,12 +1544,13 @@ def _render_optimization_tab() -> None:
                     default_tuple = (min_val, max_val)
 
                 selected_range = st.slider(
-                    label,
+                    "Plage",
                     min_value=min_val,
                     max_value=max_val,
                     value=(int(default_tuple[0]), int(default_tuple[1])),
                     step=1,
                     key=f"sweep_range_{key}",
+                    label_visibility="collapsed",
                 )
             else:
                 min_val = float(min_val)
@@ -1463,12 +1568,13 @@ def _render_optimization_tab() -> None:
                     default_tuple = (min_val, max_val)
 
                 selected_range = st.slider(
-                    label,
+                    "Plage",
                     min_value=min_val,
                     max_value=max_val,
                     value=(float(default_tuple[0]), float(default_tuple[1])),
                     step=step_val,
                     key=f"sweep_range_{key}",
+                    label_visibility="collapsed",
                 )
 
         # Sensibilité : Appliquer le multiplicateur global au step de base
@@ -1516,6 +1622,9 @@ def _render_optimization_tab() -> None:
         # Show the combination count with adjusted step
         comb_text = f"📊 Plage: {range_min} → {range_max} | Step ajusté: {adjusted_step} | Combinaisons: {n_combinations:.1f}"
         st.caption(comb_text)
+
+        # Séparateur visuel entre paramètres
+        st.markdown("---")
 
     st.session_state["strategy_param_ranges"] = range_preferences
 

@@ -445,35 +445,52 @@ def _render_strategy_section() -> None:
     else:
         indicator_values = {}
 
-    range_store = st.session_state.get("strategy_param_ranges", {}).copy()
+    # Récupérer les paramètres par défaut depuis le registre (pas besoin de sliders ici)
+    from .strategy_registry import base_params_for
+    strategy_params = base_params_for(strategy)
 
-    st.markdown("#### ?? Paramètres de Stratégie")
-    prev_params = st.session_state.get("strategy_params", {})
+    st.markdown("#### 📋 Paramètres par Défaut")
     if not param_specs:
-        st.info("?? Cette stratégie n'a pas de paramètres configurables.")
-        strategy_params = {}
+        st.info("ℹ️ Cette stratégie n'a pas de paramètres configurables.")
     else:
-        items = list(param_specs.items())
-        columns = st.columns(2) if 1 <= len(items) <= 4 else None
-        strategy_params = {}
-        for idx, (key, spec) in enumerate(items):
-            normalized = _normalize_spec(spec)
-            label = normalized.get("label") or key.replace("_", " ").title()
-            prefill = prev_params.get(key, normalized.get("default"))
-            param_key = f"strat_param_{key}"
-            if columns:
-                container = columns[idx % len(columns)]
-                with container:
-                    strategy_params[key] = _render_param_control(label, param_key, normalized, prefill, range_store, key)
-            else:
-                strategy_params[key] = _render_param_control(label, param_key, normalized, prefill, range_store, key)
+        st.info(
+            "💡 **Les paramètres par défaut sont chargés automatiquement.** "
+            "Allez sur la page **⚡ Optimisation** pour définir des plages à explorer."
+        )
+
+        # Afficher les paramètres en lecture seule (tableau compact)
+        with st.expander("🔍 Voir les paramètres par défaut", expanded=False):
+            params_data = []
+            for key, spec in param_specs.items():
+                normalized = _normalize_spec(spec)
+                label = normalized.get("label") or key.replace("_", " ").title()
+                default_val = normalized.get("default")
+                param_type = normalized.get("type", "")
+
+                # Formater la valeur
+                if isinstance(default_val, bool):
+                    formatted_val = "✅ Oui" if default_val else "❌ Non"
+                elif isinstance(default_val, float):
+                    formatted_val = f"{default_val:.4f}".rstrip('0').rstrip('.')
+                else:
+                    formatted_val = str(default_val)
+
+                params_data.append({
+                    "Paramètre": label,
+                    "Valeur par défaut": formatted_val,
+                    "Type": param_type.upper() if param_type else "AUTO"
+                })
+
+            # Afficher comme dataframe compact
+            import pandas as pd
+            df_params = pd.DataFrame(params_data)
+            st.dataframe(df_params, use_container_width=True, hide_index=True)
 
     st.session_state.strategy = strategy
     st.session_state.indicators = indicator_values
     st.session_state.strategy_params = strategy_params
-    st.session_state["strategy_param_ranges"] = range_store
 
-    st.success(f"? Configuration enregistrée : **{strategy}**")
+    st.success(f"✅ Configuration enregistrée : **{strategy}** avec paramètres par défaut")
 
 
 

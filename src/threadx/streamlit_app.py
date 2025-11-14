@@ -78,8 +78,8 @@ st.markdown(
     'use strict';
 
     // Configuration
-    const WHEEL_SENSITIVITY = 0.05; // Sensibilité de la molette (5% par cran)
-    const UPDATE_DELAY = 50; // Délai anti-rebond en ms
+    const WHEEL_SENSITIVITY = 0.1; // Sensibilité de la molette (10% par cran)
+    const UPDATE_DELAY = 10; // Délai anti-rebond en ms
 
     let updateTimeout = null;
     let processedSliders = new WeakSet();
@@ -90,11 +90,11 @@ st.markdown(
     function calculateStep(slider) {
         const min = parseFloat(slider.min) || 0;
         const max = parseFloat(slider.max) || 100;
-        const step = parseFloat(slider.step) || 1;
+        let step = parseFloat(slider.step) || 1;
         const range = max - min;
 
         // Si step déjà défini et cohérent, l'utiliser
-        if (step > 0 && step < range) {
+        if (step > 0 && step <= range) {
             return step;
         }
 
@@ -108,7 +108,7 @@ st.markdown(
         } else if (range <= 1000) {
             return 10;
         } else {
-            return 100;
+            return Math.max(1, range / 100);
         }
     }
 
@@ -134,48 +134,66 @@ st.markdown(
                                slider.parentElement;
 
         if (!sliderContainer) {
+            console.warn('[ThreadX] Conteneur slider non trouvé');
             return;
         }
 
-        // Fonction de mise à jour
+        // Fonction de mise à jour avec gestion d'erreurs
         function updateSlider(event) {
-            event.preventDefault();
-            event.stopPropagation();
+            try {
+                event.preventDefault();
+                event.stopPropagation();
 
-            const currentValue = parseFloat(slider.value) || 0;
-            const delta = -Math.sign(event.deltaY);
-            const increment = delta * step;
+                const currentValue = parseFloat(slider.value) || 0;
+                const delta = -Math.sign(event.deltaY);
+                const increment = delta * step;
 
-            let newValue = currentValue + increment;
+                let newValue = currentValue + increment;
 
-            // Clamper entre min et max
-            newValue = Math.max(min, Math.min(max, newValue));
+                // Clamper entre min et max
+                newValue = Math.max(min, Math.min(max, newValue));
 
-            // Arrondir selon le step
-            newValue = Math.round(newValue / step) * step;
+                // Arrondir selon le step
+                newValue = Math.round(newValue / step) * step;
 
-            // Limiter la précision pour éviter les erreurs d'arrondi
-            const decimals = (step.toString().split('.')[1] || '').length;
-            newValue = parseFloat(newValue.toFixed(decimals));
+                // Limiter la précision pour éviter les erreurs d'arrondi
+                const decimals = Math.max(0, (step.toString().split('.')[1] || '').length);
+                newValue = parseFloat(newValue.toFixed(decimals));
 
-            // Mettre à jour la valeur
-            if (newValue !== currentValue) {
-                slider.value = newValue;
+                // Mettre à jour la valeur
+                if (Math.abs(newValue - currentValue) >= step * 0.01) {
+                    slider.value = newValue;
 
-                // Déclencher les événements pour que Streamlit détecte le changement
-                slider.dispatchEvent(new Event('input', { bubbles: true }));
-                slider.dispatchEvent(new Event('change', { bubbles: true }));
+                    // Déclencher les événements pour que Streamlit détecte le changement
+                    const inputEvent = new Event('input', { bubbles: true });
+                    const changeEvent = new Event('change', { bubbles: true });
+                    
+                    slider.dispatchEvent(inputEvent);
+                    setTimeout(() => slider.dispatchEvent(changeEvent), 5);
 
-                // Visual feedback
-                sliderContainer.style.transition = 'transform 0.1s ease';
-                sliderContainer.style.transform = 'scale(1.02)';
-                setTimeout(() => {
-                    sliderContainer.style.transform = 'scale(1)';
-                }, 100);
+                    // Visual feedback
+                    sliderContainer.style.transition = 'transform 0.1s ease';
+                    sliderContainer.style.transform = 'scale(1.02)';
+                    setTimeout(() => {
+                        sliderContainer.style.transform = 'scale(1)';
+                    }, 100);
+
+                    console.log(`[ThreadX] Slider mis à jour: ${currentValue} -> ${newValue}`);
+                }
+            } catch (error) {
+                console.error('[ThreadX] Erreur lors de la mise à jour du slider:', error);
             }
         }
 
-        // Ajouter l'event listener sur le conteneur (meilleure détection)
+        // Ajouter l'event listener directement sur le slider
+        slider.addEventListener('wheel', function(event) {
+            clearTimeout(updateTimeout);
+            updateTimeout = setTimeout(() => {
+                updateSlider(event);
+            }, UPDATE_DELAY);
+        }, { passive: false });
+
+        // Ajouter aussi sur le conteneur pour une meilleure détection
         sliderContainer.addEventListener('wheel', function(event) {
             // Vérifier si la souris est bien sur le slider
             const rect = sliderContainer.getBoundingClientRect();
@@ -185,7 +203,6 @@ st.markdown(
             if (mouseX >= rect.left && mouseX <= rect.right &&
                 mouseY >= rect.top && mouseY <= rect.bottom) {
 
-                // Utiliser un debounce pour éviter trop d'événements
                 clearTimeout(updateTimeout);
                 updateTimeout = setTimeout(() => {
                     updateSlider(event);
@@ -194,9 +211,14 @@ st.markdown(
         }, { passive: false });
 
         // Changer le curseur au survol
-        sliderContainer.style.cursor = 'ew-resize';
+        sliderContainer.addEventListener('mouseenter', () => {
+            sliderContainer.style.cursor = 'ew-resize';
+        });
 
-        // Log pour debug (commentable en production)
+        sliderContainer.addEventListener('mouseleave', () => {
+            sliderContainer.style.cursor = 'default';
+        });
+
         console.log(`[ThreadX] Slider wheel control activé: min=${min}, max=${max}, step=${step}`);
     }
 
@@ -207,59 +229,87 @@ st.markdown(
         // Sélecteurs multiples pour couvrir tous les types de sliders Streamlit
         const selectors = [
             'input[type="range"]',
-            '[data-baseweb="slider"] input',
-            '.stSlider input',
-            '[data-testid="stSlider"] input'
+            '[data-baseweb="slider"] input[type="range"]',
+            '.stSlider input[type="range"]',
+            '[data-testid="stSlider"] input[type="range"]',
+            '[class*="slider"] input[type="range"]'
         ];
 
+        let activatedCount = 0;
+        
         selectors.forEach(selector => {
-            const sliders = document.querySelectorAll(selector);
-            sliders.forEach(slider => {
-                if (slider && slider.type === 'range') {
-                    addWheelControl(slider);
-                }
-            });
+            try {
+                const sliders = document.querySelectorAll(selector);
+                sliders.forEach(slider => {
+                    if (slider && slider.type === 'range') {
+                        addWheelControl(slider);
+                        activatedCount++;
+                    }
+                });
+            } catch (error) {
+                console.error(`[ThreadX] Erreur avec le sélecteur ${selector}:`, error);
+            }
         });
+
+        if (activatedCount > 0) {
+            console.log(`[ThreadX] ${activatedCount} slider(s) activé(s)`);
+        }
     }
 
     /**
      * Observer pour détecter les nouveaux sliders ajoutés dynamiquement
      */
     function setupMutationObserver() {
-        const observer = new MutationObserver(function(mutations) {
-            let shouldReactivate = false;
+        try {
+            const observer = new MutationObserver(function(mutations) {
+                let shouldReactivate = false;
 
-            mutations.forEach(function(mutation) {
-                mutation.addedNodes.forEach(function(node) {
-                    if (node.nodeType === 1) { // Element node
-                        // Vérifier si c'est un slider ou contient des sliders
-                        if (node.matches && (
-                            node.matches('input[type="range"]') ||
-                            node.matches('[data-testid="stSlider"]') ||
-                            node.matches('.stSlider')
-                        )) {
-                            shouldReactivate = true;
-                        } else if (node.querySelector) {
-                            const hasSlider = node.querySelector('input[type="range"]');
-                            if (hasSlider) {
-                                shouldReactivate = true;
+                mutations.forEach(function(mutation) {
+                    if (mutation.addedNodes) {
+                        mutation.addedNodes.forEach(function(node) {
+                            if (node.nodeType === 1) { // Element node
+                                // Vérifier si c'est un slider ou contient des sliders
+                                if (node.matches && (
+                                    node.matches('input[type="range"]') ||
+                                    node.matches('[data-testid="stSlider"]') ||
+                                    node.matches('.stSlider')
+                                )) {
+                                    shouldReactivate = true;
+                                } else if (node.querySelector) {
+                                    try {
+                                        const hasSlider = node.querySelector('input[type="range"]');
+                                        if (hasSlider) {
+                                            shouldReactivate = true;
+                                        }
+                                    } catch (e) {
+                                        // Ignore querySelector errors
+                                    }
+                                }
                             }
-                        }
+                        });
                     }
                 });
+
+                if (shouldReactivate) {
+                    setTimeout(activateAllSliders, 200);
+                }
             });
 
-            if (shouldReactivate) {
-                setTimeout(activateAllSliders, 100);
-            }
-        });
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true,
+                attributes: false,
+                attributeOldValue: false,
+                characterData: false,
+                characterDataOldValue: false
+            });
 
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-
-        console.log('[ThreadX] MutationObserver activé pour sliders dynamiques');
+            console.log('[ThreadX] MutationObserver activé pour sliders dynamiques');
+            return observer;
+        } catch (error) {
+            console.error('[ThreadX] Erreur lors de la création du MutationObserver:', error);
+            return null;
+        }
     }
 
     /**
@@ -268,28 +318,43 @@ st.markdown(
     function init() {
         console.log('[ThreadX] Initialisation contrôle molette sliders...');
 
-        // Première activation
-        activateAllSliders();
+        try {
+            // Première activation
+            activateAllSliders();
 
-        // Observer pour nouveaux sliders
-        setupMutationObserver();
+            // Observer pour nouveaux sliders
+            setupMutationObserver();
 
-        // Re-scanner périodiquement (fallback)
-        setInterval(activateAllSliders, 2000);
+            // Re-scanner périodiquement (fallback)
+            setInterval(activateAllSliders, 3000);
 
-        console.log('[ThreadX] ✅ Contrôle molette sliders activé globalement');
+            console.log('[ThreadX] ✅ Contrôle molette sliders activé globalement');
+        } catch (error) {
+            console.error('[ThreadX] Erreur lors de l\'initialisation:', error);
+        }
     }
 
     // Démarrer quand le DOM est prêt
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {
-        init();
+        // DOM déjà chargé, initialiser immédiatement
+        setTimeout(init, 100);
     }
 
     // Re-scanner après les transitions Streamlit
     window.addEventListener('load', function() {
+        setTimeout(activateAllSliders, 1000);
+    });
+
+    // Observer les changements de hash/URL pour Streamlit
+    window.addEventListener('hashchange', function() {
         setTimeout(activateAllSliders, 500);
+    });
+
+    // Observer les événements Streamlit spécifiques
+    document.addEventListener('streamlit:render', function() {
+        setTimeout(activateAllSliders, 300);
     });
 
 })();
