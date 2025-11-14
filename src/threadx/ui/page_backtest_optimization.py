@@ -10,6 +10,7 @@ Version: 2.0.0 - UI Redesign
 """
 
 from __future__ import annotations
+import os
 
 import time
 from typing import Any
@@ -22,10 +23,15 @@ import streamlit as st
 from threadx.data_access import load_ohlcv
 from threadx.indicators.bank import IndicatorBank, IndicatorSettings
 from threadx.optimization.engine import SweepRunner
+from threadx.optimization.parallel_sweep_manager import (
+    optimize_sweep_execution,
+    probe_parallel_configs,
+)
 from threadx.optimization.scenarios import ScenarioSpec
 from threadx.ui.backtest_bridge import BacktestResult, run_backtest, run_backtest_gpu
 
-# from threadx.ui.fast_sweep import fast_parameter_sweep, get_strategy_function  # (unused)
+# Fast Sweep (ultra-rapide)
+from threadx.ui.fast_sweep import fast_parameter_sweep, get_strategy_function
 from threadx.ui.strategy_registry import (
     base_params_for,
     list_strategies,
@@ -466,6 +472,14 @@ def _render_monte_carlo_tab() -> None:
         else:
             max_workers = None
 
+    # Option Fast Sweep (expérimental)
+    fast_sweep_enabled = st.checkbox(
+        "Activer Fast Sweep (expérimental)",
+        value=st.session_state.get("sweep_fast_mode", False),
+        key="sweep_fast_mode",
+        help="Utilise une implémentation vectorisée ultra-rapide quand un seul paramètre varie.",
+    )
+
     tunable_specs = tunable_parameters_for(strategy)
     if not tunable_specs:
         st.info("ℹ️ Aucun paramètre optimisable pour cette stratégie.")
@@ -871,6 +885,11 @@ def _run_sweep_with_progress(
             shared_state["running"] = False
 
     # Démarrer le sweep
+    # Réinitialiser l'historique de lissage pour un nouveau run
+    try:
+        st.session_state.pop("sweep_speed_samples", None)
+    except Exception:
+        pass
     sweep_thread = threading.Thread(target=run_sweep_thread, daemon=True)
     sweep_thread.start()
 
@@ -889,6 +908,8 @@ def _run_sweep_with_progress(
     status_placeholder.metric("📊 Status", "Initialisation...", delta=None)
 
     # Boucle: mettre à jour l'UI jusqu'à fin du sweep
+    if "sweep_speed_samples" not in st.session_state:
+        st.session_state["sweep_speed_samples"] = []
     while shared_state["running"]:
         try:
             # Vérifier si l'utilisateur a demandé l'arrêt
@@ -914,11 +935,23 @@ def _run_sweep_with_progress(
 
                 now = time.time()
                 if current > 0 and elapsed > 0 and (current != last_current or (now - last_ui_update) >= 0.2):
-                    # Débit instantané sur la fenêtre depuis dernière MAJ
+                    # Débit instantané et lissé (fenêtre ~10s)
                     delta_c = (current - last_current) if last_current >= 0 else 0
                     delta_t = (now - last_ui_update) if last_ui_update > 0 else elapsed
                     inst_speed = (delta_c / delta_t) if delta_t > 0 else 0.0
-                    speed = inst_speed if inst_speed > 0 else (current / elapsed)
+
+                    samples = st.session_state.get("sweep_speed_samples", [])
+                    samples.append((now, current))
+                    cutoff = now - 10.0
+                    samples = [(t, c) for (t, c) in samples if t >= cutoff]
+                    st.session_state["sweep_speed_samples"] = samples
+                    if len(samples) >= 2:
+                        t0, c0 = samples[0]
+                        t1, c1 = samples[-1]
+                        smoothed = (c1 - c0) / max(1e-6, (t1 - t0))
+                    else:
+                        smoothed = inst_speed
+                    speed = max(0.0, 0.7 * smoothed + 0.3 * inst_speed)
                     remaining = total - current
                     eta_seconds = remaining / speed if speed > 0 else 0
                     eta_minutes, eta_secs = divmod(eta_seconds, 60)
@@ -1308,6 +1341,23 @@ def _render_optimization_tab() -> None:
         else:
             max_workers = None
 
+    # Réglage d'agressivité du feeder (in-flight sizing du moteur)
+    st.markdown("#### Réglages avancés")
+    feeder_aggr = st.select_slider(
+        "Agressivité feeder",
+        options=[1, 2, 4, 6, 8, 10, 12, 16],
+        value=st.session_state.get("sweep_feeder_aggr", 10),
+        key="sweep_feeder_aggr",
+        help="Contrôle la fenêtre de tâches en vol. Plus haut = pipeline plus rempli",
+    )
+    # Option avancée: forcer l'utilisation d'un ProcessPool (contourner le GIL)
+    force_processpool = st.checkbox(
+        "Forcer ProcessPool (CPU-bound)",
+        value=st.session_state.get("sweep_force_processpool", False),
+        key="sweep_force_processpool",
+        help="Active un pool de processus (plus coûteux en mémoire) quand la stratégie est GIL-bound",
+    )
+
     try:
         tunable_specs = tunable_parameters_for(strategy)
     except KeyError:
@@ -1502,6 +1552,115 @@ def _render_optimization_tab() -> None:
         )
 
     # Bouton de lancement (désactivé si grille > 3 millions)
+    # Bouton d'optimisation de la parallelisation
+    opt_disabled = total_combinations > 3000000
+    if st.button(
+        "Optimiser la parallelisation",
+        type="secondary",
+        use_container_width=True,
+        key="optimize_parallel_btn",
+        disabled=opt_disabled,
+    ):
+        # Construire les parametres pour le sweep (meme logique que le bouton principal)
+        scenario_params: dict[str, Any] = {}
+        for key, (min_v, max_v) in param_ranges.items():
+            step = param_steps[key]
+            if param_types[key] == "int":
+                values = list(range(int(min_v), int(max_v) + 1, max(1, int(step))))
+            else:
+                values = np.linspace(
+                    min_v, max_v, num=max(2, int((max_v - min_v) / step) + 1)
+                ).tolist()
+            scenario_params[key] = {"values": values}
+
+        # Completer avec les parametres fixes par defaut
+        try:
+            all_param_specs = parameter_specs_for(strategy)
+        except Exception:
+            all_param_specs = {}
+        for key, spec in all_param_specs.items():
+            if key not in scenario_params:
+                value = configured_params.get(
+                    key,
+                    base_strategy_params.get(
+                        key, spec.get("default") if isinstance(spec, dict) else spec
+                    ),
+                )
+                scenario_params[key] = {"value": value}
+
+        # Charger les donnees
+        symbol = st.session_state.get("symbol", "BTC")
+        timeframe = st.session_state.get("timeframe", "1h")
+        start_date = st.session_state.get("start_date")
+        end_date = st.session_state.get("end_date")
+        try:
+            real_data = load_ohlcv(symbol, timeframe, start=start_date, end=end_date)
+            if real_data.empty:
+                st.error(
+                    f"Aucune donnee disponible pour {symbol}/{timeframe} entre {start_date} et {end_date}"
+                )
+                st.stop()
+        except Exception as e:
+            st.error(f"Erreur chargement donnees: {e}")
+            st.stop()
+
+        st.info("Recherche de la configuration optimale de parallelisation...")
+        try:
+            report = probe_parallel_configs(
+                params_grid=scenario_params,
+                data=real_data,
+                symbol=symbol,
+                timeframe=timeframe,
+                strategy_name=strategy,
+                try_processes=True,
+            )
+        except Exception as e:
+            st.warning(f"Optimisation de la parallelisation indisponible ({e}). Utilisation d'une configuration par defaut.")
+            report = {
+                "chosen": {"use_processes": False, "max_workers": max_workers or 8, "probe_throughput_cps": 0.0},
+                "total_combos": total_combinations,
+                "probes": [],
+            }
+
+        chosen = report.get("chosen", {})
+        total_combos = int(report.get("total_combos", 0))
+        probe_cps = float(chosen.get("probe_throughput_cps", 0.0))
+        est_sec = (total_combos / probe_cps) if probe_cps > 0 else 0.0
+        est_min, est_s = divmod(int(est_sec), 60)
+        if probe_cps > 0:
+            st.info(
+                f"Config: {'ProcessPool' if chosen.get('use_processes') else 'ThreadPool'} "
+                f"| workers={chosen.get('max_workers')} | ETA≈ {est_min}m {est_s}s (sondage)"
+            )
+        else:
+            st.info(
+                f"Config: {'ProcessPool' if chosen.get('use_processes') else 'ThreadPool'} | workers={chosen.get('max_workers')}"
+            )
+
+        # Lancer le sweep complet avec barre de progression standard
+        os.environ["THREADX_FEEDER_AGGR"] = str(st.session_state.get("sweep_feeder_aggr", 10))
+        indicator_settings = IndicatorSettings(use_gpu=use_gpu)
+        indicator_bank = IndicatorBank(indicator_settings)
+        runner = SweepRunner(
+            indicator_bank=indicator_bank,
+            max_workers=int(chosen.get("max_workers", max_workers or 8)),
+            use_multigpu=use_multigpu,
+            # Respecte le choix du probe, mais permet de forcer ProcessPool côté UI
+            use_processes=bool(chosen.get("use_processes", False) or st.session_state.get("sweep_force_processpool", False)),
+        )
+
+        scenario_spec = ScenarioSpec(type="grid", params=scenario_params)
+        results = _run_sweep_with_progress(
+            runner,
+            scenario_spec,
+            real_data,
+            symbol,
+            timeframe,
+            strategy,
+            total_combos,
+        )
+        st.session_state["sweep_results"] = results
+
     button_disabled = total_combinations > 3000000
     if st.button(
         "🔬 Lancer le Sweep",
@@ -1510,12 +1669,15 @@ def _render_optimization_tab() -> None:
         key="run_sweep_btn",
         disabled=button_disabled,
     ):
+        # Appliquer l'agressivité du feeder au chemin de lancement direct également
+        os.environ["THREADX_FEEDER_AGGR"] = str(st.session_state.get("sweep_feeder_aggr", 10))
         indicator_settings = IndicatorSettings(use_gpu=use_gpu)
         indicator_bank = IndicatorBank(indicator_settings)
         runner = SweepRunner(
             indicator_bank=indicator_bank,
             max_workers=max_workers,
             use_multigpu=use_multigpu,
+            use_processes=bool(st.session_state.get("sweep_force_processpool", False)),
         )
 
         # Construire les paramètres pour le sweep
@@ -1876,3 +2038,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+

@@ -61,6 +61,11 @@ from .bollinger_dual import (
     # Fonctions de convenance
     create_default_params as bollinger_dual_create_default_params,
 )
+from .ma_crossover import (
+    # MA Crossover Strategy (test/validation)
+    MACrossoverParams,
+    MACrossoverStrategy,
+)
 from .model import (
     RunStats,
     RunStatsDict,
@@ -108,6 +113,9 @@ __all__ = [
     "amplitude_hunter_generate_signals",
     "amplitude_hunter_backtest",
     "amplitude_hunter_create_default_params",
+    # MA Crossover Strategy exports (test/validation)
+    "MACrossoverParams",
+    "MACrossoverStrategy",
 ]
 
 

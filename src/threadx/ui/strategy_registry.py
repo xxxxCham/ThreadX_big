@@ -761,6 +761,108 @@ REGISTRY: dict[str, dict[str, Any]] = {
             },
         },
     },
+    "MA_Crossover": {
+        "indicators": {
+            "sma": {
+                "window": {
+                    "default": 10,
+                    "min": 5,
+                    "max": 100,
+                    "step": 5,
+                    "type": "int",
+                    "label": "Période SMA",
+                }
+            }
+        },
+        "params": {
+            # Moving Averages
+            "fast_period": {
+                "default": 10,
+                "min": 5,
+                "max": 50,
+                "step": 5,
+                "type": "int",
+                "label": "Période SMA Rapide",
+                "opt_range": (5, 30),
+            },
+            "slow_period": {
+                "default": 30,
+                "min": 20,
+                "max": 100,
+                "step": 10,
+                "type": "int",
+                "label": "Période SMA Lente",
+                "opt_range": (20, 60),
+            },
+            # Risk Management (SIMPLE et CLAIR)
+            "stop_loss_pct": {
+                "default": 2.0,
+                "min": 1.0,
+                "max": 5.0,
+                "step": 0.5,
+                "type": "float",
+                "label": "Stop Loss % (fixe)",
+                "opt_range": (1.5, 3.0),
+            },
+            "take_profit_pct": {
+                "default": 4.0,
+                "min": 2.0,
+                "max": 10.0,
+                "step": 1.0,
+                "type": "float",
+                "label": "Take Profit % (fixe)",
+                "opt_range": (3.0, 6.0),
+            },
+            "risk_per_trade": {
+                "default": 0.01,
+                "min": 0.005,
+                "max": 0.03,
+                "step": 0.005,
+                "type": "float",
+                "label": "Risque par Trade (fraction du capital)",
+                "opt_range": (0.01, 0.02),
+            },
+            # Position Management
+            "leverage": {
+                "default": 1.0,
+                "min": 1.0,
+                "max": 5.0,
+                "step": 0.5,
+                "type": "float",
+                "label": "Levier (1.0 = sans levier)",
+                "opt_range": (1.0, 2.0),
+                "tunable": False,  # Non optimisable par défaut pour validation
+            },
+            "max_hold_bars": {
+                "default": 100,
+                "min": 20,
+                "max": 300,
+                "step": 20,
+                "type": "int",
+                "label": "Durée Maximale en Position (barres)",
+                "opt_range": (50, 150),
+            },
+            # Frais
+            "fee_bps": {
+                "default": 4.5,
+                "min": 0.0,
+                "max": 10.0,
+                "step": 0.5,
+                "type": "float",
+                "label": "Frais (basis points)",
+                "tunable": False,
+            },
+            "slippage_bps": {
+                "default": 0.0,
+                "min": 0.0,
+                "max": 5.0,
+                "step": 0.5,
+                "type": "float",
+                "label": "Slippage (basis points)",
+                "tunable": False,
+            },
+        },
+    },
 }
 
 
