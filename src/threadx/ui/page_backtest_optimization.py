@@ -1866,7 +1866,7 @@ def _render_optimization_tab() -> None:
 
     with col_workers:
         # Récupérer la sélection précédente depuis session_state
-        current_mode = st.session_state.get("sweep_workers_mode", "Auto (Dynamique)")
+        current_mode = st.session_state.get("sweep_workers_mode", "Manuel")
         mode_index = 1 if current_mode == "Manuel" else 0
 
         workers_mode = st.selectbox(
@@ -1890,11 +1890,11 @@ def _render_optimization_tab() -> None:
     # Réglage d'agressivité du feeder (in-flight sizing du moteur)
     st.markdown("#### Réglages avancés")
     st.select_slider(
-        "Agressivité feeder",
+        "Agressivité feeder (CPU Boost)",
         options=[1, 2, 4, 6, 8, 10, 12, 16],
-        value=st.session_state.get("sweep_feeder_aggr", 10),
+        value=st.session_state.get("sweep_feeder_aggr", 16),
         key="sweep_feeder_aggr",
-        help="Contrôle la fenêtre de tâches en vol. Plus haut = pipeline plus rempli",
+        help="Contrôle la fenêtre de tâches en vol. Plus haut = pipeline plus rempli (défaut: 16 pour boost CPU max)",
     )
     # Option avancée: forcer l'utilisation d'un ProcessPool (contourner le GIL)
     st.checkbox(

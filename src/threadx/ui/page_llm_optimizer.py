@@ -443,6 +443,10 @@ def _generate_combinations(sweep_params: dict):
 def execute_sweep(strategy_name: str, sweep_params: dict, use_gpu: bool):
     """Exécute le sweep et retourne les résultats."""
     
+    # Configuration optimisation pour LLM: feeder aggr 16 (CPU boost max)
+    import os
+    os.environ["THREADX_FEEDER_AGGR"] = "16"
+    
     # Charger données (simulées pour démo - à remplacer par vraies données)
     import numpy as np
     
