@@ -1335,24 +1335,27 @@ def _run_sweep_with_progress(
 
                 now = time.time()
                 if current > 0 and elapsed > 0 and (current != last_current or (now - last_ui_update) >= 0.2):
-                    # Débit instantané et lissé (fenêtre ~3s pour plus de réactivité)
-                    delta_c = (current - last_current) if last_current >= 0 else 0
-                    delta_t = (now - last_ui_update) if last_ui_update > 0 else elapsed
-                    inst_speed = (delta_c / delta_t) if delta_t > 0 else 0.0
-
+                    # Lissage de la vitesse sur 2 secondes (moyenne glissante)
                     samples = st.session_state.get("sweep_speed_samples", [])
                     samples.append((now, current))
-                    cutoff = now - 3.0  # Fenêtre de 3 secondes pour un lissage plus réactif
+                    
+                    # Fenêtre de 2 secondes pour la moyenne
+                    cutoff = now - 2.0
                     samples = [(t, c) for (t, c) in samples if t >= cutoff]
                     st.session_state["sweep_speed_samples"] = samples
+                    
+                    # Calculer la vitesse moyenne sur les 2 dernières secondes
                     if len(samples) >= 2:
                         t0, c0 = samples[0]
                         t1, c1 = samples[-1]
-                        smoothed = (c1 - c0) / max(1e-6, (t1 - t0))
+                        time_delta = max(1e-6, t1 - t0)
+                        speed = max(0.0, (c1 - c0) / time_delta)
                     else:
-                        smoothed = inst_speed
-                    # Pondération 80% lissé / 20% instantané pour plus de stabilité
-                    speed = max(0.0, 0.8 * smoothed + 0.2 * inst_speed)
+                        # Fallback sur calcul simple si pas assez d'échantillons
+                        delta_c = (current - last_current) if last_current >= 0 else current
+                        delta_t = elapsed if last_current < 0 else (now - last_ui_update)
+                        speed = max(0.0, delta_c / max(1e-6, delta_t))
+                    
                     remaining = total - current
                     eta_seconds = remaining / speed if speed > 0 else 0
                     eta_hours, eta_remainder = divmod(eta_seconds, 3600)
@@ -1374,7 +1377,7 @@ def _run_sweep_with_progress(
                     status_placeholder.metric(
                         "📊 Statut",
                         "En cours ⚡",
-                        delta=f"+{delta_c} en {delta_t:.1f}s",
+                        delta=f"{speed:.1f} tests/sec (moy. 2s)",
                         delta_color="normal"
                     )
                     speed_placeholder.metric(
