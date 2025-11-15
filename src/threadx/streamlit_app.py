@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from threadx.data_access import DATA_DIR
 from threadx.ui.page_backtest_optimization import main as backtest_page_main
 from threadx.ui.page_config_strategy import main as config_page_main
+from threadx.ui.page_llm_optimizer import render_page as llm_optimizer_page
 from threadx.ui.system_monitor import get_global_monitor
 
 # Configuration
@@ -415,6 +416,7 @@ st.markdown(
 PAGE_TITLES = {
     "config": "📊 Chargement des Données",
     "backtest": "⚡ Optimisation",
+    "llm": "🤖 Multi-LLM Optimizer",
     "monitor": "🖥️ Monitoring Système",
 }
 
@@ -508,6 +510,7 @@ def render_monitor_page() -> None:
 PAGE_RENDERERS = {
     "config": config_page_main,
     "backtest": backtest_page_main,
+    "llm": llm_optimizer_page,
     "monitor": render_monitor_page,
 }
 
@@ -581,8 +584,8 @@ def render_sidebar() -> None:
 
         # Barre de progression du workflow
         st.markdown("### 📍 Progression")
-        steps_total = 3
-        page_to_step = {"config": 1, "backtest": 2, "monitor": 3}
+        steps_total = 4
+        page_to_step = {"config": 1, "backtest": 2, "llm": 3, "monitor": 4}
         current_page = st.session_state.get("page", "config")
         current_step = page_to_step.get(current_page, 1)
 
@@ -591,16 +594,20 @@ def render_sidebar() -> None:
 
         # Afficher les étapes avec statut
         st.caption(
-            f"Étape 1/3 : Configuration données "
+            f"Étape 1/4 : Configuration données "
             f"{'✅' if current_step > 1 else '⏳' if current_step == 1 else '⭕'}"
         )
         st.caption(
-            f"Étape 2/3 : Optimisation "
+            f"Étape 2/4 : Optimisation "
             f"{'✅' if current_step > 2 else '⏳' if current_step == 2 else '⭕'}"
         )
         st.caption(
-            f"Étape 3/3 : Monitoring système "
-            f"{'⏳' if current_step == 3 else '⭕'}"
+            f"Étape 3/4 : Multi-LLM Optimizer "
+            f"{'✅' if current_step > 3 else '⏳' if current_step == 3 else '⭕'}"
+        )
+        st.caption(
+            f"Étape 4/4 : Monitoring système "
+            f"{'⏳' if current_step == 4 else '⭕'}"
         )
 
         # Bouton "Suivant" selon l'étape actuelle
@@ -609,6 +616,16 @@ def render_sidebar() -> None:
                 st.session_state.page = "backtest"
                 st.rerun()
         elif current_page == "backtest":
+            col_bt1, col_bt2 = st.columns(2)
+            with col_bt1:
+                if st.button("🤖 Multi-LLM", use_container_width=True):
+                    st.session_state.page = "llm"
+                    st.rerun()
+            with col_bt2:
+                if st.button("📊 Monitoring", use_container_width=True):
+                    st.session_state.page = "monitor"
+                    st.rerun()
+        elif current_page == "llm":
             if st.button("➡️ Passer au Monitoring", type="primary", use_container_width=True):
                 st.session_state.page = "monitor"
                 st.rerun()
