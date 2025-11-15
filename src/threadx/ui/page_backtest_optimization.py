@@ -10,9 +10,10 @@ Version: 2.0.0 - UI Redesign
 """
 
 from __future__ import annotations
-import os
 
+import os
 import time
+from datetime import datetime
 from typing import Any
 
 import numpy as np
@@ -23,15 +24,9 @@ import streamlit as st
 from threadx.data_access import load_ohlcv
 from threadx.indicators.bank import IndicatorBank, IndicatorSettings
 from threadx.optimization.engine import SweepRunner
-from threadx.optimization.parallel_sweep_manager import (
-    optimize_sweep_execution,
-    probe_parallel_configs,
-)
+from threadx.optimization.parallel_sweep_manager import probe_parallel_configs
 from threadx.optimization.scenarios import ScenarioSpec
 from threadx.ui.backtest_bridge import BacktestResult, run_backtest, run_backtest_gpu
-
-# Fast Sweep (ultra-rapide)
-from threadx.ui.fast_sweep import fast_parameter_sweep, get_strategy_function
 from threadx.ui.strategy_registry import (
     base_params_for,
     list_strategies,
@@ -125,6 +120,78 @@ def _get_param_description(key: str) -> str:
         "slippage_bps": "Slippage estimé en basis points.",
     }
     return descriptions.get(key, f"Paramètre {key.replace('_', ' ').title()}")
+
+
+def _save_config_to_history(
+    strategy: str,
+    strategy_params: dict,
+    param_ranges: dict,
+    global_sensitivity: float = 1.0,
+    n_scenarios: int | None = None,
+    config_type: str = "Sweep",
+) -> None:
+    """Sauvegarde la configuration actuelle dans l'historique."""
+    if "config_history" not in st.session_state:
+        st.session_state.config_history = []
+
+    config = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "strategy": strategy,
+        "type": config_type,
+        "strategy_params": strategy_params.copy() if strategy_params else {},
+        "param_ranges": param_ranges.copy() if param_ranges else {},
+        "global_sensitivity": global_sensitivity,
+        "n_scenarios": n_scenarios,
+    }
+
+    st.session_state.config_history.append(config)
+
+    # Limiter l'historique à 20 configurations
+    if len(st.session_state.config_history) > 20:
+        st.session_state.config_history = st.session_state.config_history[-20:]
+
+
+def _render_config_history() -> dict | None:
+    """Affiche l'historique des configurations avec navigation."""
+    with st.expander("📜 Historique des Configurations", expanded=False):
+        history = st.session_state.get("config_history", [])
+
+        if not history:
+            st.caption("Aucune configuration enregistrée pour l'instant.")
+            return None
+
+        # Navigation dans l'historique
+        st.caption(f"**{len(history)} configuration(s) sauvegardée(s)**")
+
+        # Afficher les configurations récentes
+        for idx, cfg in enumerate(reversed(history)):
+            with st.container():
+                col1, col2, col3 = st.columns([3, 1, 1])
+                with col1:
+                    st.markdown(
+                        f"**{cfg['type']} - {cfg['strategy']}**  \n"
+                        f"📅 {cfg['timestamp']}  \n"
+                        f"🎚️ Sensibilité: {cfg['global_sensitivity']}x"
+                    )
+                with col2:
+                    if st.button(
+                        "📥 Charger",
+                        key=f"load_hist_{len(history) - 1 - idx}",
+                        use_container_width=True,
+                    ):
+                        return cfg
+                with col3:
+                    if st.button(
+                        "🗑️ Suppr.",
+                        key=f"del_hist_{len(history) - 1 - idx}",
+                        use_container_width=True,
+                    ):
+                        st.session_state.config_history.pop(len(history) - 1 - idx)
+                        st.rerun()
+
+                st.markdown("---")
+
+        return None
 
 
 def _sort_results_by_pnl(df: pd.DataFrame) -> pd.DataFrame:
@@ -502,6 +569,54 @@ def _render_monte_carlo_tab() -> None:
 
     _render_config_badge(context)
 
+    # === TEMPLATES ET HISTORIQUE ===
+    st.markdown("#### 🎯 Templates & Historique")
+    col_template, col_history = st.columns([1, 1])
+
+    with col_template:
+        template_mc = st.selectbox(
+            "📦 Template de configuration",
+            [
+                "Aucun (personnalisé)",
+                "🎲 Monte-Carlo Rapide (500 scénarios)",
+                "🎯 Monte-Carlo Standard (2000 scénarios)",
+                "🔬 Monte-Carlo Précis (5000 scénarios)",
+            ],
+            key="mc_template_selector",
+        )
+
+        # Appliquer le template
+        if template_mc == "🎲 Monte-Carlo Rapide (500 scénarios)":
+            st.session_state.mc_n = 500
+            st.session_state.mc_global_sensitivity = 0.8
+            st.info("✨ Template appliqué : 500 scénarios, sensibilité 0.8x")
+        elif template_mc == "🎯 Monte-Carlo Standard (2000 scénarios)":
+            st.session_state.mc_n = 2000
+            st.session_state.mc_global_sensitivity = 1.0
+            st.info("✨ Template appliqué : 2000 scénarios, sensibilité 1.0x")
+        elif template_mc == "🔬 Monte-Carlo Précis (5000 scénarios)":
+            st.session_state.mc_n = 5000
+            st.session_state.mc_global_sensitivity = 1.5
+            st.info("✨ Template appliqué : 5000 scénarios, sensibilité 1.5x")
+
+    with col_history:
+        # Afficher l'historique et gérer le chargement
+        loaded_config = _render_config_history()
+        if loaded_config:
+            if loaded_config["type"] == "Monte-Carlo":
+                st.session_state.strategy = loaded_config["strategy"]
+                st.session_state.strategy_params = loaded_config["strategy_params"]
+                st.session_state["strategy_param_ranges"] = loaded_config["param_ranges"]
+                st.session_state.mc_global_sensitivity = loaded_config["global_sensitivity"]
+                if loaded_config.get("n_scenarios"):
+                    st.session_state.mc_n = loaded_config["n_scenarios"]
+                st.success(f"✅ Configuration chargée : {loaded_config['timestamp']}")
+                st.rerun()
+            else:
+                st.warning("⚠️ Cette configuration est pour un Sweep, pas Monte-Carlo")
+
+    st.markdown("---")
+
     st.markdown("#### Configuration Monte-Carlo")
     col_strategy, col_gpu, col_multigpu, col_workers = st.columns(4)
 
@@ -555,7 +670,7 @@ def _render_monte_carlo_tab() -> None:
             max_workers = None
 
     # Option Fast Sweep (expérimental)
-    fast_sweep_enabled = st.checkbox(
+    st.checkbox(
         "Activer Fast Sweep (expérimental)",
         value=st.session_state.get("sweep_fast_mode", False),
         key="sweep_fast_mode",
@@ -820,6 +935,16 @@ def _render_monte_carlo_tab() -> None:
             st.error(f"❌ Erreur chargement données: {e}")
             return
 
+        # Sauvegarder la configuration dans l'historique
+        _save_config_to_history(
+            strategy=strategy,
+            strategy_params=configured_params,
+            param_ranges=param_ranges,
+            global_sensitivity=global_sensitivity,
+            n_scenarios=int(n_scenarios),
+            config_type="Monte-Carlo",
+        )
+
         try:
             # Lancer le Monte-Carlo avec barre de progression
             st.markdown("### 🎲 Exécution du Monte-Carlo")
@@ -866,6 +991,88 @@ def _render_monte_carlo_tab() -> None:
         # Tri par PNL décroissant (fallback si colonne PNL absente)
         results_sorted = _sort_results_by_pnl(results_df)
 
+        # === GRAPHIQUE DE CONVERGENCE MONTE-CARLO ===
+        pnl_candidates = [
+            "pnl",
+            "PNL",
+            "total_pnl",
+            "net_pnl",
+            "net_profit",
+            "profit",
+            "total_profit",
+        ]
+        pnl_col = next((c for c in pnl_candidates if c in results_sorted.columns), None)
+
+        if pnl_col and len(results_sorted) > 1:
+            st.markdown("#### 📈 Convergence du Meilleur PNL")
+
+            # Calculer l'évolution du meilleur PNL au fil des scénarios
+            pnl_values = results_sorted[pnl_col].tolist()
+            best_history = []
+            current_best = None
+
+            for val in pnl_values:
+                if current_best is None or val > current_best:
+                    current_best = val
+                best_history.append(current_best)
+
+            # Créer le graphique de convergence
+            fig_conv = go.Figure()
+
+            fig_conv.add_trace(
+                go.Scatter(
+                    x=list(range(1, len(best_history) + 1)),
+                    y=best_history,
+                    mode="lines",
+                    name="Meilleur PNL",
+                    line=dict(color="#26a69a", width=2),
+                    fill="tozeroy",
+                    fillcolor="rgba(38, 166, 154, 0.2)",
+                )
+            )
+
+            # Ligne du meilleur final
+            fig_conv.add_hline(
+                y=best_history[-1],
+                line_dash="dash",
+                line_color="#ffa726",
+                opacity=0.7,
+                annotation_text=f"Meilleur: {best_history[-1]:.2f}",
+                annotation_position="right",
+            )
+
+            fig_conv.update_layout(
+                height=300,
+                margin=dict(l=0, r=0, t=20, b=0),
+                template="plotly_dark",
+                xaxis_title="Numéro du scénario",
+                yaxis_title=f"Meilleur {pnl_col}",
+                xaxis=dict(gridcolor="rgba(128,128,128,0.2)"),
+                yaxis=dict(gridcolor="rgba(128,128,128,0.2)"),
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#a8b2d1", size=11),
+                hovermode="x unified",
+            )
+
+            st.plotly_chart(fig_conv, use_container_width=True, key="mc_convergence_chart")
+
+            # Analyse de convergence
+            if len(best_history) > 10:
+                # Comparer les 10 premiers vs 10 derniers scénarios
+                first_10_improvement = best_history[9] - best_history[0]
+                last_10_improvement = best_history[-1] - best_history[-10]
+
+                if last_10_improvement < first_10_improvement * 0.1:
+                    st.success(
+                        "✅ **Convergence atteinte** : Les derniers scénarios n'améliorent que peu le résultat."
+                    )
+                else:
+                    st.warning(
+                        "⚠️ **Convergence incomplète** : Augmentez le nombre de scénarios pour explorer davantage."
+                    )
+
+        st.markdown("---")
         st.dataframe(results_sorted.head(100), use_container_width=True, height=400)
 
         best_row = results_sorted.iloc[0]
@@ -1001,7 +1208,7 @@ def _run_sweep_with_progress(
     last_current = -1
     last_ui_update = 0.0
     progress_placeholder.progress(0, text="🚀 Initialisation du Sweep...")
-    status_placeholder.metric("📊 Status", "Initialisation...", delta=None)
+    status_placeholder.metric("📊 Statut", "Initialisation...", delta=None)
 
     # Boucle: mettre à jour l'UI jusqu'à fin du sweep
     if "sweep_speed_samples" not in st.session_state:
@@ -1020,7 +1227,7 @@ def _run_sweep_with_progress(
                 shared_state["should_stop"] = True
                 st.session_state.run_stop_requested = False  # Réinitialiser le flag
                 progress_placeholder.progress(0, text="⏹️ Arrêt en cours...")
-                status_placeholder.metric("📊 Status", "Arrêt en cours...", delta=None)
+                status_placeholder.metric("📊 Statut", "Arrêt en cours...", delta=None)
                 break  # Quitter la boucle d'affichage
 
             if runner.total_scenarios > 0:
@@ -1031,14 +1238,14 @@ def _run_sweep_with_progress(
 
                 now = time.time()
                 if current > 0 and elapsed > 0 and (current != last_current or (now - last_ui_update) >= 0.2):
-                    # Débit instantané et lissé (fenêtre ~10s)
+                    # Débit instantané et lissé (fenêtre ~3s pour plus de réactivité)
                     delta_c = (current - last_current) if last_current >= 0 else 0
                     delta_t = (now - last_ui_update) if last_ui_update > 0 else elapsed
                     inst_speed = (delta_c / delta_t) if delta_t > 0 else 0.0
 
                     samples = st.session_state.get("sweep_speed_samples", [])
                     samples.append((now, current))
-                    cutoff = now - 10.0
+                    cutoff = now - 3.0  # Fenêtre de 3 secondes pour un lissage plus réactif
                     samples = [(t, c) for (t, c) in samples if t >= cutoff]
                     st.session_state["sweep_speed_samples"] = samples
                     if len(samples) >= 2:
@@ -1047,22 +1254,45 @@ def _run_sweep_with_progress(
                         smoothed = (c1 - c0) / max(1e-6, (t1 - t0))
                     else:
                         smoothed = inst_speed
-                    speed = max(0.0, 0.7 * smoothed + 0.3 * inst_speed)
+                    # Pondération 80% lissé / 20% instantané pour plus de stabilité
+                    speed = max(0.0, 0.8 * smoothed + 0.2 * inst_speed)
                     remaining = total - current
                     eta_seconds = remaining / speed if speed > 0 else 0
-                    eta_minutes, eta_secs = divmod(eta_seconds, 60)
-                    eta_str = f"{int(eta_minutes)}m {int(eta_secs)}s"
+                    eta_hours, eta_remainder = divmod(eta_seconds, 3600)
+                    eta_minutes, eta_secs = divmod(eta_remainder, 60)
+
+                    # Format ETA avec heures si nécessaire
+                    if eta_hours >= 1:
+                        eta_str = f"{int(eta_hours)}h {int(eta_minutes)}m"
+                    else:
+                        eta_str = f"{int(eta_minutes)}m {int(eta_secs)}s"
+
                     last_ui_update = now
                     last_current = current
 
-                    # Mise à jour UI (thread principal)
+                    # Mise à jour UI (thread principal) - Style amélioré
                     progress_placeholder.progress(
-                        progress, text=f"⏳ {current}/{total} ({progress*100:.0f}%)"
+                        progress, text=f"⏳ {current:,}/{total:,} scénarios ({progress*100:.1f}%)"
                     )
-                    status_placeholder.metric("📊 Status", "Exécution...", delta=None)
-                    speed_placeholder.metric("🚀 Vitesse", f"{speed:.1f} tests/sec")
+                    status_placeholder.metric(
+                        "📊 Statut",
+                        "En cours ⚡",
+                        delta=f"+{delta_c} en {delta_t:.1f}s",
+                        delta_color="normal"
+                    )
+                    speed_placeholder.metric(
+                        "🚀 Vitesse",
+                        f"{speed:.1f}",
+                        delta="tests/sec",
+                        delta_color="off"
+                    )
                     eta_placeholder.metric("⏱️ ETA", eta_str)
-                    completed_placeholder.metric("📈 Complétés", f"{current}")
+                    completed_placeholder.metric(
+                        "✅ Complétés",
+                        f"{current:,}",
+                        delta=f"{(current/total*100):.1f}%",
+                        delta_color="normal"
+                    )
 
             time.sleep(
                 0.2
@@ -1078,7 +1308,7 @@ def _run_sweep_with_progress(
 
     if shared_state["error"]:
         progress_placeholder.progress(0, text=f"❌ Erreur après {elapsed_time:.1f}s")
-        status_placeholder.metric("📊 Status", "Erreur ❌", delta=None)
+        status_placeholder.metric("📊 Statut", "Erreur ❌", delta=None)
         st.error(f"Sweep échoué: {shared_state['error']}")
         raise Exception(shared_state["error"])
 
@@ -1091,12 +1321,17 @@ def _run_sweep_with_progress(
     minutes, seconds = divmod(elapsed_time, 60)
     time_str = f"{int(minutes)}m {int(seconds)}s"
 
-    # Stats finales
-    progress_placeholder.progress(1.0, text=f"✅ Sweep terminé en {time_str}")
-    status_placeholder.metric("📊 Status", "Complété ✅", delta=None)
-    speed_placeholder.metric("🚀 Vitesse", f"{tests_per_second:.1f} tests/sec")
-    eta_placeholder.metric("⏱️ Temps Total", time_str)
-    completed_placeholder.metric("📈 Résultats", f"{completed}")
+    # Stats finales avec style amélioré
+    progress_placeholder.progress(1.0, text=f"✅ Sweep terminé en {time_str} | {completed:,} résultats")
+    status_placeholder.metric("📊 Statut", "✅ Terminé", delta="100%", delta_color="normal")
+    speed_placeholder.metric(
+        "🚀 Vitesse Moyenne",
+        f"{tests_per_second:.1f}",
+        delta="tests/sec",
+        delta_color="off"
+    )
+    eta_placeholder.metric("⏱️ Durée Totale", time_str)
+    completed_placeholder.metric("✅ Résultats", f"{completed:,}", delta="100%", delta_color="normal")
 
     return results
 
@@ -1150,6 +1385,12 @@ def _run_monte_carlo_with_progress(
         finally:
             shared_state["running"] = False
 
+    # Réinitialiser l'historique de lissage pour un nouveau run
+    try:
+        st.session_state.pop("mc_speed_samples", None)
+    except Exception:
+        pass
+
     # Démarrer le Monte-Carlo
     mc_thread = threading.Thread(target=run_monte_carlo_thread, daemon=True)
     mc_thread.start()
@@ -1161,9 +1402,15 @@ def _run_monte_carlo_with_progress(
     eta_placeholder = stats_cols[2].empty()
     completed_placeholder = stats_cols[3].empty()
 
+    # Variables de suivi pour lissage
+    last_ui_update = 0.0
+    last_current = -1
+
     # Progress initial
+    if "mc_speed_samples" not in st.session_state:
+        st.session_state["mc_speed_samples"] = []
     progress_placeholder.progress(0, text="🎲 Initialisation du Monte-Carlo...")
-    status_placeholder.metric("📊 Status", "Initialisation...", delta=None)
+    status_placeholder.metric("📊 Statut", "Initialisation...", delta=None)
 
     # Boucle: mettre à jour l'UI jusqu'à fin du Monte-Carlo
     while shared_state["running"]:
@@ -1179,7 +1426,7 @@ def _run_monte_carlo_with_progress(
                 shared_state["should_stop"] = True
                 st.session_state.run_stop_requested = False  # Réinitialiser le flag
                 progress_placeholder.progress(0, text="⏹️ Arrêt en cours...")
-                status_placeholder.metric("📊 Status", "Arrêt en cours...", delta=None)
+                status_placeholder.metric("📊 Statut", "Arrêt en cours...", delta=None)
                 break  # Quitter la boucle d'affichage
 
             if runner.total_scenarios > 0:
@@ -1190,22 +1437,62 @@ def _run_monte_carlo_with_progress(
 
                 now = time.time()
                 if current > 0 and elapsed > 0 and (current != last_current or (now - last_ui_update) >= 0.2):
-                    speed = current / elapsed
+                    # Débit instantané et lissé (fenêtre ~3s pour cohérence avec Sweep)
+                    delta_c = (current - last_current) if last_current >= 0 else 0
+                    delta_t = (now - last_ui_update) if last_ui_update > 0 else elapsed
+                    inst_speed = (delta_c / delta_t) if delta_t > 0 else 0.0
+
+                    samples = st.session_state.get("mc_speed_samples", [])
+                    samples.append((now, current))
+                    cutoff = now - 3.0  # Fenêtre de 3 secondes
+                    samples = [(t, c) for (t, c) in samples if t >= cutoff]
+                    st.session_state["mc_speed_samples"] = samples
+                    if len(samples) >= 2:
+                        t0, c0 = samples[0]
+                        t1, c1 = samples[-1]
+                        smoothed = (c1 - c0) / max(1e-6, (t1 - t0))
+                    else:
+                        smoothed = inst_speed
+                    # Pondération 80% lissé / 20% instantané
+                    speed = max(0.0, 0.8 * smoothed + 0.2 * inst_speed)
+
                     remaining = total - current
                     eta_seconds = remaining / speed if speed > 0 else 0
-                    eta_minutes, eta_secs = divmod(eta_seconds, 60)
-                    eta_str = f"{int(eta_minutes)}m {int(eta_secs)}s"
+                    eta_hours, eta_remainder = divmod(eta_seconds, 3600)
+                    eta_minutes, eta_secs = divmod(eta_remainder, 60)
+
+                    # Format ETA avec heures si nécessaire
+                    if eta_hours >= 1:
+                        eta_str = f"{int(eta_hours)}h {int(eta_minutes)}m"
+                    else:
+                        eta_str = f"{int(eta_minutes)}m {int(eta_secs)}s"
+
                     last_ui_update = now
                     last_current = current
 
-                    # Mise à jour UI (thread principal)
+                    # Mise à jour UI (thread principal) - Style amélioré
                     progress_placeholder.progress(
-                        progress, text=f"⏳ {current}/{total} ({progress*100:.0f}%)"
+                        progress, text=f"⏳ {current:,}/{total:,} scénarios ({progress*100:.1f}%)"
                     )
-                    status_placeholder.metric("📊 Status", "Exécution...", delta=None)
-                    speed_placeholder.metric("🚀 Vitesse", f"{speed:.1f} scén/sec")
+                    status_placeholder.metric(
+                        "📊 Statut",
+                        "En cours 🎲",
+                        delta=f"+{delta_c} en {delta_t:.1f}s",
+                        delta_color="normal"
+                    )
+                    speed_placeholder.metric(
+                        "🚀 Vitesse",
+                        f"{speed:.1f}",
+                        delta="scén/sec",
+                        delta_color="off"
+                    )
                     eta_placeholder.metric("⏱️ ETA", eta_str)
-                    completed_placeholder.metric("📈 Complétés", f"{current}")
+                    completed_placeholder.metric(
+                        "✅ Complétés",
+                        f"{current:,}",
+                        delta=f"{(current/total*100):.1f}%",
+                        delta_color="normal"
+                    )
 
             time.sleep(
                 0.2
@@ -1221,7 +1508,7 @@ def _run_monte_carlo_with_progress(
 
     if shared_state["error"]:
         progress_placeholder.progress(0, text=f"❌ Erreur après {elapsed_time:.1f}s")
-        status_placeholder.metric("📊 Status", "Erreur ❌", delta=None)
+        status_placeholder.metric("📊 Statut", "Erreur ❌", delta=None)
         st.error(f"Monte-Carlo échoué: {shared_state['error']}")
         raise Exception(shared_state["error"])
 
@@ -1234,12 +1521,17 @@ def _run_monte_carlo_with_progress(
     minutes, seconds = divmod(elapsed_time, 60)
     time_str = f"{int(minutes)}m {int(seconds)}s"
 
-    # Stats finales
-    progress_placeholder.progress(1.0, text=f"✅ Monte-Carlo terminé en {time_str}")
-    status_placeholder.metric("📊 Status", "Complété ✅", delta=None)
-    speed_placeholder.metric("🚀 Vitesse", f"{scenarios_per_second:.1f} scén/sec")
-    eta_placeholder.metric("⏱️ Temps Total", time_str)
-    completed_placeholder.metric("📈 Résultats", f"{completed}")
+    # Stats finales avec style amélioré
+    progress_placeholder.progress(1.0, text=f"✅ Monte-Carlo terminé en {time_str} | {completed:,} scénarios")
+    status_placeholder.metric("📊 Statut", "✅ Terminé", delta="100%", delta_color="normal")
+    speed_placeholder.metric(
+        "🚀 Vitesse Moyenne",
+        f"{scenarios_per_second:.1f}",
+        delta="scén/sec",
+        delta_color="off"
+    )
+    eta_placeholder.metric("⏱️ Durée Totale", time_str)
+    completed_placeholder.metric("✅ Scénarios", f"{completed:,}", delta="100%", delta_color="normal")
 
     return results
 
@@ -1385,6 +1677,49 @@ def _render_optimization_tab() -> None:
 
     _render_config_badge(context)
 
+    # === TEMPLATES ET HISTORIQUE ===
+    st.markdown("#### 🎯 Templates & Historique")
+    col_template, col_history = st.columns([1, 1])
+
+    with col_template:
+        template_sweep = st.selectbox(
+            "📦 Template de configuration",
+            [
+                "Aucun (personnalisé)",
+                "🚀 Quick Test (~100 combinaisons)",
+                "⚡ Standard (~10k combinaisons)",
+                "🔬 Recherche Exhaustive (~100k combinaisons)",
+            ],
+            key="sweep_template_selector",
+        )
+
+        # Appliquer le template
+        if template_sweep == "🚀 Quick Test (~100 combinaisons)":
+            st.session_state.sweep_global_sensitivity = 0.5
+            st.info("✨ Template appliqué : Sensibilité 0.5x (rapide)")
+        elif template_sweep == "⚡ Standard (~10k combinaisons)":
+            st.session_state.sweep_global_sensitivity = 1.0
+            st.info("✨ Template appliqué : Sensibilité 1.0x (équilibré)")
+        elif template_sweep == "🔬 Recherche Exhaustive (~100k combinaisons)":
+            st.session_state.sweep_global_sensitivity = 1.8
+            st.info("✨ Template appliqué : Sensibilité 1.8x (précis)")
+
+    with col_history:
+        # Afficher l'historique et gérer le chargement
+        loaded_config = _render_config_history()
+        if loaded_config:
+            if loaded_config["type"] == "Sweep":
+                st.session_state.strategy = loaded_config["strategy"]
+                st.session_state.strategy_params = loaded_config["strategy_params"]
+                st.session_state["strategy_param_ranges"] = loaded_config["param_ranges"]
+                st.session_state.sweep_global_sensitivity = loaded_config["global_sensitivity"]
+                st.success(f"✅ Configuration chargée : {loaded_config['timestamp']}")
+                st.rerun()
+            else:
+                st.warning("⚠️ Cette configuration est pour Monte-Carlo, pas Sweep")
+
+    st.markdown("---")
+
     st.markdown("#### Configuration du Sweep")
     col_strategy, col_gpu, col_multigpu, col_workers = st.columns(4)
 
@@ -1439,7 +1774,7 @@ def _render_optimization_tab() -> None:
 
     # Réglage d'agressivité du feeder (in-flight sizing du moteur)
     st.markdown("#### Réglages avancés")
-    feeder_aggr = st.select_slider(
+    st.select_slider(
         "Agressivité feeder",
         options=[1, 2, 4, 6, 8, 10, 12, 16],
         value=st.session_state.get("sweep_feeder_aggr", 10),
@@ -1447,7 +1782,7 @@ def _render_optimization_tab() -> None:
         help="Contrôle la fenêtre de tâches en vol. Plus haut = pipeline plus rempli",
     )
     # Option avancée: forcer l'utilisation d'un ProcessPool (contourner le GIL)
-    force_processpool = st.checkbox(
+    st.checkbox(
         "Forcer ProcessPool (CPU-bound)",
         value=st.session_state.get("sweep_force_processpool", False),
         key="sweep_force_processpool",
@@ -1639,6 +1974,89 @@ def _render_optimization_tab() -> None:
             n_values = max(2, int((max_v - min_v) / step) + 1)
         total_combinations *= n_values
 
+    # === GRAPHIQUE DE DISTRIBUTION DES PLAGES ===
+    if param_ranges:
+        st.markdown("#### 📊 Visualisation de l'Espace de Recherche")
+        col_graph, col_est = st.columns([2, 1])
+
+        with col_graph:
+            # Calculer la largeur de chaque plage (normalisée)
+            spans = []
+            labels = []
+            for key, (min_v, max_v) in param_ranges.items():
+                span = abs(max_v - min_v)
+                spans.append(span)
+                labels.append(key)
+
+            # Créer le graphique radar
+            fig_dist = go.Figure(
+                data=go.Scatterpolar(
+                    r=spans,
+                    theta=labels,
+                    fill="toself",
+                    line=dict(color="#26a69a", width=2),
+                    fillcolor="rgba(38, 166, 154, 0.3)",
+                )
+            )
+            fig_dist.update_layout(
+                polar=dict(
+                    radialaxis=dict(
+                        visible=True,
+                        range=[0, max(spans) * 1.1] if spans else [0, 1],
+                        showticklabels=False,
+                    ),
+                    bgcolor="rgba(0,0,0,0)",
+                ),
+                showlegend=False,
+                height=300,
+                margin=dict(l=40, r=40, t=20, b=20),
+                template="plotly_dark",
+                paper_bgcolor="rgba(0,0,0,0)",
+            )
+            st.plotly_chart(fig_dist, use_container_width=True, key="param_distribution_sweep")
+
+        with col_est:
+            # === ESTIMATEUR DE TEMPS ===
+            st.markdown("#### ⏱️ Estimation")
+            if total_combinations > 0:
+                # Estimation basée sur benchmarks réels
+                # ~2000 tests/sec avec GPU, ~500 tests/sec sans GPU
+                tests_per_sec = 2000 if use_gpu else 500
+                if use_multigpu:
+                    tests_per_sec *= 1.8  # Boost multi-GPU
+
+                estimated_seconds = total_combinations / tests_per_sec
+                hours, remainder = divmod(estimated_seconds, 3600)
+                minutes, seconds = divmod(remainder, 60)
+
+                if hours >= 1:
+                    time_str = f"{int(hours)}h {int(minutes)}m"
+                elif minutes >= 1:
+                    time_str = f"{int(minutes)}m {int(seconds)}s"
+                else:
+                    time_str = f"{int(seconds)}s"
+
+                st.metric(
+                    "Temps estimé",
+                    time_str,
+                    delta=f"~{int(tests_per_sec)} tests/sec",
+                    delta_color="off",
+                )
+
+                # Indicateur de performance
+                if estimated_seconds < 60:
+                    st.success("🚀 Très rapide")
+                elif estimated_seconds < 300:
+                    st.info("⚡ Rapide")
+                elif estimated_seconds < 1800:
+                    st.warning("⏳ Moyen")
+                else:
+                    st.error("🐢 Long")
+
+                st.caption(f"GPU: {'✅ Multi' if use_multigpu else '✅ Activé' if use_gpu else '❌ Désactivé'}")
+
+    st.markdown("---")
+
     # Affichage du nombre total de combinaisons
     if total_combinations <= 100000:
         st.success(
@@ -1787,6 +2205,15 @@ def _render_optimization_tab() -> None:
             max_workers=max_workers,
             use_multigpu=use_multigpu,
             use_processes=bool(st.session_state.get("sweep_force_processpool", False)),
+        )
+
+        # Sauvegarder la configuration dans l'historique
+        _save_config_to_history(
+            strategy=strategy,
+            strategy_params=configured_params,
+            param_ranges=param_ranges,
+            global_sensitivity=global_sensitivity,
+            config_type="Sweep",
         )
 
         # Construire les paramètres pour le sweep

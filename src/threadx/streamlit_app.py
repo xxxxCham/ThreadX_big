@@ -14,28 +14,26 @@ Version: 2.0.0 - UI Redesign
 
 from __future__ import annotations
 
-import os
 import logging
+import os
 import sys
 import time
 from datetime import date
 from pathlib import Path
 
+import streamlit as st
+
 # Optionally silence all logs early if requested (for performance profiling)
 if os.getenv("THREADX_SILENCE_LOGS", "0") == "1":
     logging.disable(logging.CRITICAL)
 
-import streamlit as st
-
 # Ensure package root is on sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from threadx.data_access import DATA_DIR  # noqa: E402
-from threadx.ui.page_backtest_optimization import (
-    main as backtest_page_main,
-)  # noqa: E402
-from threadx.ui.page_config_strategy import main as config_page_main  # noqa: E402
-from threadx.ui.system_monitor import get_global_monitor  # noqa: E402
+from threadx.data_access import DATA_DIR
+from threadx.ui.page_backtest_optimization import main as backtest_page_main
+from threadx.ui.page_config_strategy import main as config_page_main
+from threadx.ui.system_monitor import get_global_monitor
 
 # Configuration
 st.set_page_config(
@@ -49,19 +47,70 @@ st.set_page_config(
 st.markdown(
     """
 <style>
-    .main { background: linear-gradient(135deg, #0a0e27 0%, #16213e 50%, #0f3460 100%); }
-    h1 { color: #4fc3f7 !important; font-weight: 700 !important; font-size: 2.5rem !important; text-shadow: 0 0 20px rgba(79, 195, 247, 0.3); }
-    h2 { color: #81c784 !important; font-weight: 600 !important; margin-top: 2rem !important; }
+    .main {
+        background: linear-gradient(135deg, #0a0e27 0%, #16213e 50%, #0f3460 100%);
+    }
+    h1 {
+        color: #4fc3f7 !important;
+        font-weight: 700 !important;
+        font-size: 2.5rem !important;
+        text-shadow: 0 0 20px rgba(79, 195, 247, 0.3);
+    }
+    h2 {
+        color: #81c784 !important;
+        font-weight: 600 !important;
+        margin-top: 2rem !important;
+    }
     h3 { color: #a8b2d1 !important; font-weight: 500 !important; }
-    .stButton>button { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; color: white !important; border: none !important; border-radius: 12px !important; padding: 0.75rem 2rem !important; font-weight: 600 !important; transition: all 0.3s ease !important; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3) !important; }
-    .stButton>button:hover { transform: translateY(-3px) !important; box-shadow: 0 8px 25px rgba(102, 126, 234, 0.5) !important; }
-    [data-testid="stMetricValue"] { font-size: 1.8rem !important; font-weight: 700 !important; color: #4fc3f7 !important; }
-    [data-testid="stMetricLabel"] { color: #a8b2d1 !important; font-size: 0.9rem !important; }
-    [data-testid="stExpander"] { background: rgba(255, 255, 255, 0.03) !important; border: 1px solid rgba(255, 255, 255, 0.08) !important; border-radius: 15px !important; backdrop-filter: blur(10px) !important; }
-    [data-testid="stSidebar"] { background: linear-gradient(180deg, #0f1419 0%, #1a1f2e 100%) !important; border-right: 1px solid rgba(79, 195, 247, 0.1) !important; }
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; background: rgba(255, 255, 255, 0.02); padding: 8px; border-radius: 12px; }
-    .stTabs [data-baseweb="tab"] { background: transparent; border-radius: 8px; color: #a8b2d1; padding: 12px 24px; }
-    .stTabs [aria-selected="true"] { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; color: white !important; }
+    .stButton>button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 12px !important;
+        padding: 0.75rem 2rem !important;
+        font-weight: 600 !important;
+        transition: all 0.3s ease !important;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3) !important;
+    }
+    .stButton>button:hover {
+        transform: translateY(-3px) !important;
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.5) !important;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 1.8rem !important;
+        font-weight: 700 !important;
+        color: #4fc3f7 !important;
+    }
+    [data-testid="stMetricLabel"] {
+        color: #a8b2d1 !important;
+        font-size: 0.9rem !important;
+    }
+    [data-testid="stExpander"] {
+        background: rgba(255, 255, 255, 0.03) !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        border-radius: 15px !important;
+        backdrop-filter: blur(10px) !important;
+    }
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #0f1419 0%, #1a1f2e 100%) !important;
+        border-right: 1px solid rgba(79, 195, 247, 0.1) !important;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background: rgba(255, 255, 255, 0.02);
+        padding: 8px;
+        border-radius: 12px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background: transparent;
+        border-radius: 8px;
+        color: #a8b2d1;
+        padding: 12px 24px;
+    }
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        color: white !important;
+    }
     hr { margin: 2rem 0 !important; border-color: rgba(79, 195, 247, 0.2) !important; }
     /* Curseur personnalisé pour les sliders */
     .stSlider:hover { cursor: ew-resize !important; }
@@ -167,7 +216,7 @@ st.markdown(
                     // Déclencher les événements pour que Streamlit détecte le changement
                     const inputEvent = new Event('input', { bubbles: true });
                     const changeEvent = new Event('change', { bubbles: true });
-                    
+
                     slider.dispatchEvent(inputEvent);
                     setTimeout(() => slider.dispatchEvent(changeEvent), 5);
 
@@ -236,7 +285,7 @@ st.markdown(
         ];
 
         let activatedCount = 0;
-        
+
         selectors.forEach(selector => {
             try {
                 const sliders = document.querySelectorAll(selector);
@@ -528,6 +577,42 @@ def render_sidebar() -> None:
     with st.sidebar:
         st.markdown("# ThreadX v2.0")
         st.markdown("*Trading Quantitatif Haute Performance*")
+        st.markdown("---")
+
+        # Barre de progression du workflow
+        st.markdown("### 📍 Progression")
+        steps_total = 3
+        page_to_step = {"config": 1, "backtest": 2, "monitor": 3}
+        current_page = st.session_state.get("page", "config")
+        current_step = page_to_step.get(current_page, 1)
+
+        # Afficher la barre de progression
+        st.progress(current_step / steps_total)
+
+        # Afficher les étapes avec statut
+        st.caption(
+            f"Étape 1/3 : Configuration données "
+            f"{'✅' if current_step > 1 else '⏳' if current_step == 1 else '⭕'}"
+        )
+        st.caption(
+            f"Étape 2/3 : Optimisation "
+            f"{'✅' if current_step > 2 else '⏳' if current_step == 2 else '⭕'}"
+        )
+        st.caption(
+            f"Étape 3/3 : Monitoring système "
+            f"{'⏳' if current_step == 3 else '⭕'}"
+        )
+
+        # Bouton "Suivant" selon l'étape actuelle
+        if current_page == "config":
+            if st.button("➡️ Passer à l'Optimisation", type="primary", use_container_width=True):
+                st.session_state.page = "backtest"
+                st.rerun()
+        elif current_page == "backtest":
+            if st.button("➡️ Passer au Monitoring", type="primary", use_container_width=True):
+                st.session_state.page = "monitor"
+                st.rerun()
+
         st.markdown("---")
         st.markdown("### 🧭 Navigation")
         labels = list(PAGE_TITLES.values())

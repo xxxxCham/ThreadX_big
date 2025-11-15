@@ -24,7 +24,6 @@ import numpy as np
 import pandas as pd
 from numba import njit
 
-from threadx.indicators import ensure_indicator
 from threadx.strategy.model import (
     RunStats,
     Trade,

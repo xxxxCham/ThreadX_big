@@ -19,8 +19,9 @@ from __future__ import annotations
 import logging
 import math
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 
 import pandas as pd
 
@@ -137,7 +138,7 @@ def _run_probe(
 
     cpu_start = _safe_cpu_percent(0.0)
     ram_start = _safe_ram_gb_used()
-    gpu_start = _gpu_stats_snapshot() if HAS_GPU_MON else {}
+    _gpu_start = _gpu_stats_snapshot() if HAS_GPU_MON else {}  # Reserved for future use
 
     runner = SweepRunner(
         indicator_bank=indicator_bank,
@@ -525,6 +526,7 @@ def optimize_sweep_execution(
 
 def _demo_cli() -> None:  # pragma: no cover - convenience entrypoint
     import argparse
+
     import numpy as np
 
     parser = argparse.ArgumentParser(description="ThreadX Parallel Sweep Manager")

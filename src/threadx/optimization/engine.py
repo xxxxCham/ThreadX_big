@@ -15,17 +15,17 @@ Version: Phase 10 - Unified Compute Engine
 """
 
 import hashlib
-import os
 import itertools
 import json
+import os
 import time
 from collections.abc import Callable
 from concurrent.futures import (
     ProcessPoolExecutor,
     ThreadPoolExecutor,
     as_completed,
-    TimeoutError as FuturesTimeout,
 )
+from concurrent.futures import TimeoutError as FuturesTimeout
 from typing import Any
 
 import numpy as np
@@ -530,8 +530,8 @@ class SweepRunner:
                 completed_count = [0]  # Mutable counter pour tracking progress
 
                 # Ô£à Choisir ProcessPool ou ThreadPool selon config
-                ExecutorClass = ProcessPoolExecutor if self.use_processes else ThreadPoolExecutor
-                with ExecutorClass(max_workers=self.max_workers) as executor:
+                executor_class = ProcessPoolExecutor if self.use_processes else ThreadPoolExecutor
+                with executor_class(max_workers=self.max_workers) as executor:
                     futures = {}
                     batch_size = (
                         1000  # Soumettre par batch pour ├®viter une queue g├®ante
@@ -682,7 +682,7 @@ class SweepRunner:
 
             with self._time_stage("strategy_evaluation"):
                 completed_count = [0]
-                ExecutorClass = ProcessPoolExecutor if self.use_processes else ThreadPoolExecutor
+                executor_class = ProcessPoolExecutor if self.use_processes else ThreadPoolExecutor
 
                 # Fenêtre de tâches en vol contrôlée par variable d'environnement
                 # THREADX_FEEDER_AGGR (par défaut 10). Plus haut = pipeline plus rempli.
@@ -703,7 +703,7 @@ class SweepRunner:
                         strategy_name,
                     )
 
-                with ExecutorClass(max_workers=self.max_workers, **exec_kwargs) as executor:
+                with executor_class(max_workers=self.max_workers, **exec_kwargs) as executor:
                     futures = {}
                     stop_requested = False
 
@@ -1268,8 +1268,8 @@ class UnifiedOptimizationEngine:
             results = []
 
             # Ô£à Choisir ProcessPool ou ThreadPool selon config
-            ExecutorClass = ProcessPoolExecutor if self.use_processes else ThreadPoolExecutor
-            with ExecutorClass(max_workers=self.max_workers) as executor:
+            executor_class = ProcessPoolExecutor if self.use_processes else ThreadPoolExecutor
+            with executor_class(max_workers=self.max_workers) as executor:
                 futures = {}
                 batch_size = 1000
                 stop_requested = False
