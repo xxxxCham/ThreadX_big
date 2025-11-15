@@ -14,28 +14,26 @@ Version: 2.0.0 - UI Redesign
 
 from __future__ import annotations
 
-import os
 import logging
+import os
 import sys
 import time
 from datetime import date
 from pathlib import Path
 
+import streamlit as st
+
 # Optionally silence all logs early if requested (for performance profiling)
 if os.getenv("THREADX_SILENCE_LOGS", "0") == "1":
     logging.disable(logging.CRITICAL)
 
-import streamlit as st
-
 # Ensure package root is on sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from threadx.data_access import DATA_DIR  # noqa: E402
-from threadx.ui.page_backtest_optimization import (
-    main as backtest_page_main,
-)  # noqa: E402
-from threadx.ui.page_config_strategy import main as config_page_main  # noqa: E402
-from threadx.ui.system_monitor import get_global_monitor  # noqa: E402
+from threadx.data_access import DATA_DIR
+from threadx.ui.page_backtest_optimization import main as backtest_page_main
+from threadx.ui.page_config_strategy import main as config_page_main
+from threadx.ui.system_monitor import get_global_monitor
 
 # Configuration
 st.set_page_config(
@@ -49,19 +47,70 @@ st.set_page_config(
 st.markdown(
     """
 <style>
-    .main { background: linear-gradient(135deg, #0a0e27 0%, #16213e 50%, #0f3460 100%); }
-    h1 { color: #4fc3f7 !important; font-weight: 700 !important; font-size: 2.5rem !important; text-shadow: 0 0 20px rgba(79, 195, 247, 0.3); }
-    h2 { color: #81c784 !important; font-weight: 600 !important; margin-top: 2rem !important; }
+    .main {
+        background: linear-gradient(135deg, #0a0e27 0%, #16213e 50%, #0f3460 100%);
+    }
+    h1 {
+        color: #4fc3f7 !important;
+        font-weight: 700 !important;
+        font-size: 2.5rem !important;
+        text-shadow: 0 0 20px rgba(79, 195, 247, 0.3);
+    }
+    h2 {
+        color: #81c784 !important;
+        font-weight: 600 !important;
+        margin-top: 2rem !important;
+    }
     h3 { color: #a8b2d1 !important; font-weight: 500 !important; }
-    .stButton>button { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; color: white !important; border: none !important; border-radius: 12px !important; padding: 0.75rem 2rem !important; font-weight: 600 !important; transition: all 0.3s ease !important; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3) !important; }
-    .stButton>button:hover { transform: translateY(-3px) !important; box-shadow: 0 8px 25px rgba(102, 126, 234, 0.5) !important; }
-    [data-testid="stMetricValue"] { font-size: 1.8rem !important; font-weight: 700 !important; color: #4fc3f7 !important; }
-    [data-testid="stMetricLabel"] { color: #a8b2d1 !important; font-size: 0.9rem !important; }
-    [data-testid="stExpander"] { background: rgba(255, 255, 255, 0.03) !important; border: 1px solid rgba(255, 255, 255, 0.08) !important; border-radius: 15px !important; backdrop-filter: blur(10px) !important; }
-    [data-testid="stSidebar"] { background: linear-gradient(180deg, #0f1419 0%, #1a1f2e 100%) !important; border-right: 1px solid rgba(79, 195, 247, 0.1) !important; }
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; background: rgba(255, 255, 255, 0.02); padding: 8px; border-radius: 12px; }
-    .stTabs [data-baseweb="tab"] { background: transparent; border-radius: 8px; color: #a8b2d1; padding: 12px 24px; }
-    .stTabs [aria-selected="true"] { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; color: white !important; }
+    .stButton>button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 12px !important;
+        padding: 0.75rem 2rem !important;
+        font-weight: 600 !important;
+        transition: all 0.3s ease !important;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3) !important;
+    }
+    .stButton>button:hover {
+        transform: translateY(-3px) !important;
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.5) !important;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 1.8rem !important;
+        font-weight: 700 !important;
+        color: #4fc3f7 !important;
+    }
+    [data-testid="stMetricLabel"] {
+        color: #a8b2d1 !important;
+        font-size: 0.9rem !important;
+    }
+    [data-testid="stExpander"] {
+        background: rgba(255, 255, 255, 0.03) !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        border-radius: 15px !important;
+        backdrop-filter: blur(10px) !important;
+    }
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #0f1419 0%, #1a1f2e 100%) !important;
+        border-right: 1px solid rgba(79, 195, 247, 0.1) !important;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background: rgba(255, 255, 255, 0.02);
+        padding: 8px;
+        border-radius: 12px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background: transparent;
+        border-radius: 8px;
+        color: #a8b2d1;
+        padding: 12px 24px;
+    }
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        color: white !important;
+    }
     hr { margin: 2rem 0 !important; border-color: rgba(79, 195, 247, 0.2) !important; }
     /* Curseur personnalisé pour les sliders */
     .stSlider:hover { cursor: ew-resize !important; }
@@ -78,8 +127,8 @@ st.markdown(
     'use strict';
 
     // Configuration
-    const WHEEL_SENSITIVITY = 0.05; // Sensibilité de la molette (5% par cran)
-    const UPDATE_DELAY = 50; // Délai anti-rebond en ms
+    const WHEEL_SENSITIVITY = 0.1; // Sensibilité de la molette (10% par cran)
+    const UPDATE_DELAY = 10; // Délai anti-rebond en ms
 
     let updateTimeout = null;
     let processedSliders = new WeakSet();
@@ -90,11 +139,11 @@ st.markdown(
     function calculateStep(slider) {
         const min = parseFloat(slider.min) || 0;
         const max = parseFloat(slider.max) || 100;
-        const step = parseFloat(slider.step) || 1;
+        let step = parseFloat(slider.step) || 1;
         const range = max - min;
 
         // Si step déjà défini et cohérent, l'utiliser
-        if (step > 0 && step < range) {
+        if (step > 0 && step <= range) {
             return step;
         }
 
@@ -108,7 +157,7 @@ st.markdown(
         } else if (range <= 1000) {
             return 10;
         } else {
-            return 100;
+            return Math.max(1, range / 100);
         }
     }
 
@@ -134,48 +183,66 @@ st.markdown(
                                slider.parentElement;
 
         if (!sliderContainer) {
+            console.warn('[ThreadX] Conteneur slider non trouvé');
             return;
         }
 
-        // Fonction de mise à jour
+        // Fonction de mise à jour avec gestion d'erreurs
         function updateSlider(event) {
-            event.preventDefault();
-            event.stopPropagation();
+            try {
+                event.preventDefault();
+                event.stopPropagation();
 
-            const currentValue = parseFloat(slider.value) || 0;
-            const delta = -Math.sign(event.deltaY);
-            const increment = delta * step;
+                const currentValue = parseFloat(slider.value) || 0;
+                const delta = -Math.sign(event.deltaY);
+                const increment = delta * step;
 
-            let newValue = currentValue + increment;
+                let newValue = currentValue + increment;
 
-            // Clamper entre min et max
-            newValue = Math.max(min, Math.min(max, newValue));
+                // Clamper entre min et max
+                newValue = Math.max(min, Math.min(max, newValue));
 
-            // Arrondir selon le step
-            newValue = Math.round(newValue / step) * step;
+                // Arrondir selon le step
+                newValue = Math.round(newValue / step) * step;
 
-            // Limiter la précision pour éviter les erreurs d'arrondi
-            const decimals = (step.toString().split('.')[1] || '').length;
-            newValue = parseFloat(newValue.toFixed(decimals));
+                // Limiter la précision pour éviter les erreurs d'arrondi
+                const decimals = Math.max(0, (step.toString().split('.')[1] || '').length);
+                newValue = parseFloat(newValue.toFixed(decimals));
 
-            // Mettre à jour la valeur
-            if (newValue !== currentValue) {
-                slider.value = newValue;
+                // Mettre à jour la valeur
+                if (Math.abs(newValue - currentValue) >= step * 0.01) {
+                    slider.value = newValue;
 
-                // Déclencher les événements pour que Streamlit détecte le changement
-                slider.dispatchEvent(new Event('input', { bubbles: true }));
-                slider.dispatchEvent(new Event('change', { bubbles: true }));
+                    // Déclencher les événements pour que Streamlit détecte le changement
+                    const inputEvent = new Event('input', { bubbles: true });
+                    const changeEvent = new Event('change', { bubbles: true });
 
-                // Visual feedback
-                sliderContainer.style.transition = 'transform 0.1s ease';
-                sliderContainer.style.transform = 'scale(1.02)';
-                setTimeout(() => {
-                    sliderContainer.style.transform = 'scale(1)';
-                }, 100);
+                    slider.dispatchEvent(inputEvent);
+                    setTimeout(() => slider.dispatchEvent(changeEvent), 5);
+
+                    // Visual feedback
+                    sliderContainer.style.transition = 'transform 0.1s ease';
+                    sliderContainer.style.transform = 'scale(1.02)';
+                    setTimeout(() => {
+                        sliderContainer.style.transform = 'scale(1)';
+                    }, 100);
+
+                    console.log(`[ThreadX] Slider mis à jour: ${currentValue} -> ${newValue}`);
+                }
+            } catch (error) {
+                console.error('[ThreadX] Erreur lors de la mise à jour du slider:', error);
             }
         }
 
-        // Ajouter l'event listener sur le conteneur (meilleure détection)
+        // Ajouter l'event listener directement sur le slider
+        slider.addEventListener('wheel', function(event) {
+            clearTimeout(updateTimeout);
+            updateTimeout = setTimeout(() => {
+                updateSlider(event);
+            }, UPDATE_DELAY);
+        }, { passive: false });
+
+        // Ajouter aussi sur le conteneur pour une meilleure détection
         sliderContainer.addEventListener('wheel', function(event) {
             // Vérifier si la souris est bien sur le slider
             const rect = sliderContainer.getBoundingClientRect();
@@ -185,7 +252,6 @@ st.markdown(
             if (mouseX >= rect.left && mouseX <= rect.right &&
                 mouseY >= rect.top && mouseY <= rect.bottom) {
 
-                // Utiliser un debounce pour éviter trop d'événements
                 clearTimeout(updateTimeout);
                 updateTimeout = setTimeout(() => {
                     updateSlider(event);
@@ -194,9 +260,14 @@ st.markdown(
         }, { passive: false });
 
         // Changer le curseur au survol
-        sliderContainer.style.cursor = 'ew-resize';
+        sliderContainer.addEventListener('mouseenter', () => {
+            sliderContainer.style.cursor = 'ew-resize';
+        });
 
-        // Log pour debug (commentable en production)
+        sliderContainer.addEventListener('mouseleave', () => {
+            sliderContainer.style.cursor = 'default';
+        });
+
         console.log(`[ThreadX] Slider wheel control activé: min=${min}, max=${max}, step=${step}`);
     }
 
@@ -207,59 +278,87 @@ st.markdown(
         // Sélecteurs multiples pour couvrir tous les types de sliders Streamlit
         const selectors = [
             'input[type="range"]',
-            '[data-baseweb="slider"] input',
-            '.stSlider input',
-            '[data-testid="stSlider"] input'
+            '[data-baseweb="slider"] input[type="range"]',
+            '.stSlider input[type="range"]',
+            '[data-testid="stSlider"] input[type="range"]',
+            '[class*="slider"] input[type="range"]'
         ];
 
+        let activatedCount = 0;
+
         selectors.forEach(selector => {
-            const sliders = document.querySelectorAll(selector);
-            sliders.forEach(slider => {
-                if (slider && slider.type === 'range') {
-                    addWheelControl(slider);
-                }
-            });
+            try {
+                const sliders = document.querySelectorAll(selector);
+                sliders.forEach(slider => {
+                    if (slider && slider.type === 'range') {
+                        addWheelControl(slider);
+                        activatedCount++;
+                    }
+                });
+            } catch (error) {
+                console.error(`[ThreadX] Erreur avec le sélecteur ${selector}:`, error);
+            }
         });
+
+        if (activatedCount > 0) {
+            console.log(`[ThreadX] ${activatedCount} slider(s) activé(s)`);
+        }
     }
 
     /**
      * Observer pour détecter les nouveaux sliders ajoutés dynamiquement
      */
     function setupMutationObserver() {
-        const observer = new MutationObserver(function(mutations) {
-            let shouldReactivate = false;
+        try {
+            const observer = new MutationObserver(function(mutations) {
+                let shouldReactivate = false;
 
-            mutations.forEach(function(mutation) {
-                mutation.addedNodes.forEach(function(node) {
-                    if (node.nodeType === 1) { // Element node
-                        // Vérifier si c'est un slider ou contient des sliders
-                        if (node.matches && (
-                            node.matches('input[type="range"]') ||
-                            node.matches('[data-testid="stSlider"]') ||
-                            node.matches('.stSlider')
-                        )) {
-                            shouldReactivate = true;
-                        } else if (node.querySelector) {
-                            const hasSlider = node.querySelector('input[type="range"]');
-                            if (hasSlider) {
-                                shouldReactivate = true;
+                mutations.forEach(function(mutation) {
+                    if (mutation.addedNodes) {
+                        mutation.addedNodes.forEach(function(node) {
+                            if (node.nodeType === 1) { // Element node
+                                // Vérifier si c'est un slider ou contient des sliders
+                                if (node.matches && (
+                                    node.matches('input[type="range"]') ||
+                                    node.matches('[data-testid="stSlider"]') ||
+                                    node.matches('.stSlider')
+                                )) {
+                                    shouldReactivate = true;
+                                } else if (node.querySelector) {
+                                    try {
+                                        const hasSlider = node.querySelector('input[type="range"]');
+                                        if (hasSlider) {
+                                            shouldReactivate = true;
+                                        }
+                                    } catch (e) {
+                                        // Ignore querySelector errors
+                                    }
+                                }
                             }
-                        }
+                        });
                     }
                 });
+
+                if (shouldReactivate) {
+                    setTimeout(activateAllSliders, 200);
+                }
             });
 
-            if (shouldReactivate) {
-                setTimeout(activateAllSliders, 100);
-            }
-        });
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true,
+                attributes: false,
+                attributeOldValue: false,
+                characterData: false,
+                characterDataOldValue: false
+            });
 
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-
-        console.log('[ThreadX] MutationObserver activé pour sliders dynamiques');
+            console.log('[ThreadX] MutationObserver activé pour sliders dynamiques');
+            return observer;
+        } catch (error) {
+            console.error('[ThreadX] Erreur lors de la création du MutationObserver:', error);
+            return null;
+        }
     }
 
     /**
@@ -268,28 +367,43 @@ st.markdown(
     function init() {
         console.log('[ThreadX] Initialisation contrôle molette sliders...');
 
-        // Première activation
-        activateAllSliders();
+        try {
+            // Première activation
+            activateAllSliders();
 
-        // Observer pour nouveaux sliders
-        setupMutationObserver();
+            // Observer pour nouveaux sliders
+            setupMutationObserver();
 
-        // Re-scanner périodiquement (fallback)
-        setInterval(activateAllSliders, 2000);
+            // Re-scanner périodiquement (fallback)
+            setInterval(activateAllSliders, 3000);
 
-        console.log('[ThreadX] ✅ Contrôle molette sliders activé globalement');
+            console.log('[ThreadX] ✅ Contrôle molette sliders activé globalement');
+        } catch (error) {
+            console.error('[ThreadX] Erreur lors de l\'initialisation:', error);
+        }
     }
 
     // Démarrer quand le DOM est prêt
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {
-        init();
+        // DOM déjà chargé, initialiser immédiatement
+        setTimeout(init, 100);
     }
 
     // Re-scanner après les transitions Streamlit
     window.addEventListener('load', function() {
+        setTimeout(activateAllSliders, 1000);
+    });
+
+    // Observer les changements de hash/URL pour Streamlit
+    window.addEventListener('hashchange', function() {
         setTimeout(activateAllSliders, 500);
+    });
+
+    // Observer les événements Streamlit spécifiques
+    document.addEventListener('streamlit:render', function() {
+        setTimeout(activateAllSliders, 300);
     });
 
 })();
@@ -463,6 +577,42 @@ def render_sidebar() -> None:
     with st.sidebar:
         st.markdown("# ThreadX v2.0")
         st.markdown("*Trading Quantitatif Haute Performance*")
+        st.markdown("---")
+
+        # Barre de progression du workflow
+        st.markdown("### 📍 Progression")
+        steps_total = 3
+        page_to_step = {"config": 1, "backtest": 2, "monitor": 3}
+        current_page = st.session_state.get("page", "config")
+        current_step = page_to_step.get(current_page, 1)
+
+        # Afficher la barre de progression
+        st.progress(current_step / steps_total)
+
+        # Afficher les étapes avec statut
+        st.caption(
+            f"Étape 1/3 : Configuration données "
+            f"{'✅' if current_step > 1 else '⏳' if current_step == 1 else '⭕'}"
+        )
+        st.caption(
+            f"Étape 2/3 : Optimisation "
+            f"{'✅' if current_step > 2 else '⏳' if current_step == 2 else '⭕'}"
+        )
+        st.caption(
+            f"Étape 3/3 : Monitoring système "
+            f"{'⏳' if current_step == 3 else '⭕'}"
+        )
+
+        # Bouton "Suivant" selon l'étape actuelle
+        if current_page == "config":
+            if st.button("➡️ Passer à l'Optimisation", type="primary", use_container_width=True):
+                st.session_state.page = "backtest"
+                st.rerun()
+        elif current_page == "backtest":
+            if st.button("➡️ Passer au Monitoring", type="primary", use_container_width=True):
+                st.session_state.page = "monitor"
+                st.rerun()
+
         st.markdown("---")
         st.markdown("### 🧭 Navigation")
         labels = list(PAGE_TITLES.values())

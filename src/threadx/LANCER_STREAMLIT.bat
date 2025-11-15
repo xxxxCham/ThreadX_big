@@ -8,4 +8,5 @@ set PYTHONPATH=D:\ThreadX_big\src
 set THREADX_DEBUG=0
 rem Silence all logs for performance testing (set to 0 to re-enable)
 set THREADX_SILENCE_LOGS=1
-streamlit run src\threadx\streamlit_app.py --server.port=8503
+streamlit run src\threadx\streamlit_app.py --server.port=8501
+

@@ -13,12 +13,10 @@ Architecture:
 import logging
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
-from threadx.indicators.bank import IndicatorBank
 from threadx.optimization.engine import SweepRunner
 from threadx.optimization.scenarios import ScenarioSpec
 
