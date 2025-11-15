@@ -151,7 +151,7 @@ def _save_config_to_history(
         st.session_state.config_history = st.session_state.config_history[-20:]
 
 
-def _render_config_history() -> dict | None:
+def _render_config_history(key_prefix: str = "") -> dict | None:
     """Affiche l'historique des configurations avec navigation."""
     with st.expander("📜 Historique des Configurations", expanded=False):
         history = st.session_state.get("config_history", [])
@@ -176,14 +176,14 @@ def _render_config_history() -> dict | None:
                 with col2:
                     if st.button(
                         "📥 Charger",
-                        key=f"load_hist_{len(history) - 1 - idx}",
+                        key=f"{key_prefix}load_hist_{len(history) - 1 - idx}",
                         use_container_width=True,
                     ):
                         return cfg
                 with col3:
                     if st.button(
                         "🗑️ Suppr.",
-                        key=f"del_hist_{len(history) - 1 - idx}",
+                        key=f"{key_prefix}del_hist_{len(history) - 1 - idx}",
                         use_container_width=True,
                     ):
                         st.session_state.config_history.pop(len(history) - 1 - idx)
@@ -388,6 +388,18 @@ def _render_config_badge(context: dict[str, Any]) -> None:
     )
 
 
+def _ensure_sweep_ui_defaults() -> None:
+    """Applique les presets globaux demandés pour le sweep."""
+    defaults = {
+        "sweep_force_processpool": True,
+        "sweep_workers_mode": "Manuel",
+        "sweep_manual_workers": 30,
+        "sweep_enable_llm": True,
+    }
+    for key, value in defaults.items():
+        st.session_state.setdefault(key, value)
+
+
 def _render_price_chart(
     df: pd.DataFrame, indicators: dict[str, dict[str, Any]]
 ) -> None:
@@ -516,8 +528,15 @@ def _render_metrics(metrics: dict[str, Any]) -> None:
         st.info("ℹ️ Aucune métrique calculée.")
         return
 
+    # Filtrer llm_interpretation pour affichage séparé
+    metrics_filtered = {k: v for k, v in metrics.items() if k != "llm_interpretation"}
+
+    if not metrics_filtered:
+        st.info("ℹ️ Aucune métrique numérique calculée.")
+        return
+
     # Organiser métriques en colonnes
-    metrics_list = list(metrics.items())
+    metrics_list = list(metrics_filtered.items())
     n_metrics = len(metrics_list)
     n_cols = min(4, n_metrics)
 
@@ -548,6 +567,62 @@ def _render_metrics(metrics: dict[str, Any]) -> None:
     )
 
 
+def _render_llm_insights(llm_interpretation: dict[str, Any] | None) -> None:
+    """Affiche les insights IA si disponibles."""
+    if not llm_interpretation:
+        return
+
+    st.markdown("---")
+    st.markdown("### 🤖 AI Insights")
+
+    # Interprétation globale
+    interpretation = llm_interpretation.get("interpretation", "")
+    if interpretation:
+        st.info(interpretation)
+
+    # Forces
+    strengths = llm_interpretation.get("strengths", [])
+    if strengths and len(strengths) > 0:
+        with st.expander("💪 Forces identifiées", expanded=True):
+            for strength in strengths:
+                st.markdown(f"✓ {strength}")
+
+    # Faiblesses
+    weaknesses = llm_interpretation.get("weaknesses", [])
+    if weaknesses and len(weaknesses) > 0:
+        with st.expander("⚠️ Points d'attention", expanded=True):
+            for weakness in weaknesses:
+                st.markdown(f"⚡ {weakness}")
+
+    # Recommandations
+    recommendations = llm_interpretation.get("recommendations", [])
+    if recommendations and len(recommendations) > 0:
+        with st.expander("💡 Recommandations", expanded=True):
+            for rec in recommendations:
+                st.markdown(f"→ {rec}")
+
+    # Métadonnées additionnelles
+    risk_level = llm_interpretation.get("risk_level", "UNKNOWN")
+    suitability = llm_interpretation.get("suitability", "")
+
+    if risk_level or suitability:
+        col1, col2 = st.columns(2)
+        with col1:
+            # Couleur selon niveau de risque
+            risk_colors = {
+                "LOW": "🟢",
+                "MODERATE": "🟡",
+                "HIGH": "🔴",
+                "UNKNOWN": "⚪"
+            }
+            risk_icon = risk_colors.get(risk_level, "⚪")
+            st.metric("Niveau de risque", f"{risk_icon} {risk_level}")
+
+        with col2:
+            if suitability:
+                st.markdown(f"**Profil adapté:**  \n{suitability}")
+
+
 # NOTE: _build_sweep_grid déjà défini plus haut — suppression de la redéfinition.
 
 
@@ -567,6 +642,7 @@ def _render_monte_carlo_tab() -> None:
         st.error("❌ Aucune stratégie disponible.")
         return
 
+    _ensure_sweep_ui_defaults()
     _render_config_badge(context)
 
     # === TEMPLATES ET HISTORIQUE ===
@@ -601,7 +677,7 @@ def _render_monte_carlo_tab() -> None:
 
     with col_history:
         # Afficher l'historique et gérer le chargement
-        loaded_config = _render_config_history()
+        loaded_config = _render_config_history(key_prefix="mc_")
         if loaded_config:
             if loaded_config["type"] == "Monte-Carlo":
                 st.session_state.strategy = loaded_config["strategy"]
@@ -871,6 +947,17 @@ def _render_monte_carlo_tab() -> None:
             key="mc_seed",
         )
 
+    # Option IA pour analyse de la meilleure configuration
+    st.markdown("---")
+    col_llm_mc, col_spacer_mc = st.columns([3, 1])
+    with col_llm_mc:
+        enable_llm_mc = st.checkbox(
+            "🤖 Activer l'analyse IA pour le meilleur scénario",
+            value=st.session_state.get("mc_enable_llm", False),
+            key="mc_enable_llm",
+            help="Génère une interprétation intelligente des résultats du meilleur scénario via LLM (ajoute ~10s)",
+        )
+
     if st.button(
         "🎲 Lancer Monte-Carlo",
         type="primary",
@@ -1100,6 +1187,7 @@ def _render_monte_carlo_tab() -> None:
             if isinstance(df_price, pd.DataFrame) and not df_price.empty:
                 try:
                     use_gpu_pref = st.session_state.get("mc_use_gpu", True)
+                    enable_llm_mc_analysis = st.session_state.get("mc_enable_llm", False)
                     result_best = run_backtest_gpu(
                         df=df_price,
                         strategy=strategy_name,
@@ -1108,6 +1196,8 @@ def _render_monte_carlo_tab() -> None:
                         timeframe=context["timeframe"],
                         use_gpu=use_gpu_pref,
                         enable_monitoring=False,
+                        enable_llm=enable_llm_mc_analysis,
+                        llm_model="gpt-oss:20b",
                     )
                     authentic = (
                         bool(result_best.metadata.get("gpu_enabled"))
@@ -1123,6 +1213,13 @@ def _render_monte_carlo_tab() -> None:
                         result_best.trades,
                         title="Meilleur scénario — OHLC + trades",
                     )
+                    
+                    # Afficher l'analyse IA si disponible
+                    llm_interp_mc = result_best.metrics.get("llm_interpretation")
+                    if llm_interp_mc:
+                        st.markdown("---")
+                        _render_llm_insights(llm_interp_mc)
+                    
                     with st.expander("Voir la table des trades", expanded=False):
                         _render_trades_table(result_best.trades)
                 except Exception as e:
@@ -1561,6 +1658,14 @@ def _render_backtest_tab() -> None:
             key="backtest_monitoring",
         )
 
+    # Option IA
+    enable_ai = st.checkbox(
+        "🤖 Activer l'analyse IA (LLM)",
+        value=st.session_state.get("backtest_enable_llm", False),
+        key="backtest_enable_llm",
+        help="Génère une interprétation intelligente des résultats via DeepSeek-R1 (ajoute ~10s)",
+    )
+
     if st.button(
         "🚀 Exécuter le Backtest",
         type="primary",
@@ -1598,6 +1703,8 @@ def _render_backtest_tab() -> None:
                         timeframe=context["timeframe"],
                         use_gpu=True,
                         enable_monitoring=monitoring,
+                        enable_llm=enable_ai,
+                        llm_model="deepseek-r1",
                     )
 
                     if monitoring:
@@ -1653,6 +1760,11 @@ def _render_backtest_tab() -> None:
         with res_tab2:
             _render_metrics(stored_result.metrics)
 
+            # Afficher AI Insights si disponibles
+            llm_interp = stored_result.metrics.get("llm_interpretation")
+            if llm_interp:
+                _render_llm_insights(llm_interp)
+
         with res_tab3:
             _render_trades_table(stored_result.trades)
 
@@ -1706,7 +1818,7 @@ def _render_optimization_tab() -> None:
 
     with col_history:
         # Afficher l'historique et gérer le chargement
-        loaded_config = _render_config_history()
+        loaded_config = _render_config_history(key_prefix="sweep_")
         if loaded_config:
             if loaded_config["type"] == "Sweep":
                 st.session_state.strategy = loaded_config["strategy"]
@@ -1724,12 +1836,15 @@ def _render_optimization_tab() -> None:
     col_strategy, col_gpu, col_multigpu, col_workers = st.columns(4)
 
     with col_strategy:
+        # Préréglage MA_Crossover
+        default_strategy = "MA_Crossover"
         strategy = st.selectbox(
             "Stratégie à optimiser",
             strategies,
             index=(
-                strategies.index(context["strategy"])
-                if context["strategy"] in strategies
+                strategies.index(default_strategy)
+                if default_strategy in strategies
+                else strategies.index(context["strategy"]) if context["strategy"] in strategies
                 else 0
             ),
             key="sweep_strategy",
@@ -1784,7 +1899,7 @@ def _render_optimization_tab() -> None:
     # Option avancée: forcer l'utilisation d'un ProcessPool (contourner le GIL)
     st.checkbox(
         "Forcer ProcessPool (CPU-bound)",
-        value=st.session_state.get("sweep_force_processpool", False),
+        value=st.session_state.get("sweep_force_processpool", True),
         key="sweep_force_processpool",
         help="Active un pool de processus (plus coûteux en mémoire) quand la stratégie est GIL-bound",
     )
@@ -1860,82 +1975,95 @@ def _render_optimization_tab() -> None:
         st.markdown(f"**{label}** ({key})")
         st.caption(param_description)
 
-        # Créer 2 colonnes: plage + sensibilité
-        col_range, col_sense = st.columns([3, 1])
+        # Préréglages spéciaux pour max_hold_bars et risk_per_trade (valeurs fixes)
+        if key == "max_hold_bars":
+            # Valeur fixe à 300 (pas de plage)
+            st.info("🔒 Préréglé à 300 (valeur fixe)")
+            selected_range = (300, 300)
+            adjusted_step = 1
+        elif key == "risk_per_trade":
+            # Valeur fixe à 0.02 (pas de plage)
+            st.info("🔒 Préréglé à 0.02 (valeur fixe)")
+            selected_range = (0.02, 0.02)
+            adjusted_step = 0.01
+        else:
+            # Comportement normal pour les autres paramètres
+            # Créer 2 colonnes: plage + sensibilité
+            col_range, col_sense = st.columns([3, 1])
 
-        with col_range:
-            if param_type == "int":
-                min_val = int(round(min_val))
-                max_val = int(round(max_val))
-                step_val = max(1, int(round(step_val)))
+            with col_range:
+                if param_type == "int":
+                    min_val = int(round(min_val))
+                    max_val = int(round(max_val))
+                    step_val = max(1, int(round(step_val)))
 
-                if stored_range:
-                    stored_low, stored_high = map(int, stored_range)
-                    default_tuple = (
-                        max(min_val, stored_low),
-                        min(max_val, stored_high),
+                    if stored_range:
+                        stored_low, stored_high = map(int, stored_range)
+                        default_tuple = (
+                            max(min_val, stored_low),
+                            min(max_val, stored_high),
+                        )
+                    else:
+                        default_tuple = (min_val, max_val)
+
+                    selected_range = st.slider(
+                        "Plage",
+                        min_value=min_val,
+                        max_value=max_val,
+                        value=(int(default_tuple[0]), int(default_tuple[1])),
+                        step=1,
+                        key=f"sweep_range_{key}",
+                        label_visibility="collapsed",
                     )
                 else:
-                    default_tuple = (min_val, max_val)
+                    min_val = float(min_val)
+                    max_val = float(max_val)
+                    step_val = float(step_val)
 
-                selected_range = st.slider(
-                    "Plage",
-                    min_value=min_val,
-                    max_value=max_val,
-                    value=(int(default_tuple[0]), int(default_tuple[1])),
-                    step=1,
-                    key=f"sweep_range_{key}",
-                    label_visibility="collapsed",
-                )
-            else:
-                min_val = float(min_val)
-                max_val = float(max_val)
-                step_val = float(step_val)
+                    if stored_range:
+                        stored_low_f = float(stored_range[0])
+                        stored_high_f = float(stored_range[1])
+                        default_tuple = (
+                            max(min_val, stored_low_f),
+                            min(max_val, stored_high_f),
+                        )
+                    else:
+                        default_tuple = (min_val, max_val)
 
-                if stored_range:
-                    stored_low_f = float(stored_range[0])
-                    stored_high_f = float(stored_range[1])
-                    default_tuple = (
-                        max(min_val, stored_low_f),
-                        min(max_val, stored_high_f),
+                    selected_range = st.slider(
+                        "Plage",
+                        min_value=min_val,
+                        max_value=max_val,
+                        value=(float(default_tuple[0]), float(default_tuple[1])),
+                        step=step_val,
+                        key=f"sweep_range_{key}",
+                        label_visibility="collapsed",
+                    )
+
+            # Sensibilité : Appliquer le multiplicateur global au step de base
+            with col_sense:
+                # Calculer le step ajusté avec le multiplicateur global
+                base_step = step_val
+                adjusted_step = base_step * global_sensitivity
+
+                if param_type == "int":
+                    # Pour entiers : step ajusté (minimum 1)
+                    adjusted_step = max(1, int(round(adjusted_step)))
+                    # Afficher l'information sur l'ajustement
+                    st.metric(
+                        "📊 Step",
+                        f"{int(adjusted_step)}",
+                        delta=f"×{global_sensitivity:.1f}",
+                        label_visibility="collapsed",
                     )
                 else:
-                    default_tuple = (min_val, max_val)
-
-                selected_range = st.slider(
-                    "Plage",
-                    min_value=min_val,
-                    max_value=max_val,
-                    value=(float(default_tuple[0]), float(default_tuple[1])),
-                    step=step_val,
-                    key=f"sweep_range_{key}",
-                    label_visibility="collapsed",
-                )
-
-        # Sensibilité : Appliquer le multiplicateur global au step de base
-        with col_sense:
-            # Calculer le step ajusté avec le multiplicateur global
-            base_step = step_val
-            adjusted_step = base_step * global_sensitivity
-
-            if param_type == "int":
-                # Pour entiers : step ajusté (minimum 1)
-                adjusted_step = max(1, int(round(adjusted_step)))
-                # Afficher l'information sur l'ajustement
-                st.metric(
-                    "📊 Step",
-                    f"{int(adjusted_step)}",
-                    delta=f"×{global_sensitivity:.1f}",
-                    label_visibility="collapsed",
-                )
-            else:
-                # Pour floats : afficher le step ajusté avec précision
-                st.metric(
-                    "📊 Step",
-                    f"{adjusted_step:.4f}",
-                    delta=f"×{global_sensitivity:.1f}",
-                    label_visibility="collapsed",
-                )
+                    # Pour floats : afficher le step ajusté avec précision
+                    st.metric(
+                        "📊 Step",
+                        f"{adjusted_step:.4f}",
+                        delta=f"×{global_sensitivity:.1f}",
+                        label_visibility="collapsed",
+                    )
 
         range_preferences[key] = (selected_range[0], selected_range[1])
         param_ranges[key] = (selected_range[0], selected_range[1])
@@ -2188,6 +2316,17 @@ def _render_optimization_tab() -> None:
         )
         st.session_state["sweep_results"] = results
 
+    # Option IA pour analyse de la meilleure configuration
+    st.markdown("---")
+    col_llm, col_spacer = st.columns([3, 1])
+    with col_llm:
+        enable_llm = st.checkbox(
+            "🤖 Activer l'analyse IA pour la meilleure configuration",
+            value=st.session_state.get("sweep_enable_llm", True),
+            key="sweep_enable_llm",
+            help="Génère une interprétation intelligente des résultats de la meilleure config via LLM (ajoute ~10s)",
+        )
+
     button_disabled = total_combinations > 3000000
     if st.button(
         "🔬 Lancer le Sweep",
@@ -2343,6 +2482,7 @@ def _render_optimization_tab() -> None:
             if isinstance(df_price, pd.DataFrame) and not df_price.empty:
                 try:
                     use_gpu_pref = st.session_state.get("sweep_use_gpu", True)
+                    enable_llm_analysis = st.session_state.get("sweep_enable_llm", False)
                     result_best = run_backtest_gpu(
                         df=df_price,
                         strategy=strategy_name,
@@ -2351,6 +2491,8 @@ def _render_optimization_tab() -> None:
                         timeframe=context["timeframe"],
                         use_gpu=use_gpu_pref,
                         enable_monitoring=False,
+                        enable_llm=enable_llm_analysis,
+                        llm_model="gpt-oss:20b",
                     )
                     authentic = (
                         bool(result_best.metadata.get("gpu_enabled"))
@@ -2366,6 +2508,13 @@ def _render_optimization_tab() -> None:
                         result_best.trades,
                         title="Meilleure configuration — OHLC + trades",
                     )
+                    
+                    # Afficher l'analyse IA si disponible
+                    llm_interp = result_best.metrics.get("llm_interpretation")
+                    if llm_interp:
+                        st.markdown("---")
+                        _render_llm_insights(llm_interp)
+                    
                     with st.expander("Voir la table des trades", expanded=False):
                         _render_trades_table(result_best.trades)
                 except Exception as e:
@@ -2562,7 +2711,7 @@ def main() -> None:
     st.markdown("*Optimisez vos paramètres de trading avec Sweep ou Monte-Carlo*")
     st.markdown("---")
 
-    # Onglets principaux (Backtest Simple supprimé)
+    # Onglets principaux
     tab1, tab2 = st.tabs(["🔬 Sweep", "🎲 Monte-Carlo"])
 
     with tab1:
