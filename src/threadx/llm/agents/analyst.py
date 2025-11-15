@@ -275,11 +275,23 @@ Réponds en JSON:
 
     def _format_sweep_results(self, df: pd.DataFrame) -> str:
         """Formate un DataFrame de sweep pour le LLM (texte tabulaire lisible)."""
-        # Colonnes clés à afficher
-        key_cols = ["strategy", "sharpe_ratio", "total_return", "max_drawdown"]
-        param_cols = [c for c in df.columns if c not in key_cols and not c.startswith("_")]
+        # Colonnes clés à afficher (vérifier qu'elles existent)
+        key_cols = []
+        for col in ["strategy", "sharpe_ratio", "total_return", "max_drawdown"]:
+            if col in df.columns:
+                key_cols.append(col)
+        
+        # Colonnes de paramètres (exclure métriques et colonnes internes)
+        metrics = ["sharpe_ratio", "total_return", "max_drawdown", "win_rate", "profit_factor", 
+                   "avg_win", "avg_loss", "total_trades", "strategy"]
+        param_cols = [c for c in df.columns if c not in metrics and not c.startswith("_")]
 
         display_cols = key_cols + param_cols[:5]  # Limiter à 5 params pour lisibilité
+        
+        # Si aucune colonne clé, afficher au moins les paramètres
+        if not display_cols:
+            display_cols = list(df.columns)[:8]
+        
         return str(df[display_cols].to_string(index=False))
 
     def _format_backtest_result(self, result: dict[str, Any], params: dict[str, Any]) -> str:
