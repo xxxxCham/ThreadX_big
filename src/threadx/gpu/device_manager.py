@@ -414,19 +414,38 @@ def get_memory_info(device_name: str) -> dict[str, float]:
 
 
 # Export des exceptions CuPy si disponibles
-if CUPY_AVAILABLE and cp and hasattr(cp, "cuda"):
-    CudaMemoryError = cp.cuda.memory.OutOfMemoryError
-    CudaRuntimeError = cp.cuda.runtime.CUDARuntimeError
+if CUPY_AVAILABLE and cp:
+    try:
+        # Tentative d'import des exceptions CuPy (compatible avec différentes versions)
+        from cupy.cuda.memory import OutOfMemoryError as CudaMemoryError
+    except (ImportError, AttributeError):
+        # Fallback si cupy.cuda.memory n'existe pas
+        try:
+            # Certaines versions de CuPy utilisent directement cp.cuda
+            CudaMemoryError = cp.cuda.OutOfMemoryError
+        except AttributeError:
+            # Dernière tentative: exception générique CuPy
+            class CudaMemoryError(RuntimeError):
+                """Exception pour erreurs mémoire GPU (fallback)"""
+                pass
+    
+    try:
+        from cupy.cuda.runtime import CUDARuntimeError as CudaRuntimeError
+    except (ImportError, AttributeError):
+        try:
+            CudaRuntimeError = cp.cuda.runtime.CUDARuntimeError
+        except AttributeError:
+            class CudaRuntimeError(RuntimeError):
+                """Exception pour erreurs runtime GPU (fallback)"""
+                pass
 else:
-    # Fallback exceptions
+    # Fallback exceptions si CuPy indisponible
     class CudaMemoryError(RuntimeError):
         """Exception pour erreurs mémoire GPU (fallback)"""
-
         pass
 
     class CudaRuntimeError(RuntimeError):
         """Exception pour erreurs runtime GPU (fallback)"""
-
         pass
 
 
