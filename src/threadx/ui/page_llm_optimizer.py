@@ -55,11 +55,18 @@ def render_page():
         strategy_name = st.selectbox(
             "Stratégie",
             options=["MA_Crossover", "Bollinger_Breakout", "EMA_Cross", "ATR_Channel"],
+            index=0,  # MA_Crossover sélectionné par défaut
             help="Stratégie à optimiser"
         )
         
         # Récupérer specs de la stratégie
         param_specs = parameter_specs_for(strategy_name)
+        
+        # Préprogrammer valeurs spécifiques pour MA_Crossover
+        ma_crossover_presets = {
+            "max_hold_bars": {"min": 300, "max": 300, "n_values": 1},  # Fixé à 20 (via override)
+            "risk_per_trade": {"min": 0.02, "max": 0.02, "n_values": 1}  # Fixé à 0.005 (via override)
+        }
         
         st.markdown("**Paramètres du sweep:**")
         sweep_params = {}
@@ -71,18 +78,25 @@ def render_page():
                 sweep_params[param_name] = [False, True]
                 st.caption(f"✓ {param_name}: [False, True]")
             else:
-                min_val = spec.get("min", 0)
-                max_val = spec.get("max", 100)
-                step = spec.get("step", 1)
-                
-                # Générer 3-4 valeurs dans la plage
-                n_values = st.slider(
-                    f"Nombre valeurs {param_name}",
-                    min_value=2,
-                    max_value=6,
-                    value=3,
-                    key=f"n_{param_name}"
-                )
+                # Utiliser presets si disponible pour MA_Crossover
+                if strategy_name == "MA_Crossover" and param_name in ma_crossover_presets:
+                    preset = ma_crossover_presets[param_name]
+                    min_val = preset["min"]
+                    max_val = preset["max"]
+                    n_values = preset["n_values"]
+                else:
+                    min_val = spec.get("min", 0)
+                    max_val = spec.get("max", 100)
+                    step = spec.get("step", 1)
+                    
+                    # Générer 3-4 valeurs dans la plage
+                    n_values = st.slider(
+                        f"Nombre valeurs {param_name}",
+                        min_value=2,
+                        max_value=6,
+                        value=3,
+                        key=f"n_{param_name}"
+                    )
                 
                 values = [min_val + i * (max_val - min_val) / (n_values - 1) 
                          for i in range(n_values)]
@@ -131,6 +145,43 @@ def render_page():
         )
         
         use_gpu = st.checkbox("Utiliser GPU", value=True)
+        
+        # Checkbox analyse IA (cochée par défaut)
+        enable_ai_analysis = st.checkbox(
+            "⚡ Activer l'analyse IA pour la meilleure configuration",
+            value=True,
+            help="Les LLM analyseront les résultats pour proposer des optimisations"
+        )
+    
+    # Consignes pour les LLM
+    if enable_ai_analysis:
+        with st.expander("📋 Consignes pour les Agents LLM", expanded=False):
+            st.markdown("""
+            **Instructions système pour Analyst & Strategist** :
+            
+            🎯 **Objectifs prioritaires** :
+            - Maximiser le Sharpe Ratio (risque/rendement)
+            - Minimiser le drawdown maximum
+            - Maintenir un win rate > 50%
+            - Optimiser le nombre de trades (ni trop, ni trop peu)
+            
+            📊 **Approche d'analyse** :
+            - Identifier les patterns dans les meilleures configurations
+            - Détecter les corrélations entre paramètres
+            - Proposer des modifications incrémentales (pas de changements brutaux)
+            - Valider la cohérence des propositions avec les contraintes de risque
+            
+            ⚠️ **Contraintes** :
+            - `risk_per_trade` : Rester dans [0.005, 0.02]
+            - `max_hold_bars` : Adapter selon la volatilité détectée
+            - Stop Loss / Take Profit : Ratio min 1:1.5
+            - Toujours respecter les plages min/max des paramètres
+            
+            💡 **Recommandations** :
+            - Privilégier la robustesse à la performance brute
+            - Tester les propositions sur différents régimes de marché
+            - Documenter clairement le raisonnement derrière chaque modification
+            """)
     
     st.divider()
     

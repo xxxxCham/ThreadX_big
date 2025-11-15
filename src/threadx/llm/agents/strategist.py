@@ -81,8 +81,36 @@ class Strategist(BaseAgent):
             patterns, recommendations, trade_offs, current_params, param_specs
         )
 
-        # Prompt pour génération créative
-        prompt = f"""Tu es un expert en optimisation de stratégies de trading. Génère {n_proposals} propositions de modifications de paramètres.
+        # Prompt pour génération créative avec consignes système
+        system_instructions = """
+🎯 OBJECTIFS PRIORITAIRES:
+- Maximiser le Sharpe Ratio (risque/rendement optimal)
+- Minimiser le drawdown maximum (protection du capital)
+- Maintenir un win rate > 50% (cohérence stratégique)
+- Optimiser le nombre de trades (ni trop, ni trop peu)
+
+📊 APPROCHE DE PROPOSITION:
+- Modifications incrémentielles (pas de changements brutaux)
+- Exploiter les patterns identifiés dans les meilleures configs
+- Tester des zones peu explorées (diversification)
+- Valider la cohérence logique des propositions
+
+⚠️ CONTRAINTES CRITIQUES:
+- risk_per_trade: TOUJOURS dans [0.005, 0.02]
+- max_hold_bars: Adapter selon volatilité (range typique 20-150)
+- Stop Loss / Take Profit: Ratio minimum 1:1.5 (asymétrie favorable)
+- Respecter STRICTEMENT les plages min/max des paramètres
+
+💡 PRINCIPES:
+- Privilégier robustesse > performance brute (éviter overfitting)
+- Documenter clairement le raisonnement (transparence)
+- 3 approches: Conservative (stabilité), Aggressive (rendement), Exploratoire (découverte)
+- Chaque proposition doit être testable immédiatement
+"""
+
+        prompt = f"""{system_instructions}
+
+Tu es un expert en optimisation de stratégies de trading. Génère {n_proposals} propositions de modifications de paramètres.
 
 {context_str}
 

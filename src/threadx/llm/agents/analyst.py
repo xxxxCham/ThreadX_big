@@ -79,8 +79,35 @@ class Analyst(BaseAgent):
         # Préparer données pour le LLM
         configs_str = self._format_sweep_results(top_df)
 
-        # Prompt pour analyse quantitative
-        prompt = f"""Analyse les {top_n} meilleures configurations de backtest ci-dessous.
+        # Prompt pour analyse quantitative avec consignes système
+        system_instructions = """
+🎯 OBJECTIFS PRIORITAIRES:
+- Maximiser le Sharpe Ratio (risque/rendement optimal)
+- Minimiser le drawdown maximum (protection du capital)
+- Maintenir un win rate > 50% (cohérence stratégique)
+- Optimiser le nombre de trades (éviter over/under-trading)
+
+📊 APPROCHE D'ANALYSE:
+- Identifier les patterns reproductibles dans les meilleures configurations
+- Détecter les corrélations entre paramètres (interactions non-linéaires)
+- Privilégier la robustesse à la performance brute (éviter overfitting)
+- Analyser les trade-offs (ex: rendement vs stabilité)
+
+⚠️ CONTRAINTES CRITIQUES:
+- risk_per_trade: Rester dans [0.005, 0.02] (gestion risque stricte)
+- max_hold_bars: Adapter selon volatilité observée
+- Stop Loss / Take Profit: Ratio minimum 1:1.5 (asymétrie favorable)
+- Respecter TOUJOURS les plages min/max des paramètres
+
+💡 PRINCIPES:
+- Préférer solutions simples et explicables
+- Documenter clairement le raisonnement
+- Signaler les anomalies ou incohérences dans les données
+"""
+        
+        prompt = f"""{system_instructions}
+
+Analyse les {top_n} meilleures configurations de backtest ci-dessous.
 
 Résultats du sweep (triés par Sharpe ratio):
 {configs_str}
