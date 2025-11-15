@@ -21,8 +21,8 @@ if str(project_root) not in sys.path:
 
 from threadx.llm.agents.analyst import Analyst
 from threadx.llm.agents.strategist import Strategist
-from threadx.backtest.engine import BacktestEngine
-from threadx.ui.strategy_registry import get_strategy_class, get_strategy_param_specs
+from threadx.ui.backtest_bridge import run_backtest_gpu
+from threadx.ui.strategy_registry import parameter_specs_for
 
 
 def render_page():
@@ -59,7 +59,7 @@ def render_page():
         )
         
         # Récupérer specs de la stratégie
-        param_specs = get_strategy_param_specs(strategy_name)
+        param_specs = parameter_specs_for(strategy_name)
         
         st.markdown("**Paramètres du sweep:**")
         sweep_params = {}
@@ -293,7 +293,7 @@ def run_multi_llm_optimization(
                     start_time = time.time()
                     
                     # Construire param_specs pour validation
-                    param_specs_full = get_strategy_param_specs(strategy_name)
+                    param_specs_full = parameter_specs_for(strategy_name)
                     
                     proposals_result = strategist.propose_modifications(
                         analysis=analysis_result,
@@ -383,28 +383,24 @@ def execute_sweep(strategy_name: str, sweep_params: dict, use_gpu: bool):
         "volume": np.random.randint(100, 1000, n_candles),
     })
     
-    # Initialiser engine
-    strategy_class = get_strategy_class(strategy_name)
-    engine = BacktestEngine(use_gpu=use_gpu)
-    
-    # Exécuter tous les backtests
+    # Exécuter tous les backtests avec run_backtest_gpu
     results = []
     
     for params in _generate_combinations(sweep_params):
         try:
-            result = engine.run(
-                strategy_class=strategy_class,
-                data=df_market,
+            result = run_backtest_gpu(
+                df=df_market,
+                strategy=strategy_name,
                 params=params,
             )
             
             results.append({
                 **params,
-                "sharpe_ratio": result.sharpe_ratio,
-                "total_return": result.total_return,
-                "max_drawdown": result.max_drawdown,
-                "win_rate": getattr(result, "win_rate", 0.0),
-                "total_trades": getattr(result, "total_trades", 0),
+                "sharpe_ratio": result.metrics.get("sharpe_ratio", 0.0),
+                "total_return": result.metrics.get("total_return", 0.0),
+                "max_drawdown": result.metrics.get("max_drawdown", 0.0),
+                "win_rate": result.metrics.get("win_rate", 0.0),
+                "total_trades": len(result.trades),
             })
         except Exception:
             continue
@@ -432,26 +428,24 @@ def test_proposals(strategy_name: str, proposals: list, baseline_config: dict, u
         "volume": np.random.randint(100, 1000, n_candles),
     })
     
-    strategy_class = get_strategy_class(strategy_name)
-    engine = BacktestEngine(use_gpu=use_gpu)
-    
+    # Utiliser run_backtest_gpu au lieu de BacktestEngine
     test_results = []
     
     for prop in proposals:
         try:
-            result = engine.run(
-                strategy_class=strategy_class,
-                data=df_market,
+            result = run_backtest_gpu(
+                df=df_market,
+                strategy=strategy_name,
                 params=prop["params"],
             )
             
             test_results.append({
                 "name": prop["name"],
                 "params": prop["params"],
-                "sharpe_ratio": result.sharpe_ratio,
-                "total_return": result.total_return,
-                "max_drawdown": result.max_drawdown,
-                "win_rate": getattr(result, "win_rate", 0.0),
+                "sharpe_ratio": result.metrics.get("sharpe_ratio", 0.0),
+                "total_return": result.metrics.get("total_return", 0.0),
+                "max_drawdown": result.metrics.get("max_drawdown", 0.0),
+                "win_rate": result.metrics.get("win_rate", 0.0),
             })
         except Exception:
             continue
