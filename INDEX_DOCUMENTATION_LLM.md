@@ -4,7 +4,14 @@
 
 Vous cherchez à :
 
-### 🚀 Démarrer Rapidement
+### ⚡ Démarrer EN 1 MINUTE
+→ **[QUICKSTART_LLM.md](./QUICKSTART_LLM.md)** ⭐ **NOUVEAU**
+- 3 commandes seulement
+- Configuration résumée (1 tableau)
+- Workflow 30 secondes
+- Troubleshooting express
+
+### 🚀 Démarrer Rapidement (Guide Complet)
 → **[GUIDE_UTILISATION_LLM_OPTIMIZER.md](./GUIDE_UTILISATION_LLM_OPTIMIZER.md)**
 - Démarrage en 4 étapes
 - Configuration préprogrammée
@@ -53,6 +60,7 @@ Vous cherchez à :
 ```
 ThreadX_big/
 ├── INDEX_DOCUMENTATION_LLM.md              ← VOUS ÊTES ICI
+├── QUICKSTART_LLM.md                       ← ⚡ Quick Start (104 lignes) **NOUVEAU**
 │
 ├── GUIDE_UTILISATION_LLM_OPTIMIZER.md      ← 📘 Guide utilisateur (516 lignes)
 ├── SYNTHESE_VISUELLE_LLM.md                ← 🎨 Synthèse visuelle (480 lignes)
@@ -81,10 +89,11 @@ ThreadX_big/
 
 ### Pour Utilisateurs Finaux
 
-1. **Démarrage** → `GUIDE_UTILISATION_LLM_OPTIMIZER.md` (sections 1-3)
-2. **Lancement** → Interface Streamlit (Page 3: Multi-LLM)
-3. **Compréhension** → `SYNTHESE_VISUELLE_LLM.md` (exemples résultats)
-4. **Dépannage** → `GUIDE_UTILISATION_LLM_OPTIMIZER.md` (section Troubleshooting)
+1. **Démarrage Express** → `QUICKSTART_LLM.md` ⚡ **START HERE**
+2. **Démarrage Détaillé** → `GUIDE_UTILISATION_LLM_OPTIMIZER.md` (sections 1-3)
+3. **Lancement** → Interface Streamlit (Page 3: Multi-LLM)
+4. **Compréhension** → `SYNTHESE_VISUELLE_LLM.md` (exemples résultats)
+5. **Dépannage** → `GUIDE_UTILISATION_LLM_OPTIMIZER.md` (section Troubleshooting)
 
 ### Pour Développeurs
 
@@ -104,6 +113,22 @@ ThreadX_big/
 ---
 
 ## 📊 Contenu par Document
+
+### ⚡ QUICKSTART_LLM.md (104 lignes) **NOUVEAU**
+
+**Sections** :
+- ✅ 3 commandes lancement
+- ✅ Configuration tableau récap
+- ✅ Workflow 30 secondes
+- ✅ Troubleshooting 4 erreurs
+- ✅ Liens docs complètes
+- ✅ État système (commits, tests)
+
+**Public** : **TOUS - Point d'entrée prioritaire**
+
+**Format** : Ultra-compact, démarrage <1 minute
+
+---
 
 ### 📘 GUIDE_UTILISATION_LLM_OPTIMIZER.md (516 lignes)
 
@@ -255,6 +280,9 @@ ThreadX_big/
 
 ### Je veux...
 
+**...démarrer LE PLUS RAPIDEMENT POSSIBLE (<1 min)**  
+→ `QUICKSTART_LLM.md` ⚡ **START HERE**
+
 **...démarrer le système rapidement**  
 → `GUIDE_UTILISATION` section "Démarrage Rapide" (3 commandes)
 
@@ -284,6 +312,7 @@ ThreadX_big/
 ## 🎯 Checklist Documentation
 
 ### Utilisateur Final
+- [ ] **Lire `QUICKSTART_LLM` (1 page)** ⚡ **PRIORITÉ**
 - [ ] Lire `GUIDE_UTILISATION` sections 1-3
 - [ ] Regarder `SYNTHESE_VISUELLE` diagrammes
 - [ ] Lancer interface Streamlit
@@ -309,13 +338,14 @@ ThreadX_big/
 
 | Document | Lignes | Mots | Public | Format |
 |----------|--------|------|--------|--------|
+| QUICKSTART_LLM | 104 | ~700 | **TOUS** | Quick Start ⚡ |
 | GUIDE_UTILISATION | 516 | ~4,200 | Utilisateurs | Guide pratique |
 | SYNTHESE_VISUELLE | 480 | ~3,100 | Tous | Diagrammes ASCII |
 | RESUME_FINAL | 509 | ~4,000 | Développeurs | Récapitulatif tech |
 | README_MULTI_LLM | ~200 | ~1,500 | Tous | Vue d'ensemble |
 | ARCHITECTURE | ~250 | ~2,000 | Dev avancés | Doc technique |
 | POC_MULTI_LLM | ~150 | ~1,200 | Data scientists | Doc POC |
-| **TOTAL** | **~2,100** | **~16,000** | - | - |
+| **TOTAL** | **~2,200** | **~16,700** | - | - |
 
 ---
 
@@ -345,6 +375,6 @@ ThreadX_big/
 ---
 
 **Dernière mise à jour** : 15 novembre 2025  
-**Version** : 1.0 - Multi-LLM Optimizer  
-**Branche** : `llm` (7 commits)  
+**Version** : 1.1 - Multi-LLM Optimizer (+ Quick Start)  
+**Branche** : `llm` (9 commits)  
 **Statut Documentation** : ✅ **COMPLÈTE (100%)**
