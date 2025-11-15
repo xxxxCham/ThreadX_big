@@ -220,13 +220,34 @@ def check_prerequisites():
         # Vérifier GPU
         try:
             import cupy as cp
-            gpu_available = cp.cuda.is_available()
+            # Tenter de déterminer si GPU disponible (compatible toutes versions CuPy)
+            try:
+                # Méthode 1: is_available() (versions récentes)
+                gpu_available = cp.cuda.is_available()
+            except AttributeError:
+                # Méthode 2: device_count (versions plus anciennes)
+                try:
+                    gpu_available = cp.cuda.runtime.getDeviceCount() > 0
+                except:
+                    # Méthode 3: Tenter allocation mémoire
+                    try:
+                        _ = cp.array([1])
+                        gpu_available = True
+                    except:
+                        gpu_available = False
+            
             if gpu_available:
-                st.success(f"✅ GPU disponible (CUDA {cp.cuda.runtime.runtimeGetVersion()})")
+                try:
+                    cuda_version = cp.cuda.runtime.runtimeGetVersion()
+                    st.success(f"✅ GPU disponible (CUDA {cuda_version})")
+                except:
+                    st.success("✅ GPU disponible")
             else:
                 st.warning("⚠️ GPU non disponible (CPU sera utilisé)")
         except ImportError:
             st.warning("⚠️ CuPy non installé (CPU sera utilisé)")
+        except Exception as e:
+            st.warning(f"⚠️ Erreur vérification GPU: {e} (CPU sera utilisé)")
 
 
 def run_multi_llm_optimization(
