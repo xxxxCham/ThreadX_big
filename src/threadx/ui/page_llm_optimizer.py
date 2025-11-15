@@ -94,18 +94,22 @@ def render_page():
                         f"Nombre valeurs {param_name}",
                         min_value=2,
                         max_value=6,
-                        value=3,
-                        key=f"n_{param_name}"
-                    )
-                
-                values = [min_val + i * (max_val - min_val) / (n_values - 1) 
+                    value=3,
+                    key=f"n_{param_name}"
+                )
+            
+            # Générer valeurs avec protection division par zéro
+            if n_values == 1:
+                values = [min_val]
+            else:
+                values = [min_val + i * (max_val - min_val) / (n_values - 1)
                          for i in range(n_values)]
-                
-                if param_type == "integer":
-                    values = [int(v) for v in values]
-                
-                sweep_params[param_name] = values
-                st.caption(f"✓ {param_name}: {values}")
+
+            if param_type == "integer":
+                values = [int(v) for v in values]
+
+            sweep_params[param_name] = values
+            st.caption(f"✓ {param_name}: {values}")
         
         total_configs = 1
         for vals in sweep_params.values():
