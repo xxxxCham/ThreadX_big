@@ -423,10 +423,31 @@ def run_multi_llm_optimization(
         progress_bar.progress(100)
         status_text.success("### 🎉 Optimisation Multi-LLM terminée !")
         
+    except RuntimeError as e:
+        error_msg = str(e)
+        
+        # Détection erreur CUDA Ollama
+        if "CUDA" in error_msg or "GPU" in error_msg:
+            st.error("### ❌ Erreur GPU Ollama détectée")
+            st.warning(
+                "**Le processus Ollama a rencontré une erreur GPU (CUDA).**\n\n"
+                "**Solutions recommandées:**\n"
+                "1. 🔄 **Redémarrez Ollama**: Ouvrez un terminal et tapez `ollama serve`\n"
+                "2. 🔍 **Vérifiez votre GPU**: Assurez-vous qu'il n'est pas utilisé par une autre application\n"
+                "3. 📦 **Utilisez un modèle plus petit**: Essayez `deepseek-r1:1.5b` ou `gemma2:2b`\n"
+                "4. 🚫 **Fermez autres applications GPU**: Libérez la mémoire GPU\n"
+                "5. 💻 **Mode CPU**: Configurez Ollama pour utiliser le CPU si le GPU est instable"
+            )
+            with st.expander("🔍 Détails techniques de l'erreur"):
+                st.code(error_msg)
+        else:
+            st.error(f"❌ Erreur d'exécution: {error_msg}")
+            
     except Exception as e:
-        st.error(f"❌ Erreur: {e}")
+        st.error(f"❌ Erreur inattendue: {e}")
         import traceback
-        st.code(traceback.format_exc())
+        with st.expander("🐛 Traceback complet"):
+            st.code(traceback.format_exc())
 
 
 def _generate_combinations(sweep_params: dict):

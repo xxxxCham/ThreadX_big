@@ -138,12 +138,29 @@ class LLMClient:
                 return content
 
             except Exception as e:
+                error_msg = str(e).lower()
+                
+                # Détection erreur CUDA - arrêt immédiat sans retry
+                if "cuda error" in error_msg or "llama runner process has terminated" in error_msg:
+                    self.logger.error(
+                        f"Erreur CUDA détectée avec Ollama. Le GPU n'est pas disponible ou surchargé. "
+                        f"Redémarrez Ollama ou utilisez un modèle CPU: {e}"
+                    )
+                    raise RuntimeError(
+                        f"Erreur GPU Ollama (CUDA): {e}\n"
+                        f"Solutions:\n"
+                        f"1. Redémarrez Ollama: 'ollama serve'\n"
+                        f"2. Vérifiez disponibilité GPU\n"
+                        f"3. Utilisez un modèle plus petit\n"
+                        f"4. Fermez autres applications GPU"
+                    )
+                
                 self.logger.warning(
                     f"LLM request failed (attempt {attempt + 1}/{self.max_retries}): {e}"
                 )
                 if attempt == self.max_retries - 1:
                     raise RuntimeError(f"LLM request failed after {self.max_retries} attempts: {e}")
-                time.sleep(1)  # Backoff
+                time.sleep(2)  # Backoff augmenté pour stabilité
 
         return ""  # Unreachable but for type checker
 
