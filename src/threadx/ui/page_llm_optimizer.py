@@ -44,6 +44,73 @@ def render_page():
     with st.expander("⚙️ Prérequis & Configuration", expanded=False):
         check_prerequisites()
     
+    # Aide optimisation Ollama GPU
+    with st.expander("🔧 Résoudre erreurs CUDA Ollama (saturation GPU)", expanded=False):
+        st.markdown("""
+        **Si vous rencontrez une erreur `CUDA error` ou `llama runner process has terminated`**, 
+        cela indique généralement une saturation de la mémoire GPU lors du chargement/inférence du modèle.
+        
+        ### 📊 Diagnostic rapide
+        """)
+        
+        st.code("""# Vérifier occupation GPU
+nvidia-smi
+nvidia-smi -q -d MEMORY""", language="powershell")
+        
+        st.markdown("""
+        ### ⚙️ Réglages recommandés (Ollama)
+        
+        **1. Localiser la configuration du modèle**
+        - Dossier modèles Ollama : `%USERPROFILE%\\.ollama\\models\\`
+        - Cherchez le fichier `config.json` ou `modelfile` du modèle utilisé
+        
+        **2. Appliquer ces paramètres (sauvegardez l'original avant)**
+        """)
+        
+        config_snippet = {
+            "use_mmap": True,
+            "num_gpu_layers": 48,
+            "batch_size": 256,
+            "num_threads": 16,
+            "main_gpu": 0
+        }
+        
+        st.json(config_snippet)
+        
+        st.markdown("""
+        **Explications :**
+        - `use_mmap: true` → Réduit les pics mémoire lors du chargement
+        - `num_gpu_layers: 48` → Moins de layers GPU = plus de marge (au lieu de 63)
+        - `batch_size: 256` → Réduit la taille batch (au lieu de 512)
+        - `main_gpu: 0` → Utilisez le GPU avec le plus de mémoire (vérifiez avec `nvidia-smi`)
+        
+        **3. Redémarrer Ollama proprement**
+        """)
+        
+        st.code("""# Arrêter Ollama
+Stop-Process -Name ollama -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 3
+
+# Vérifier GPU libéré
+nvidia-smi
+
+# Relancer Ollama
+ollama serve""", language="powershell")
+        
+        st.markdown("""
+        **4. Tester avec une requête courte**
+        """)
+        
+        st.code("""python -c \"from threadx.llm.client import LLMClient; c = LLMClient(model='deepseek-r1:8b'); print(c.complete('Test ok'))\" """, language="powershell")
+        
+        st.warning("""
+        **Si le problème persiste :**
+        - Essayez un modèle plus petit : `deepseek-r1:1.5b` ou `gemma2:2b`
+        - Réduisez encore `num_gpu_layers` : essayez 40, puis 32
+        - Fermez autres applications GPU (browsers, jeux, Docker, etc.)
+        - En dernier recours : utilisez un modèle CPU-only (perte de performance)
+        """)
+    
     st.divider()
     
     # Configuration de base
