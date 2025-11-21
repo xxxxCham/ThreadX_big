@@ -2540,9 +2540,100 @@ def _render_monitoring_section(
         st.plotly_chart(fig, use_container_width=True, key="monitoring_chart")
 
 
+def _render_llm_assisted_sweep() -> None:
+    """Onglet Sweep + LLM : Sweep classique avec analyse LLM des résultats."""
+    st.info("🚧 **Fonctionnalité en cours de développement**")
+    st.markdown("""
+    Cet onglet permettra de :
+    - Lancer un Sweep classique
+    - Analyser les résultats via LLM (DeepSeek, GPT-OSS, etc.)
+    - Obtenir des suggestions d'amélioration
+    - Ré-itérer avec des plages ajustées
+    
+    **Pour l'instant, utilisez :**
+    - **Sweep Classique** : Optimisation manuelle sans LLM
+    - **Multi-Agents Autonome** : Système autonome complet avec 3 agents
+    """)
+    
+    # Placeholder pour futures fonctionnalités
+    with st.expander("📋 Roadmap LLM-Assisted Sweep"):
+        st.markdown("""
+        1. ✅ Interface de base
+        2. 🔄 Intégration moteur Sweep existant
+        3. 🔄 Analyse LLM post-sweep (un seul agent)
+        4. 🔄 Suggestions de nouvelles plages
+        5. ⏳ Re-run automatique avec paramètres ajustés
+        """)
+
+
+def _render_autonomous_multi_agents() -> None:
+    """Onglet Multi-Agents Autonome : Redirection vers page dédiée."""
+    st.success("✅ **Système Multi-Agents actif sur page dédiée**")
+    
+    st.markdown("""
+    Le système Multi-Agents autonome (Analyst, Strategist, Critic) est disponible 
+    sur une **page dédiée** avec interface complète.
+    
+    ### 🧠 Navigation
+    """)
+    
+    col_nav, col_info = st.columns([1, 2])
+    
+    with col_nav:
+        if st.button("🚀 Ouvrir Multi-LLM Optimizer", type="primary", use_container_width=True):
+            st.session_state["page"] = "multi_llm"
+            st.rerun()
+    
+    with col_info:
+        st.caption("Redirige vers la page 'Multi-LLM Optimizer' avec :")
+        st.caption("- 🕵️ **Analyst** : Diagnostic des résultats")
+        st.caption("- 💡 **Strategist** : Génération de variantes")
+        st.caption("- 🔍 **Critic** : Validation des propositions")
+    
+    st.markdown("---")
+    
+    # Aperçu des fonctionnalités
+    with st.expander("ℹ️ Aperçu du système Multi-Agents"):
+        st.markdown("""
+        ### Fonctionnalités principales :
+        
+        **1. Orchestration autonome**
+        - Boucle d'optimisation automatique
+        - 3 agents collaboratifs (Analyst, Strategist, Critic)
+        - Sélection automatique de la meilleure variante
+        
+        **2. Interfaces de visualisation**
+        - Affichage temps réel des logs
+        - Code généré par chaque agent (3 fenêtres)
+        - Historique des itérations
+        
+        **3. Configuration flexible**
+        - Mode Simple : Paramètres par défaut auto-chargés
+        - Mode Avancé : JSON personnalisé
+        - Support de toutes les 9 stratégies
+        
+        **4. Monitoring système**
+        - Surveillance GPU/CPU en temps réel
+        - Métriques de performance
+        - Historique des ressources
+        
+        ### 📊 Stratégies supportées (9) :
+        - Bollinger Breakout
+        - EMA Cross
+        - ATR Channel
+        - Bollinger Dual
+        - Amplitude Hunter
+        - MA Crossover
+        - Volume Profile Breakout ⭐ (2025)
+        - VWAP Momentum Reversion 🏆 (2025)
+        - EMA Stoch Scalp ⚡ (2025)
+        """)
+
+
 def main() -> None:
     """Point d'entrée de la page Optimisation."""
     st.title("🔬 Optimisation de Stratégies")
+    
     # Unified run-state across UI
     if "run_active" not in st.session_state:
         st.session_state.run_active = False
@@ -2566,17 +2657,31 @@ def main() -> None:
             except Exception:
                 pass
             st.warning("Arrêt demandé — tentative d'interruption des tâches en cours.")
-    st.markdown("*Optimisez vos paramètres de trading avec Sweep ou Monte-Carlo*")
+    
+    st.markdown("*Optimisez vos paramètres avec 3 approches différentes*")
     st.markdown("---")
 
-    # Onglets principaux (Backtest Simple supprimé)
-    tab1, tab2 = st.tabs(["🔬 Sweep", "🎲 Monte-Carlo"])
+    # 3 ONGLETS DISTINCTS : Sweep Classique | Sweep + LLM | Multi-Agents Autonome
+    tab_sweep, tab_llm, tab_autonomous = st.tabs([
+        "🔬 Sweep Classique", 
+        "🤖 Sweep + LLM", 
+        "🧠 Multi-Agents Autonome"
+    ])
 
-    with tab1:
+    with tab_sweep:
+        st.markdown("### 🔬 Optimisation par Sweep (Grille Exhaustive)")
+        st.caption("Balayage exhaustif de paramètres avec réglages manuels")
         _render_optimization_tab()
 
-    with tab2:
-        _render_monte_carlo_tab()
+    with tab_llm:
+        st.markdown("### 🤖 Sweep Assisté par LLM")
+        st.caption("Analyse LLM des résultats pour suggestions d'amélioration")
+        _render_llm_assisted_sweep()
+
+    with tab_autonomous:
+        st.markdown("### 🧠 Multi-Agents Autonome")
+        st.caption("Système autonome avec Analyst, Strategist, Critic")
+        _render_autonomous_multi_agents()
 
 
 if __name__ == "__main__":
