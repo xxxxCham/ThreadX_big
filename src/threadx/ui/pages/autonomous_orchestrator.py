@@ -33,6 +33,7 @@ from threadx.llm.orchestrator import (
     OptimizationConfig,
     OptimizationOrchestrator,
 )
+from threadx.ui.strategy_registry import list_strategies, base_params_for
 from threadx.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -271,17 +272,57 @@ def render_configuration():
         
         → Les agents **conversent entre eux** pour optimiser la stratégie de manière autonome !
         → Objectif : Atteindre un **Sharpe Ratio ≥ 1.8** (Tier S)
+        
+        **📊 9 Stratégies Disponibles** :
+        - Bollinger Breakout, EMA Cross, ATR Channel
+        - Bollinger Dual, Amplitude Hunter, MA Crossover
+        - ⭐ Volume Profile Breakout (2025)
+        - 🏆 VWAP Momentum Reversion (2025 - Sharpe 3.2)
+        - ⚡ EMA Stoch Scalp 1min (2025 - Scalping)
     """)
 
     with st.expander("🔧 Paramètres Avancés", expanded=False):
         col1, col2 = st.columns(2)
 
         with col1:
-            strategy_name = st.selectbox(
+            # Récupérer la liste dynamique des stratégies depuis le registre
+            available_strategies = list_strategies()
+            
+            # Mapper noms registre vers noms internes (snake_case)
+            strategy_display_map = {
+                "Bollinger_Breakout": "Bollinger Breakout",
+                "EMA_Cross": "EMA Cross",
+                "ATR_Channel": "ATR Channel",
+                "Bollinger_Dual": "Bollinger Dual",
+                "AmplitudeHunter": "Amplitude Hunter",
+                "MA_Crossover": "MA Crossover",
+                "VolumeProfileBreakout": "Volume Profile Breakout ⭐",
+                "VWAPMomentumReversion": "VWAP Momentum Reversion 🏆",
+                "EMAStochScalpStrategy": "EMA Stoch Scalp (1min) ⚡",
+            }
+            
+            # Créer options affichage
+            strategy_options = [
+                strategy_display_map.get(s, s) for s in available_strategies
+            ]
+            
+            # Sélecteur avec noms conviviaux
+            selected_display = st.selectbox(
                 "Stratégie",
-                ["ma_crossover", "bollinger_dual", "amplitude_hunter"],
-                help="Stratégie à optimiser",
+                strategy_options,
+                help="Stratégie à optimiser (9 disponibles, dont 3 nouvelles 2025)",
             )
+            
+            # Retrouver le nom technique
+            strategy_name = None
+            for technical_name, display_name in strategy_display_map.items():
+                if display_name == selected_display:
+                    strategy_name = technical_name
+                    break
+            
+            # Fallback si pas de mapping (utiliser directement)
+            if strategy_name is None:
+                strategy_name = available_strategies[strategy_options.index(selected_display)]
 
             target_sharpe = st.number_input(
                 "Target Sharpe (Tier S)",
@@ -382,41 +423,19 @@ def render_configuration():
                 initial_params = {}
 
         else:
-            # Mode simple : UI rapide pour stratégies courantes
-            if strategy_name == "ma_crossover":
-                col1, col2 = st.columns(2)
-                with col1:
-                    fast_period = st.number_input("Fast Period", 5, 50, 10, 1)
-                    slow_period = st.number_input("Slow Period", 10, 100, 30, 5)
-                with col2:
-                    stop_loss = st.number_input("Stop Loss %", 0.5, 5.0, 1.5, 0.1)
-                    take_profit = st.number_input("Take Profit %", 1.0, 10.0, 3.0, 0.5)
-
-                initial_params = {
-                    "fast_period": fast_period,
-                    "slow_period": slow_period,
-                    "stop_loss_pct": stop_loss,
-                    "take_profit_pct": take_profit,
-                }
-
-            elif strategy_name == "bollinger_dual":
-                col1, col2 = st.columns(2)
-                with col1:
-                    bb_period = st.number_input("BB Period", 10, 50, 20, 5)
-                    bb_std = st.number_input("BB Std", 1.5, 3.0, 2.0, 0.25)
-                with col2:
-                    atr_period = st.number_input("ATR Period", 7, 21, 14, 2)
-                    atr_mult = st.number_input("ATR Multiplier", 1.0, 3.0, 1.5, 0.25)
-
-                initial_params = {
-                    "bb_period": bb_period,
-                    "bb_std": bb_std,
-                    "atr_period": atr_period,
-                    "atr_multiplier": atr_mult,
-                }
-
-            else:
-                st.info(f"Paramètres par défaut utilisés pour '{strategy_name}' - Utilisez le mode Avancé pour custom")
+            # Mode simple : Charger paramètres par défaut depuis le registre
+            try:
+                initial_params = base_params_for(strategy_name)
+                st.success(f"✅ Paramètres par défaut chargés pour '{strategy_name}' ({len(initial_params)} params)")
+                
+                # Aperçu paramètres par défaut
+                with st.expander("👁️ Aperçu Paramètres Par Défaut"):
+                    st.json(initial_params)
+                    st.caption("💡 Utilisez le mode Avancé pour personnaliser ces valeurs")
+                    
+            except Exception as e:
+                st.warning(f"⚠️ Impossible de charger les paramètres par défaut : {e}")
+                st.info("Utilisez le mode Avancé pour spécifier les paramètres manuellement")
                 initial_params = {}
 
         # Sauvegarder config
