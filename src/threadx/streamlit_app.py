@@ -417,7 +417,7 @@ PAGE_TITLES = {
     "config": "📊 Chargement des Données",
     "backtest": "⚡ Optimisation",
     "monitor": "🖥️ Monitoring Système",
-    "orchestrator": "🤖 Orchestrator Autonome",
+    "orchestrator": "🤖 Multi-Agents Autonome",
 }
 
 
@@ -603,7 +603,11 @@ def render_sidebar() -> None:
         )
         st.caption(
             f"Étape 3/3 : Monitoring système "
-            f"{'⏳' if current_step == 3 else '⭕'}"
+            f"{'✅' if current_step > 3 else '⏳' if current_step == 3 else '⭕'}"
+        )
+        st.caption(
+            f"🤖 Autonome : Orchestrator Multi-Agents "
+            f"{'✅' if current_page == 'orchestrator' else '⭕'}"
         )
 
         # Bouton "Suivant" selon l'étape actuelle
@@ -612,9 +616,15 @@ def render_sidebar() -> None:
                 st.session_state.page = "backtest"
                 st.rerun()
         elif current_page == "backtest":
-            if st.button("➡️ Passer au Monitoring", type="primary", use_container_width=True):
-                st.session_state.page = "monitor"
-                st.rerun()
+            col_mon, col_orch = st.columns(2)
+            with col_mon:
+                if st.button("📊 Monitoring", use_container_width=True):
+                    st.session_state.page = "monitor"
+                    st.rerun()
+            with col_orch:
+                if st.button("🤖 Autonome", type="primary", use_container_width=True):
+                    st.session_state.page = "orchestrator"
+                    st.rerun()
 
         st.markdown("---")
         st.markdown("### 🧭 Navigation")

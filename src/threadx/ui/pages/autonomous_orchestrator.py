@@ -173,6 +173,19 @@ def orchestrator_worker(config: OptimizationConfig, data: pd.DataFrame):
 def render_control_panel():
     """Panneau contrôles activation/pause/stop."""
     st.header("🎛️ Contrôles Orchestrator")
+    
+    # Vérification données disponibles
+    data_available = st.session_state.get("data") is not None
+    if not data_available:
+        st.error("""
+            ⚠️ **Aucune donnée chargée !**
+            
+            Veuillez d'abord charger des données sur la page **📊 Chargement des Données**.
+            
+            L'orchestrator a besoin de données OHLCV pour effectuer les backtests.
+        """)
+        st.info("💡 Naviguez vers 'Chargement des Données' dans la sidebar et chargez un symbole (ex: BTCUSDC)")
+        return
 
     col1, col2, col3 = st.columns(3)
 
@@ -242,8 +255,21 @@ def render_control_panel():
 def render_configuration():
     """Configuration orchestrator."""
     st.header("⚙️ Configuration Optimisation")
+    
+    st.info("""
+        **🤖 Comment ça marche ?**
+        
+        Le système **multi-agents** fait collaborer 3 LLM spécialisés :
+        
+        1. **📊 Analyst** (deepseek-r1:70b) - Analyse les résultats de backtest et identifie les problèmes
+        2. **💡 Strategist** (gpt-oss:20b) - Propose des modifications de paramètres basées sur le diagnostic
+        3. **✅ Critic** (deepseek-r1:70b) - Valide les propositions et rejette les mauvaises idées
+        
+        → Les agents **conversent entre eux** pour optimiser la stratégie de manière autonome !
+        → Objectif : Atteindre un **Sharpe Ratio ≥ 1.8** (Tier S)
+    """)
 
-    with st.expander("Configuration Orchestrator", expanded=False):
+    with st.expander("🔧 Paramètres Avancés", expanded=False):
         col1, col2 = st.columns(2)
 
         with col1:
@@ -576,12 +602,8 @@ def render_metrics_dashboard():
 
 def main():
     """Page principale Orchestrator Autonome."""
-    st.set_page_config(
-        page_title="ThreadX - Orchestrator Autonome",
-        page_icon="🤖",
-        layout="wide",
-    )
-
+    # Note: st.set_page_config() est géré par streamlit_app.py principal
+    
     init_session_state()
 
     st.title("🤖 Orchestrator Multi-Agent Autonome")
@@ -595,6 +617,11 @@ def main():
         - ✅ Visualisation code généré dynamiquement
         - ✅ Dashboard métriques Tier S live
         - ✅ Contrôles pause/resume/stop
+        
+        **Prérequis**: 
+        - 🔹 Ollama running avec models: `deepseek-r1:70b`, `gpt-oss:20b`
+        - 🔹 Données chargées (page Configuration)
+        - 🔹 GPU disponible (optionnel mais recommandé)
         """
     )
 
