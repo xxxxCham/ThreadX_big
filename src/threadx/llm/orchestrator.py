@@ -252,6 +252,16 @@ class OptimizationOrchestrator:
                 f"   → Global score: {analysis.get('score_global', 0)}/10"
             )
 
+            # Code callback Analyst (diagnostic JSON)
+            if self.code_callback and analysis:
+                code_str = json.dumps(analysis, indent=2, ensure_ascii=False)
+                self.code_callback(
+                    iteration + 1,
+                    "Analyst",
+                    code_str,
+                    f"Diagnostic - Score {analysis.get('score_global', 0)}/10",
+                )
+
             if self.log_callback:
                 self.log_callback(
                     iteration + 1,
@@ -291,6 +301,22 @@ class OptimizationOrchestrator:
             self.logger.info(
                 f"   → {len(validated)}/{len(proposals)} proposals validated"
             )
+
+            # Code callback Critic (validation report)
+            if self.code_callback:
+                validation_report = {
+                    "total_proposals": len(proposals),
+                    "validated": len(validated),
+                    "rejected": len(proposals) - len(validated),
+                    "validated_configs": list(validated.values()) if validated else [],
+                }
+                code_str = json.dumps(validation_report, indent=2, ensure_ascii=False)
+                self.code_callback(
+                    iteration + 1,
+                    "Critic",
+                    code_str,
+                    f"Validation: {len(validated)}/{len(proposals)} configs accepted",
+                )
 
             # === ÉTAPE 5: Backtests parallèles ===
             if validated:
@@ -344,7 +370,7 @@ class OptimizationOrchestrator:
                 metrics=result.metrics.copy(),
                 analysis=analysis,
                 proposals=proposals,
-                validated_proposals=validated,
+                validated_proposals=list(validated.values()) if validated else [],
                 execution_time=time.time() - iter_start,
             )
             self.iterations.append(iter_result)

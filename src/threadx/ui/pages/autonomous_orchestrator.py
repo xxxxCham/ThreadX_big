@@ -135,6 +135,10 @@ def orchestrator_worker(config: OptimizationConfig, data: pd.DataFrame):
                 }
             )
 
+        # Passer les callbacks à l'orchestrator
+        orchestrator.log_callback = log_callback
+        orchestrator.code_callback = code_callback
+
         # Lancer boucle autonome (avec hooks intégrés dans orchestrator)
         result = orchestrator.run()
 
@@ -323,27 +327,97 @@ def render_configuration():
             )
 
         # Paramètres initiaux stratégie
-        st.subheader("Paramètres Initiaux Stratégie")
+        st.subheader("🎯 Paramètres Initiaux Stratégie (Point de Départ)")
+        
+        st.markdown("""
+        **Choisissez le point de départ de l'optimisation** :
+        - **Mode Simple** : Paramètres par défaut de la stratégie
+        - **Mode Avancé** : Spécifiez vos propres paramètres en JSON
+        """)
 
-        if strategy_name == "ma_crossover":
-            col1, col2 = st.columns(2)
-            with col1:
-                fast_period = st.number_input("Fast Period", 5, 50, 10, 1)
-                slow_period = st.number_input("Slow Period", 10, 100, 30, 5)
-            with col2:
-                stop_loss = st.number_input("Stop Loss %", 0.5, 5.0, 1.5, 0.1)
-                take_profit = st.number_input("Take Profit %", 1.0, 10.0, 3.0, 0.5)
+        param_mode = st.radio(
+            "Mode Paramètres",
+            ["Simple (Défauts)", "Avancé (JSON Custom)"],
+            horizontal=True,
+            key="param_mode",
+        )
 
-            initial_params = {
-                "fast_period": fast_period,
-                "slow_period": slow_period,
-                "stop_loss_pct": stop_loss,
-                "take_profit_pct": take_profit,
+        initial_params = {}
+
+        if param_mode == "Avancé (JSON Custom)":
+            st.info("""
+            **Format JSON** : Entrez un dictionnaire Python de paramètres
+            
+            Exemple pour MA_Crossover :
+            ```json
+            {
+                "fast_period": 15,
+                "slow_period": 40,
+                "stop_loss_pct": 2.0,
+                "take_profit_pct": 4.5,
+                "risk_per_trade": 0.015
             }
+            ```
+            """)
+            
+            # Zone de texte JSON
+            custom_params_json = st.text_area(
+                "Paramètres JSON",
+                value='{\n  "fast_period": 10,\n  "slow_period": 30,\n  "stop_loss_pct": 1.5,\n  "take_profit_pct": 3.0\n}',
+                height=200,
+                help="Format : dictionnaire JSON avec vos paramètres initiaux",
+            )
+            
+            # Validation JSON
+            try:
+                initial_params = json.loads(custom_params_json)
+                st.success(f"✅ JSON valide - {len(initial_params)} paramètres chargés")
+                
+                # Aperçu paramètres
+                with st.expander("👁️ Aperçu Paramètres"):
+                    st.json(initial_params)
+                    
+            except json.JSONDecodeError as e:
+                st.error(f"❌ JSON invalide : {e}")
+                initial_params = {}
 
         else:
-            st.info("Paramètres par défaut utilisés pour cette stratégie")
-            initial_params = {}
+            # Mode simple : UI rapide pour stratégies courantes
+            if strategy_name == "ma_crossover":
+                col1, col2 = st.columns(2)
+                with col1:
+                    fast_period = st.number_input("Fast Period", 5, 50, 10, 1)
+                    slow_period = st.number_input("Slow Period", 10, 100, 30, 5)
+                with col2:
+                    stop_loss = st.number_input("Stop Loss %", 0.5, 5.0, 1.5, 0.1)
+                    take_profit = st.number_input("Take Profit %", 1.0, 10.0, 3.0, 0.5)
+
+                initial_params = {
+                    "fast_period": fast_period,
+                    "slow_period": slow_period,
+                    "stop_loss_pct": stop_loss,
+                    "take_profit_pct": take_profit,
+                }
+
+            elif strategy_name == "bollinger_dual":
+                col1, col2 = st.columns(2)
+                with col1:
+                    bb_period = st.number_input("BB Period", 10, 50, 20, 5)
+                    bb_std = st.number_input("BB Std", 1.5, 3.0, 2.0, 0.25)
+                with col2:
+                    atr_period = st.number_input("ATR Period", 7, 21, 14, 2)
+                    atr_mult = st.number_input("ATR Multiplier", 1.0, 3.0, 1.5, 0.25)
+
+                initial_params = {
+                    "bb_period": bb_period,
+                    "bb_std": bb_std,
+                    "atr_period": atr_period,
+                    "atr_multiplier": atr_mult,
+                }
+
+            else:
+                st.info(f"Paramètres par défaut utilisés pour '{strategy_name}' - Utilisez le mode Avancé pour custom")
+                initial_params = {}
 
         # Sauvegarder config
         if st.button("💾 Sauvegarder Configuration", type="primary"):
@@ -415,11 +489,22 @@ def render_logs_viewer():
 
 
 def render_code_viewer():
-    """Fenêtre visualisation code généré dynamiquement."""
+    """Fenêtre visualisation code généré dynamiquement (3 agents en tabs)."""
     st.header("💻 Code Généré par Agents")
 
     if not st.session_state.generated_code_history:
         st.info("Aucun code généré - Les agents proposeront modifications ici")
+        
+        # Placeholder avec explications
+        st.markdown("""
+        **Les 3 agents génèrent du code dynamiquement :**
+        
+        - 🕵️ **Analyst** : Diagnostic JSON (patterns, recommandations, scores)
+        - 💡 **Strategist** : Propositions de paramètres (configurations candidates)
+        - 🔍 **Critic** : Rapport de validation (configs acceptées/rejetées)
+        
+        Le code apparaîtra ici après le démarrage de l'orchestrator.
+        """)
         return
 
     # Sélecteur iteration
@@ -434,6 +519,7 @@ def render_code_viewer():
         "Iteration",
         iterations,
         index=len(iterations) - 1,  # Dernière par défaut
+        key="code_viewer_iteration",
     )
 
     # Filtrer par iteration
@@ -443,41 +529,135 @@ def render_code_viewer():
         if entry["iteration"] == selected_iteration
     ]
 
-    # Afficher chaque code avec tabs par agent
-    if codes_iteration:
-        tabs = st.tabs([entry["agent"] for entry in codes_iteration])
+    if not codes_iteration:
+        st.warning(f"Aucun code pour iteration {selected_iteration}")
+        return
 
-        for tab, entry in zip(tabs, codes_iteration):
-            with tab:
+    # Grouper par agent (pour éviter duplicatas)
+    agents_code = {}
+    for entry in codes_iteration:
+        agent = entry["agent"]
+        if agent not in agents_code:
+            agents_code[agent] = []
+        agents_code[agent].append(entry)
+
+    # Créer 3 onglets fixes (Analyst, Strategist, Critic)
+    tab_analyst, tab_strategist, tab_critic = st.tabs(["🕵️ Analyst", "💡 Strategist", "🔍 Critic"])
+
+    # === TAB ANALYST ===
+    with tab_analyst:
+        analyst_entries = agents_code.get("Analyst", [])
+        
+        if analyst_entries:
+            for entry in analyst_entries:
                 st.caption(
                     f"🕒 {entry['timestamp'].strftime('%H:%M:%S')} - {entry['description']}"
                 )
-
-                # Code avec syntax highlighting
-                st.code(entry["code"], language="python", line_numbers=True)
-
+                
+                # Code JSON avec syntax highlighting
+                st.code(entry["code"], language="json", line_numbers=True)
+                
                 # Boutons actions
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.button(
-                        "📋 Copier Code",
-                        key=f"copy_{entry['timestamp']}",
+                        "📋 Copier Code Analyst",
+                        key=f"copy_analyst_{entry['timestamp']}",
                         use_container_width=True,
                     ):
                         st.session_state["clipboard"] = entry["code"]
-                        st.success("✅ Code copié!")
+                        st.success("✅ Code Analyst copié!")
 
                 with col2:
                     if st.button(
-                        "💾 Sauvegarder Fichier",
-                        key=f"save_{entry['timestamp']}",
+                        "💾 Sauvegarder Analyst",
+                        key=f"save_analyst_{entry['timestamp']}",
                         use_container_width=True,
                     ):
-                        filename = f"{entry['agent']}_iter{entry['iteration']}.py"
+                        filename = f"analyst_diagnostic_iter{entry['iteration']}.json"
                         filepath = Path("./exports/generated_code") / filename
                         filepath.parent.mkdir(parents=True, exist_ok=True)
                         filepath.write_text(entry["code"])
                         st.success(f"✅ Sauvegardé: {filepath}")
+        else:
+            st.info(f"Pas de diagnostic Analyst pour iteration {selected_iteration}")
+
+    # === TAB STRATEGIST ===
+    with tab_strategist:
+        strategist_entries = agents_code.get("Strategist", [])
+        
+        if strategist_entries:
+            st.caption(f"**{len(strategist_entries)} propositions générées**")
+            
+            for idx, entry in enumerate(strategist_entries, 1):
+                with st.expander(f"📝 Proposition {idx} - {entry['description']}", expanded=(idx == 1)):
+                    st.caption(f"🕒 {entry['timestamp'].strftime('%H:%M:%S')}")
+                    
+                    # Code JSON avec syntax highlighting
+                    st.code(entry["code"], language="json", line_numbers=True)
+                    
+                    # Boutons actions
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button(
+                            "📋 Copier Config",
+                            key=f"copy_strat_{idx}_{entry['timestamp']}",
+                            use_container_width=True,
+                        ):
+                            st.session_state["clipboard"] = entry["code"]
+                            st.success(f"✅ Config {idx} copiée!")
+
+                    with col2:
+                        if st.button(
+                            "💾 Sauvegarder Config",
+                            key=f"save_strat_{idx}_{entry['timestamp']}",
+                            use_container_width=True,
+                        ):
+                            filename = f"strategist_proposal_{idx}_iter{entry['iteration']}.json"
+                            filepath = Path("./exports/generated_code") / filename
+                            filepath.parent.mkdir(parents=True, exist_ok=True)
+                            filepath.write_text(entry["code"])
+                            st.success(f"✅ Sauvegardé: {filepath}")
+        else:
+            st.info(f"Pas de propositions Strategist pour iteration {selected_iteration}")
+
+    # === TAB CRITIC ===
+    with tab_critic:
+        critic_entries = agents_code.get("Critic", [])
+        
+        if critic_entries:
+            for entry in critic_entries:
+                st.caption(
+                    f"🕒 {entry['timestamp'].strftime('%H:%M:%S')} - {entry['description']}"
+                )
+                
+                # Code JSON avec syntax highlighting
+                st.code(entry["code"], language="json", line_numbers=True)
+                
+                # Boutons actions
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button(
+                        "📋 Copier Rapport Critic",
+                        key=f"copy_critic_{entry['timestamp']}",
+                        use_container_width=True,
+                    ):
+                        st.session_state["clipboard"] = entry["code"]
+                        st.success("✅ Rapport Critic copié!")
+
+                with col2:
+                    if st.button(
+                        "💾 Sauvegarder Rapport",
+                        key=f"save_critic_{entry['timestamp']}",
+                        use_container_width=True,
+                    ):
+                        filename = f"critic_validation_iter{entry['iteration']}.json"
+                        filepath = Path("./exports/generated_code") / filename
+                        filepath.parent.mkdir(parents=True, exist_ok=True)
+                        filepath.write_text(entry["code"])
+                        st.success(f"✅ Sauvegardé: {filepath}")
+        else:
+            st.info(f"Pas de validation Critic pour iteration {selected_iteration}")
 
 
 def render_metrics_dashboard():
