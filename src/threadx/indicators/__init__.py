@@ -25,6 +25,13 @@ from .bank import (
     force_recompute_indicator,
 )
 from .bollinger import BollingerBands, compute_bollinger_bands, compute_bollinger_batch
+from .ema import EMASettings, ema, ema_crossover_signals, ema_dataframe
+from .stochastic import (
+    StochasticSettings,
+    stochastic_dataframe,
+    stochastic_oscillator,
+    stochastic_signals,
+)
 from .xatr import ATR, compute_atr, compute_atr_batch
 
 __version__ = "3.0.0"
@@ -37,6 +44,16 @@ __all__ = [
     "ATR",
     "compute_atr",
     "compute_atr_batch",
+    # EMA
+    "EMASettings",
+    "ema",
+    "ema_crossover_signals",
+    "ema_dataframe",
+    # Stochastic
+    "StochasticSettings",
+    "stochastic_oscillator",
+    "stochastic_signals",
+    "stochastic_dataframe",
     # Bank
     "IndicatorBank",
     "IndicatorSettings",

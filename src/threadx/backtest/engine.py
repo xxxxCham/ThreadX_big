@@ -12,6 +12,7 @@ Features:
 - Bollinger Bands + ATR strategy avec bank.ensure
 - RunResult compatible avec performance.summarize
 - Déterminisme (seed=42), logs structurés
+- Realistic Execution: spread, slippage, latency, rejections (TOUS timeframes)
 
 Pipeline:
     bank.ensure(indicateurs) → engine.run(df, indicators, params) → RunResult
@@ -22,14 +23,17 @@ Architecture:
 - RunResult : structure de données standardisée
 - Multi-device : balance 75%/25% par défaut entre GPUs
 - Strategy : Bollinger mean reversion + ATR filter
+- RealisticExecutor : frictions trading réalistes (intégré)
 
 Author: ThreadX Framework
-Version: Phase 10 - Production Engine
+Version: Phase 10 - Production Engine with Realistic Execution
 """
 
 # logging peut être importé plus bas si nécessaire (cleanup de l'import inutile)
 import time
 from dataclasses import dataclass, field
+from enum import Enum
+from typing import Literal
 
 # ThreadX Common Imports (DRY refactoring)
 from threadx.utils.common_imports import (
@@ -39,6 +43,18 @@ from threadx.utils.common_imports import (
     np,
     pd,
 )
+
+# Numba pour optimisation frictions
+try:
+    from numba import njit
+    NUMBA_AVAILABLE = True
+except ImportError:
+    NUMBA_AVAILABLE = False
+    def njit(*args, **kwargs):
+        """Fallback decorator si Numba indisponible."""
+        def decorator(func):
+            return func
+        return decorator
 
 # Validation backtest anti-overfitting
 try:
@@ -137,6 +153,277 @@ except ImportError:
 logger = get_logger(__name__)
 
 
+# ==========================================
+# REALISTIC EXECUTION SYSTEM
+# ==========================================
+
+
+class OrderType(Enum):
+    """Types d'ordres supportés."""
+    MARKET = "MARKET"
+    LIMIT = "LIMIT"
+    STOP_MARKET = "STOP_MARKET"
+    STOP_LIMIT = "STOP_LIMIT"
+
+
+@dataclass
+class ExchangeConfig:
+    """Configuration exchange avec frictions réalistes."""
+    name: str
+    maker_fee_bps: float
+    taker_fee_bps: float
+    min_spread_bps: float
+    max_spread_bps: float
+    base_latency_ms: float
+    max_latency_ms: float
+    order_rejection_rate: float
+    partial_fill_threshold: float
+
+
+EXCHANGE_CONFIGS = {
+    "BINANCE": ExchangeConfig(
+        name="Binance",
+        maker_fee_bps=2.0,
+        taker_fee_bps=4.0,
+        min_spread_bps=1.0,
+        max_spread_bps=5.0,
+        base_latency_ms=50.0,
+        max_latency_ms=500.0,
+        order_rejection_rate=0.02,
+        partial_fill_threshold=10.0,
+    ),
+    "BINANCE_FUTURES": ExchangeConfig(
+        name="Binance Futures",
+        maker_fee_bps=2.0,
+        taker_fee_bps=4.0,
+        min_spread_bps=0.5,
+        max_spread_bps=3.0,
+        base_latency_ms=30.0,
+        max_latency_ms=400.0,
+        order_rejection_rate=0.03,
+        partial_fill_threshold=50.0,
+    ),
+    "BYBIT": ExchangeConfig(
+        name="Bybit",
+        maker_fee_bps=2.0,
+        taker_fee_bps=5.5,
+        min_spread_bps=1.5,
+        max_spread_bps=8.0,
+        base_latency_ms=80.0,
+        max_latency_ms=600.0,
+        order_rejection_rate=0.05,
+        partial_fill_threshold=5.0,
+    ),
+}
+
+
+@dataclass
+class ExecutionResult:
+    """Résultat exécution ordre réaliste."""
+    success: bool
+    intended_price: float
+    executed_price: float
+    intended_quantity: float
+    filled_quantity: float
+    total_fees: float
+    slippage_pct: float
+    spread_cost: float
+    latency_ms: float
+    rejection_reason: str | None
+    is_partial_fill: bool
+    order_type_used: str
+
+
+@njit(cache=True, fastmath=True)
+def apply_realistic_execution_numba(
+    intended_price: float,
+    side: int,
+    quantity: float,
+    spread_bps: float,
+    slippage_bps: float,
+    fee_bps: float,
+    rejection_prob: float,
+    random_seed: float,
+) -> tuple[bool, float, float, float]:
+    """Version Numba ultra-rapide pour backtests."""
+    if random_seed < rejection_prob:
+        return False, 0.0, 0.0, 0.0
+    
+    spread_pct = spread_bps / 10000.0
+    if side == 1:
+        price_with_spread = intended_price * (1.0 + spread_pct)
+    else:
+        price_with_spread = intended_price * (1.0 - spread_pct)
+    
+    slippage_pct = slippage_bps / 10000.0
+    if side == 1:
+        final_price = price_with_spread * (1.0 + slippage_pct)
+    else:
+        final_price = price_with_spread * (1.0 - slippage_pct)
+    
+    total_fees = (final_price * quantity) * (fee_bps / 10000.0)
+    return True, final_price, quantity, total_fees
+
+
+class RealisticExecutor:
+    """
+    Simule exécution réaliste avec spread, slippage, latence, rejets.
+    
+    S'adapte automatiquement selon timeframe (1m = frictions x2, 1h = x0.6).
+    """
+    
+    def __init__(
+        self,
+        timeframe: str = "1m",
+        symbol: str = "BTCUSDT",
+        exchange: str = "BINANCE",
+        seed: int | None = None,
+    ):
+        self.timeframe = timeframe
+        self.symbol = symbol
+        self.config = EXCHANGE_CONFIGS.get(exchange, EXCHANGE_CONFIGS["BINANCE"])
+        self.timeframe_multiplier = self._compute_timeframe_multiplier(timeframe)
+        self.rng = np.random.default_rng(seed)
+        
+    def _compute_timeframe_multiplier(self, timeframe: str) -> float:
+        """Timeframes courts = impact plus grand."""
+        timeframe_impacts = {
+            "1m": 2.0, "2m": 1.8, "3m": 1.6, "5m": 1.4,
+            "15m": 1.0, "30m": 0.8, "1h": 0.6, "4h": 0.4, "1d": 0.2,
+        }
+        return timeframe_impacts.get(timeframe, 1.0)
+    
+    def execute_order(
+        self,
+        side: Literal["BUY", "SELL"],
+        intended_price: float,
+        quantity: float,
+        order_type: str = "MARKET",
+        current_volatility: float = 0.01,
+        current_volume_ratio: float = 1.0,
+    ) -> ExecutionResult:
+        """Simule exécution avec tous les obstacles réels."""
+        
+        # 1. SPREAD
+        spread_bps = self._calculate_spread(current_volume_ratio)
+        spread_pct = spread_bps / 10000.0
+        
+        if side == "BUY":
+            execution_base_price = intended_price * (1.0 + spread_pct)
+        else:
+            execution_base_price = intended_price * (1.0 - spread_pct)
+        
+        # 2. LATENCE
+        latency_ms = self._calculate_latency(current_volatility)
+        time_fraction = latency_ms / (60000.0 if self.timeframe == "1m" else 3600000.0)
+        price_drift = self.rng.normal(0, current_volatility * time_fraction)
+        execution_price_after_latency = execution_base_price * (1.0 + price_drift)
+        
+        # 3. SLIPPAGE
+        slippage_pct = self._calculate_slippage(
+            quantity, current_volatility, current_volume_ratio
+        )
+        if side == "BUY":
+            final_price = execution_price_after_latency * (1.0 + slippage_pct)
+        else:
+            final_price = execution_price_after_latency * (1.0 - slippage_pct)
+        
+        # 4. REJET
+        rejection_rate = self._calculate_rejection_rate(order_type, current_volatility)
+        if self.rng.random() < rejection_rate:
+            return ExecutionResult(
+                success=False, intended_price=intended_price,
+                executed_price=0.0, intended_quantity=quantity,
+                filled_quantity=0.0, total_fees=0.0,
+                slippage_pct=0.0, spread_cost=0.0,
+                latency_ms=latency_ms,
+                rejection_reason="Insufficient liquidity / Network error",
+                is_partial_fill=False, order_type_used=order_type,
+            )
+        
+        # 5. PARTIAL FILL
+        filled_qty = quantity
+        is_partial = False
+        if quantity > self.config.partial_fill_threshold:
+            fill_ratio = self.rng.uniform(0.7, 0.95)
+            filled_qty = quantity * fill_ratio
+            is_partial = True
+        
+        # 6. FRAIS
+        if order_type == "MARKET":
+            fee_bps = self.config.taker_fee_bps
+        else:
+            is_maker = self.rng.random() < 0.7
+            fee_bps = self.config.maker_fee_bps if is_maker else self.config.taker_fee_bps
+        
+        total_fees = (final_price * filled_qty) * (fee_bps / 10000.0)
+        spread_cost = abs(execution_base_price - intended_price) * filled_qty
+        total_slippage_pct = abs(final_price - intended_price) / intended_price * 100.0
+        
+        return ExecutionResult(
+            success=True,
+            intended_price=intended_price,
+            executed_price=final_price,
+            intended_quantity=quantity,
+            filled_quantity=filled_qty,
+            total_fees=total_fees,
+            slippage_pct=total_slippage_pct,
+            spread_cost=spread_cost,
+            latency_ms=latency_ms,
+            rejection_reason=None,
+            is_partial_fill=is_partial,
+            order_type_used=order_type,
+        )
+    
+    def _calculate_spread(self, volume_ratio: float) -> float:
+        """Spread augmente si volume faible."""
+        base_spread = self.config.min_spread_bps
+        if volume_ratio < 1.0:
+            spread_multiplier = 1.0 + (1.0 - volume_ratio) * 0.5
+            spread = base_spread * spread_multiplier
+        else:
+            spread = base_spread
+        spread *= self.timeframe_multiplier
+        return min(spread, self.config.max_spread_bps)
+    
+    def _calculate_latency(self, volatility: float) -> float:
+        """Latence augmente avec volatilité."""
+        base = self.config.base_latency_ms
+        if volatility > 0.02:
+            volatility_factor = 1.0 + (volatility - 0.02) * 25.0
+            latency = base * volatility_factor
+        else:
+            latency = base
+        noise = self.rng.uniform(-0.2, 0.5)
+        latency *= 1.0 + noise
+        return min(latency, self.config.max_latency_ms)
+    
+    def _calculate_slippage(
+        self, quantity: float, volatility: float, volume_ratio: float
+    ) -> float:
+        """Slippage: quantité + liquidité + volatilité."""
+        base_slippage = 0.0001
+        qty_factor = 1.0 + np.log1p(quantity) * 0.05
+        liquidity_factor = 1.0 / max(volume_ratio, 0.3)
+        volatility_factor = 1.0 + volatility * 10.0
+        timeframe_factor = self.timeframe_multiplier
+        slippage = base_slippage * qty_factor * liquidity_factor * volatility_factor * timeframe_factor
+        return min(slippage, 0.005)
+    
+    def _calculate_rejection_rate(self, order_type: str, volatility: float) -> float:
+        """Market orders moins rejetés que limit."""
+        base_rate = self.config.order_rejection_rate
+        type_factor = 0.5 if order_type == "MARKET" else 1.5
+        volatility_factor = 1.0 + volatility * 20.0
+        rejection_rate = base_rate * type_factor * volatility_factor * self.timeframe_multiplier
+        return min(rejection_rate, 0.20)
+
+
+# ==========================================
+# BACKTEST ENGINE (existant)
+# ==========================================
+
+
 @dataclass
 class RunResult:
     """
@@ -151,16 +438,24 @@ class RunResult:
         equity: Série d'équité avec index datetime UTC, dtype float64
         returns: Série des returns avec même index que equity
         trades: DataFrame des trades avec colonnes minimales requises
+        metrics: Dict métriques calculées (Tier S/A/B/C + standards)
         meta: Métadonnées d'exécution (durées, devices, cache, etc.)
 
     Notes:
         Validation stricte des données pour garantir la compatibilité
         avec performance.summarize() et les modules d'analyse.
+        
+        metrics contient TOUTES les métriques (Tier S 2025 incluses):
+        - Métriques standards: sharpe, sortino, max_drawdown, etc.
+        - Tier S (10): sharpe ≥1.8, sortino ≥2.8, calmar ≥1.5, etc.
+        - Tier A/B/C: r_multiple, ulcer_index, serenity_ratio, etc.
+        - Validation: tier_s_passed, tier_s_score, ai_evolved_gold
     """
 
     equity: pd.Series
     returns: pd.Series
     trades: pd.DataFrame
+    metrics: dict[str, Any] = field(default_factory=dict)
     meta: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):

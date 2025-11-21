@@ -37,6 +37,17 @@ Usage:
     plot_path = plot_drawdown(equity_series, save_path=Path("./reports/dd.png"))
 """
 
+from threadx.backtest.engine import (
+    EXCHANGE_CONFIGS,
+    ExchangeConfig,
+    ExecutionResult,
+    OrderType,
+    RealisticExecutor,
+    RunResult,
+    apply_realistic_execution_numba,
+    create_engine,
+    run,
+)
 from threadx.backtest.performance import (
     # GPU capability detection
     HAS_CUPY,
@@ -76,6 +87,17 @@ __all__ = [
     # Utilities
     "HAS_CUPY",
     "xp",
+    # Engine (updated)
+    "create_engine",
+    "run",
+    "RunResult",
+    # Realistic execution (now in engine.py)
+    "RealisticExecutor",
+    "ExecutionResult",
+    "ExchangeConfig",
+    "EXCHANGE_CONFIGS",
+    "OrderType",
+    "apply_realistic_execution_numba",
 ]
 
 # Module metadata

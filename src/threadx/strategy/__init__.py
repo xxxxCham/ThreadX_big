@@ -61,6 +61,11 @@ from .bollinger_dual import (
     # Fonctions de convenance
     create_default_params as bollinger_dual_create_default_params,
 )
+from .ema_stochastic_scalp import (
+    # EMA + Stochastic Scalping Strategy
+    EMAStochScalpParams,
+    EMAStochScalpStrategy,
+)
 from .ma_crossover import (
     # MA Crossover Strategy (test/validation)
     MACrossoverParams,
@@ -82,6 +87,8 @@ from .model import (
     validate_ohlcv_dataframe,
     validate_strategy_params,
 )
+from .volume_profile_breakout import VolumeProfileBreakout
+from .vwap_momentum_reversion import VWAPMomentumReversion
 
 __version__ = "4.0.0"
 
@@ -113,9 +120,15 @@ __all__ = [
     "amplitude_hunter_generate_signals",
     "amplitude_hunter_backtest",
     "amplitude_hunter_create_default_params",
+    # EMA + Stochastic Scalping Strategy exports
+    "EMAStochScalpParams",
+    "EMAStochScalpStrategy",
     # MA Crossover Strategy exports (test/validation)
     "MACrossoverParams",
     "MACrossoverStrategy",
+    # Nouvelles Stratégies 2025
+    "VolumeProfileBreakout",
+    "VWAPMomentumReversion",
 ]
 
 

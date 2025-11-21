@@ -1,10 +1,9 @@
-*.py text eol=lf
-*.ipynb -text
-*.ps1 text eol=crlf
-*.bat text eol=crlf
-*.cmd text eol=crlf
-*.md text eol=lf
-*.toml text eol=lf
-*.json text eol=lf
-*.yml text eol=lf
-*.yaml text eol=lf
+# Mark DIRECTIVES_DEV.md as critical (no merge conflicts)
+DIRECTIVES_DEV.md merge=union
+
+# Merge strategy for Python
+*.py merge=union
+
+# Mark documentation
+*.md diff=markdown
+DIRECTIVES_DEV.md diff=markdown

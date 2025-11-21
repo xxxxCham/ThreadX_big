@@ -946,3 +946,275 @@ def resolve_range(spec: dict[str, Any]) -> tuple[Any, Any]:
     if isinstance(opt_range, (list, tuple)) and len(opt_range) == 2:
         return opt_range[0], opt_range[1]
     return spec.get("min", spec.get("default")), spec.get("max", spec.get("default"))
+
+
+# =============================================================================
+# NOUVELLES STRATÉGIES 2025 - VOLUME PROFILE BREAKOUT
+# =============================================================================
+
+REGISTRY["VolumeProfileBreakout"] = {
+    "indicators": {
+        "volume_profile": {
+            "window_bars": {
+                "default": 96,
+                "min": 48,
+                "max": 192,
+                "step": 12,
+                "type": "int",
+                "label": "Fenêtre Volume Profile (bars)",
+                "description": "48=12h, 96=24h, 192=48h en 15m",
+            },
+            "va_percent": {
+                "default": 70.0,
+                "min": 68.0,
+                "max": 75.0,
+                "step": 1.0,
+                "type": "float",
+                "label": "Value Area %",
+                "description": "Pourcentage volume central (70% standard)",
+            },
+        },
+        "atr": {
+            "period": {
+                "default": 14,
+                "min": 10,
+                "max": 20,
+                "step": 2,
+                "type": "int",
+                "label": "Période ATR",
+            },
+        },
+        "ema": {
+            "period": {
+                "default": 200,
+                "type": "int",
+                "label": "Période EMA (tendance)",
+                "fixed": True,  # Non-optimisable
+            },
+        },
+        "adx": {
+            "period": {
+                "default": 14,
+                "type": "int",
+                "label": "Période ADX",
+                "fixed": True,  # Non-optimisable
+            },
+        },
+    },
+    "params": {
+        "window_bars": {
+            "default": 96,
+            "min": 48,
+            "max": 192,
+            "step": 12,
+            "type": "int",
+            "label": "Fenêtre Volume Profile (bars)",
+            "opt_range": (48, 192),
+            "description": "Taille fenêtre roulante calcul VP (48=12h, 96=24h, 192=48h en 15m)",
+        },
+        "va_percent": {
+            "default": 70.0,
+            "min": 68.0,
+            "max": 75.0,
+            "step": 1.0,
+            "type": "float",
+            "label": "Value Area %",
+            "opt_range": (68.0, 75.0),
+            "description": "Pourcentage volume Value Area (70% standard)",
+        },
+        "volume_multiplier": {
+            "default": 1.8,
+            "min": 1.3,
+            "max": 2.5,
+            "step": 0.2,
+            "type": "float",
+            "label": "Multiplicateur Volume Spike",
+            "opt_range": (1.3, 2.5),
+            "description": "Volume spike minimum (1.3=lax, 2.5=strict)",
+        },
+        "use_trend_filter": {
+            "default": True,
+            "type": "bool",
+            "label": "Activer Filtre Tendance (EMA 200 + ADX)",
+            "tunable": False,
+            "description": "Filtrer signaux selon tendance EMA 200 + ADX > 25",
+        },
+        "atr_period": {
+            "default": 14,
+            "min": 10,
+            "max": 20,
+            "step": 2,
+            "type": "int",
+            "label": "Période ATR",
+            "opt_range": (10, 20),
+            "description": "Période calcul Average True Range",
+        },
+        "sl_atr_mult": {
+            "default": 2.0,
+            "min": 1.5,
+            "max": 3.0,
+            "step": 0.25,
+            "type": "float",
+            "label": "Stop-Loss (× ATR)",
+            "opt_range": (1.5, 3.0),
+            "description": "Stop-loss en multiple ATR (1.5=serré, 3.0=large)",
+        },
+        "tp_atr_mult": {
+            "default": 4.5,
+            "min": 3.0,
+            "max": 6.0,
+            "step": 0.5,
+            "type": "float",
+            "label": "Take-Profit (× ATR)",
+            "opt_range": (3.0, 6.0),
+            "description": "Take-profit en multiple ATR (3.0=conservateur, 6.0=agressif)",
+        },
+    },
+}
+
+# =============================================================================
+# STRATÉGIE GOLD 2025 - VWAP MOMENTUM REVERSION
+# =============================================================================
+
+REGISTRY["VWAPMomentumReversion"] = {
+    "indicators": {
+        "vwap": {
+            # Calculé via IndicatorBank, pas de params optimisables
+            "label": "VWAP",
+            "description": "Volume Weighted Average Price (ancre journalière)",
+            "fixed": True,
+        },
+        "roc": {
+            "period": {
+                "default": 12,
+                "min": 8,
+                "max": 20,
+                "step": 2,
+                "type": "int",
+                "label": "Période ROC (Rate of Change)",
+                "description": "Vélocité momentum (8=rapide, 20=lent)",
+            },
+        },
+        "rsi": {
+            "period": {
+                "default": 14,
+                "min": 10,
+                "max": 20,
+                "step": 2,
+                "type": "int",
+                "label": "Période RSI",
+                "description": "RSI pour filtrer zones surachat/survente",
+            },
+        },
+        "atr": {
+            "period": {
+                "default": 14,
+                "min": 10,
+                "max": 20,
+                "step": 2,
+                "type": "int",
+                "label": "Période ATR",
+                "description": "ATR pour SL/TP adaptatifs",
+            },
+        },
+    },
+    "params": {
+        "roc_period": {
+            "default": 12,
+            "min": 8,
+            "max": 20,
+            "step": 2,
+            "type": "int",
+            "label": "Période ROC",
+            "opt_range": (8, 20),
+            "description": "Période calcul Rate of Change (momentum velocity)",
+        },
+        "deviation_threshold": {
+            "default": 1.8,
+            "min": 1.2,
+            "max": 3.0,
+            "step": 0.2,
+            "type": "float",
+            "label": "Seuil Déviation VWAP (%)",
+            "opt_range": (1.2, 3.0),
+            "description": "Écart prix/VWAP minimum pour déclencher signal (1.2%=sensible, 3.0%=conservateur)",
+        },
+        "rsi_period": {
+            "default": 14,
+            "min": 10,
+            "max": 20,
+            "step": 2,
+            "type": "int",
+            "label": "Période RSI",
+            "opt_range": (10, 20),
+            "description": "Période calcul RSI (filtre zones extrêmes)",
+        },
+        "rsi_overbought": {
+            "default": 72,
+            "min": 65,
+            "max": 80,
+            "step": 3,
+            "type": "int",
+            "label": "RSI Surachat",
+            "opt_range": (65, 80),
+            "description": "Seuil RSI surachat (65=strict, 80=lax)",
+        },
+        "rsi_oversold": {
+            "default": 28,
+            "min": 20,
+            "max": 35,
+            "step": 3,
+            "type": "int",
+            "label": "RSI Survente",
+            "opt_range": (20, 35),
+            "description": "Seuil RSI survente (20=strict, 35=lax)",
+        },
+        "volume_multiplier": {
+            "default": 1.5,
+            "min": 1.2,
+            "max": 2.5,
+            "step": 0.2,
+            "type": "float",
+            "label": "Multiplicateur Volume Spike",
+            "opt_range": (1.2, 2.5),
+            "description": "Volume minimum vs moyenne 20 bars (1.2=lax, 2.5=strict)",
+        },
+        "use_volume_filter": {
+            "default": True,
+            "type": "bool",
+            "label": "Activer Filtre Volume",
+            "tunable": False,
+            "description": "Filtrer signaux faible volume (rejette si volume < multiplier × avg)",
+        },
+        "atr_period": {
+            "default": 14,
+            "min": 10,
+            "max": 20,
+            "step": 2,
+            "type": "int",
+            "label": "Période ATR",
+            "opt_range": (10, 20),
+            "description": "Période calcul Average True Range pour SL/TP",
+        },
+        "sl_atr_mult": {
+            "default": 1.8,
+            "min": 1.5,
+            "max": 3.0,
+            "step": 0.2,
+            "type": "float",
+            "label": "Stop-Loss (× ATR)",
+            "opt_range": (1.5, 3.0),
+            "description": "Stop-loss en multiple ATR (1.5=serré, 3.0=large)",
+        },
+        "tp_atr_mult": {
+            "default": 4.2,
+            "min": 3.0,
+            "max": 6.0,
+            "step": 0.3,
+            "type": "float",
+            "label": "Take-Profit (× ATR)",
+            "opt_range": (3.0, 6.0),
+            "description": "Take-profit en multiple ATR (3.0=conservateur, 6.0=agressif, R:R ~2.3:1 par défaut)",
+        },
+    },
+}

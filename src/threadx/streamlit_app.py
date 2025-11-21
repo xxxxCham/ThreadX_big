@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from threadx.data_access import DATA_DIR
 from threadx.ui.page_backtest_optimization import main as backtest_page_main
 from threadx.ui.page_config_strategy import main as config_page_main
+from threadx.ui.pages.autonomous_orchestrator import main as orchestrator_page_main
 from threadx.ui.system_monitor import get_global_monitor
 
 # Configuration
@@ -416,6 +417,7 @@ PAGE_TITLES = {
     "config": "📊 Chargement des Données",
     "backtest": "⚡ Optimisation",
     "monitor": "🖥️ Monitoring Système",
+    "orchestrator": "🤖 Orchestrator Autonome",
 }
 
 
@@ -509,6 +511,7 @@ PAGE_RENDERERS = {
     "config": config_page_main,
     "backtest": backtest_page_main,
     "monitor": render_monitor_page,
+    "orchestrator": orchestrator_page_main,
 }
 
 

@@ -1,17 +1,18 @@
-# 🤖 Multi-LLM Optimizer - Guide d'Exécution
+# 🤖 Multi-LLM Optimizer + Realistic Execution - Guide Complet
 
-Système d'optimisation automatique de stratégies de trading utilisant 2 agents LLM collaboratifs.
+Système d'optimisation automatique de stratégies de trading utilisant 2 agents LLM collaboratifs + Moteur d'exécution réaliste.
 
 ---
 
 ## 📋 Vue d'Ensemble
 
-Ce POC démontre un système multi-LLM capable d'analyser des résultats de backtests et de proposer automatiquement des améliorations de paramètres.
+Ce POC démontre un système multi-LLM capable d'analyser des résultats de backtests et de proposer automatiquement des améliorations de paramètres, **avec simulation réaliste des frictions de trading**.
 
 **Architecture**:
 - **Analyst Agent** (deepseek-r1:70b): Analyse quantitative, identification de patterns
 - **Strategist Agent** (gpt-oss:20b): Génération créative de propositions
 - **BacktestEngine** (GPU): Validation automatique des propositions
+- **RealisticExecutor** (Nouveau!): Frictions réalistes (spread, slippage, latence, rejets)
 
 **Workflow**:
 ```
@@ -27,6 +28,118 @@ Rapport + Visualisation
 ```
 
 **Temps d'exécution**: ~2-5 minutes total (selon GPU + vitesse LLM)
+
+---
+
+## 🎯 Frictions Trading Réalistes (TOUS Timeframes)
+
+### Pourquoi c'est crucial ?
+
+**Problème** : Les backtests classiques avec `fee_rate` fixe sont **trop optimistes**.
+
+| Friction Ignorée | Impact Réel | Exemple 1 BTC @ $50k |
+|------------------|-------------|----------------------|
+| Spread bid/ask | 0.01-0.05% | $5-$25 par trade |
+| Slippage variable | 0.03-0.15% | $15-$75 |
+| Latence (50-500ms) | 0.005-0.02% | $2.50-$10 |
+| Rejets d'ordres | 2-10% trades | -$18.75 par trade perdu |
+| Maker vs Taker | 2x frais | $10 → $20 |
+
+**Résultat** : Un backtest à **+45%** peut devenir **+18%** en live trading ! 😱
+
+### Système Intégré
+
+Le moteur `RealisticExecutor` est **intégré directement dans `engine.py`** (pas de fichier séparé).
+
+```python
+from threadx.backtest import RealisticExecutor
+
+# Auto-ajustement selon timeframe
+executor = RealisticExecutor(
+    timeframe="1m",      # Impact x2 (scalping)
+    # timeframe="1h",    # Impact x0.6 (swing)
+    symbol="BTCUSDT",
+    exchange="BINANCE"
+)
+
+result = executor.execute_order(
+    side="BUY",
+    intended_price=50000.0,
+    quantity=0.5,
+    order_type="MARKET",
+    current_volatility=0.015,    # ATR 1.5%
+    current_volume_ratio=0.8     # 80% volume normal
+)
+
+if result.success:
+    print(f"Prix voulu : ${result.intended_price:,.2f}")
+    print(f"Prix réel  : ${result.executed_price:,.2f}")
+    print(f"Slippage   : {result.slippage_pct:.4f}%")
+    print(f"Frais      : ${result.total_fees:.2f}")
+    print(f"Latence    : {result.latency_ms:.0f}ms")
+else:
+    print(f"REJETÉ : {result.rejection_reason}")
+```
+
+### Paramètres par Timeframe
+
+| Timeframe | Spread | Slippage | Latence | Rejets | Impact Total |
+|-----------|--------|----------|---------|--------|--------------|
+| **1 minute** | 0.02% | 0.05% | 150ms | 5-10% | **0.11%** (CRITIQUE) |
+| **5 minutes** | 0.015% | 0.03% | 100ms | 3-5% | **0.075%** (IMPORTANT) |
+| **15 minutes** | 0.01% | 0.02% | <500ms | 1-3% | **0.05%** (MODÉRÉ) |
+| **1 heure** | 0.01% | 0.01% | <500ms | <1% | **0.04%** (FAIBLE) |
+
+### Configuration Exchanges
+
+```python
+from threadx.backtest import EXCHANGE_CONFIGS
+
+# Pré-configurations disponibles
+BINANCE = EXCHANGE_CONFIGS["BINANCE"]
+# → maker_fee: 0.02%, taker_fee: 0.04%
+# → spread: 0.01-0.05%, latence: 50-500ms
+
+BINANCE_FUTURES = EXCHANGE_CONFIGS["BINANCE_FUTURES"]
+# → Meilleure liquidité (spread 0.005-0.03%)
+
+BYBIT = EXCHANGE_CONFIGS["BYBIT"]
+# → Plus cher (taker_fee: 0.055%, rejets: 5%)
+```
+
+### Version Numba Ultra-Rapide
+
+Pour backtests sur millions de barres, utilisez la version optimisée :
+
+```python
+from threadx.backtest import apply_realistic_execution_numba
+
+# Dans backtest loop (JIT-compiled)
+success, exec_price, filled_qty, fees = apply_realistic_execution_numba(
+    intended_price=50000.0,
+    side=1,  # 1=BUY, -1=SELL
+    quantity=0.5,
+    spread_bps=2.0,
+    slippage_bps=5.0,
+    fee_bps=4.0,  # Taker fees
+    rejection_prob=0.02,
+    random_seed=np.random.random()
+)
+```
+
+### Impact sur Stratégies
+
+**Scalping 1 minute** :
+- 100 trades/jour × 365 jours = 36,500 trades
+- Frictions : 0.11% par trade × 36,500 = **228% du capital** en frais ! 😱
+- Return brut nécessaire : **+250%** juste pour break-even
+
+**Swing 1 heure** :
+- 2 trades/jour × 365 jours = 730 trades
+- Frictions : 0.04% par trade × 730 = **7.3% du capital**
+- Return brut nécessaire : **+15%** pour +7% net (raisonnable)
+
+**Conclusion** : Les frictions TUENT le scalping haute fréquence, favorisent le swing trading.
 
 ---
 
