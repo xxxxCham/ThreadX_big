@@ -151,8 +151,15 @@ def _save_config_to_history(
         st.session_state.config_history = st.session_state.config_history[-20:]
 
 
-def _render_config_history() -> dict | None:
-    """Affiche l'historique des configurations avec navigation."""
+def _render_config_history(key_prefix: str = "") -> dict | None:
+    """Affiche l'historique des configurations avec navigation.
+    
+    Args:
+        key_prefix: Préfixe pour les clés Streamlit (évite conflits entre onglets)
+    
+    Returns:
+        Configuration chargée ou None
+    """
     with st.expander("📜 Historique des Configurations", expanded=False):
         history = st.session_state.get("config_history", [])
 
@@ -176,14 +183,14 @@ def _render_config_history() -> dict | None:
                 with col2:
                     if st.button(
                         "📥 Charger",
-                        key=f"load_hist_{len(history) - 1 - idx}",
+                        key=f"{key_prefix}load_hist_{len(history) - 1 - idx}",
                         use_container_width=True,
                     ):
                         return cfg
                 with col3:
                     if st.button(
                         "🗑️ Suppr.",
-                        key=f"del_hist_{len(history) - 1 - idx}",
+                        key=f"{key_prefix}del_hist_{len(history) - 1 - idx}",
                         use_container_width=True,
                     ):
                         st.session_state.config_history.pop(len(history) - 1 - idx)
@@ -601,7 +608,7 @@ def _render_monte_carlo_tab() -> None:
 
     with col_history:
         # Afficher l'historique et gérer le chargement
-        loaded_config = _render_config_history()
+        loaded_config = _render_config_history(key_prefix="mc_")
         if loaded_config:
             if loaded_config["type"] == "Monte-Carlo":
                 st.session_state.strategy = loaded_config["strategy"]
@@ -1706,7 +1713,7 @@ def _render_optimization_tab() -> None:
 
     with col_history:
         # Afficher l'historique et gérer le chargement
-        loaded_config = _render_config_history()
+        loaded_config = _render_config_history(key_prefix="sweep_")
         if loaded_config:
             if loaded_config["type"] == "Sweep":
                 st.session_state.strategy = loaded_config["strategy"]
