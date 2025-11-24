@@ -33,6 +33,11 @@ from threadx.ui.backtest_bridge import run_backtest_gpu
 from threadx.ui.strategy_registry import parameter_specs_for, get_sweep_preset, SWEEP_PRESETS
 from threadx.llm.model_router import ModelRouter, TaskType
 from threadx.llm.ollama_manager import prepare_for_llm_run
+from threadx.llm.run_report import (
+    LLMRunReport,
+    RunIndex,
+    create_report_from_run,
+)
 
 
 def unload_ollama_model(model_name: str) -> bool:
@@ -693,6 +698,9 @@ def run_multi_llm_optimization(
     if "llm_results" not in st.session_state:
         st.session_state.llm_results = {}
 
+    # Tracker le temps de début du run pour le rapport
+    st.session_state["llm_run_start_time"] = time.time()
+
     # Conteneurs pour affichage progressif
     progress_container = st.container()
     results_container = st.container()
@@ -708,6 +716,7 @@ def run_multi_llm_optimization(
         status_text.markdown("### 🔄 Étape 1/5: Exécution du Sweep GPU...")
         progress_bar.progress(10)
 
+        sweep_start = time.time()
         with st.spinner(f"Test de {len(list(_generate_combinations(sweep_params)))} configurations..."):
             sweep_results = execute_sweep(
                 strategy_name=strategy_name,
@@ -718,6 +727,7 @@ def run_multi_llm_optimization(
                 feeder_aggr=feeder_aggr,
                 force_processpool=force_processpool,
             )
+        st.session_state["llm_sweep_duration"] = time.time() - sweep_start
 
         st.session_state.llm_results["sweep"] = sweep_results
 
@@ -856,6 +866,7 @@ Votre rôle: analyser les données factuelles, identifier patterns et trade-offs
                         )
                     
                     elapsed = time.time() - start_time
+                    st.session_state["llm_analyst_duration"] = elapsed
 
                     # Afficher résultats formatés
                     analysis_placeholder.empty()
@@ -1037,6 +1048,7 @@ Votre rôle: analyser les données factuelles, identifier patterns et trade-offs
                         n_proposals=n_proposals
                     )
                     elapsed = time.time() - start_time
+                    st.session_state["llm_strategist_duration"] = elapsed
 
                     # Afficher propositions formatées
                     proposals_placeholder.empty()
@@ -1090,6 +1102,92 @@ Votre rôle: analyser les données factuelles, identifier patterns et trade-offs
                 test_results=test_results,
                 analysis=analysis_result,
             )
+
+        # ============================================================
+        # GÉNÉRATION DU RAPPORT ET INDEXATION
+        # ============================================================
+        status_text.markdown("### 📁 Sauvegarde du rapport...")
+
+        try:
+            # Calculer durée totale du run
+            run_end_time = time.time()
+            total_run_duration = run_end_time - st.session_state.get("llm_run_start_time", run_end_time)
+
+            # Récupérer les durées stockées dans session_state
+            sweep_duration = st.session_state.get("llm_sweep_duration", 0.0)
+            analyst_duration = st.session_state.get("llm_analyst_duration", 0.0)
+            strategist_duration = st.session_state.get("llm_strategist_duration", 0.0)
+
+            # Baseline sharpe
+            baseline_sharpe = baseline_config.get("sharpe_ratio", baseline_config.get("sharpe", 0.0))
+
+            # Créer le rapport
+            report = create_report_from_run(
+                strategy_name=strategy_name,
+                sweep_results=sweep_results,
+                sweep_params=sweep_params,
+                sweep_duration=sweep_duration,
+                analysis_result=analysis_result,
+                analyst_model=analyst_model,
+                analyst_duration=analyst_duration,
+                proposals_result=proposals_result,
+                baseline_params=baseline_params,
+                baseline_sharpe=baseline_sharpe,
+                strategist_model=strategist_model,
+                strategist_duration=strategist_duration,
+                test_results=test_results,
+                config={
+                    "use_gpu": use_gpu,
+                    "use_multigpu": use_multigpu,
+                    "max_workers": max_workers,
+                    "feeder_aggr": feeder_aggr,
+                    "n_proposals": n_proposals,
+                    "top_n_analysis": top_n_analysis,
+                    "memory_saver": memory_saver,
+                },
+            )
+
+            # Sauvegarder et indexer
+            index = RunIndex()
+            report_path = index.save_report(
+                report,
+                tags=[strategy_name, f"sharpe_{report.best_sharpe:.2f}"]
+            )
+
+            # Stocker dans session_state pour accès ultérieur
+            st.session_state["last_report"] = report
+            st.session_state["last_report_path"] = str(report_path)
+
+            # Afficher succès avec lien
+            with results_container:
+                st.divider()
+                st.success(f"📁 **Rapport sauvegardé:** `{report_path}`")
+
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("🆔 Run ID", report.run_id)
+                with col2:
+                    st.metric("📊 Best Sharpe", f"{report.best_sharpe:.3f}")
+                with col3:
+                    improvement = "✅ Oui" if (report.tests and report.tests.improvement_found) else "❌ Non"
+                    st.metric("📈 Amélioration", improvement)
+
+                # Bouton téléchargement JSON
+                st.download_button(
+                    label="📥 Télécharger le rapport (JSON)",
+                    data=report.to_json(),
+                    file_name=f"llm_report_{report.run_id}.json",
+                    mime="application/json",
+                )
+
+                # Afficher résumé
+                with st.expander("📋 Résumé du rapport", expanded=False):
+                    st.markdown(report.summary)
+
+        except Exception as e:
+            st.warning(f"⚠️ Erreur lors de la sauvegarde du rapport: {e}")
+            import traceback
+            st.caption(traceback.format_exc())
 
         progress_bar.progress(100)
         status_text.success("### 🎉 Optimisation Multi-LLM terminée !")
