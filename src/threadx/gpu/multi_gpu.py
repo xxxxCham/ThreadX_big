@@ -457,7 +457,8 @@ class MultiGPUManager:
                         try:
                             mem_info = cp.cuda.runtime.memGetInfo()
                             device_memory_used = (mem_info[1] - mem_info[0]) / (1024**3)
-                        except Exception:
+                        except Exception as e:
+                            logger.debug(f"GPU memory query failed (ignoré): {e}")
                             pass
 
                         # Calcul
@@ -872,7 +873,8 @@ class MultiGPUManager:
                     if hasattr(stream, "close"):
                         stream.close()
                 self._device_streams.clear()
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Stream cleanup in __del__ failed (ignoré): {e}")
             pass
 
 
