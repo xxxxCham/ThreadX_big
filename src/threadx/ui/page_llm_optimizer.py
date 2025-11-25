@@ -27,10 +27,6 @@ from threadx.data_access import load_ohlcv
 from threadx.indicators.bank import IndicatorBank, IndicatorSettings
 from threadx.llm.agents.analyst import Analyst
 from threadx.llm.agents.strategist import Strategist
-from threadx.optimization.engine import SweepRunner
-from threadx.optimization.scenarios import ScenarioSpec
-from threadx.ui.backtest_bridge import run_backtest_gpu
-from threadx.ui.strategy_registry import parameter_specs_for, get_sweep_preset, SWEEP_PRESETS
 from threadx.llm.model_router import ModelRouter, TaskType
 from threadx.llm.ollama_manager import prepare_for_llm_run
 from threadx.llm.run_report import (
@@ -38,6 +34,50 @@ from threadx.llm.run_report import (
     RunIndex,
     create_report_from_run,
 )
+from threadx.optimization.engine import SweepRunner
+from threadx.optimization.scenarios import ScenarioSpec
+from threadx.ui.backtest_bridge import run_backtest_gpu
+from threadx.ui.strategy_registry import (
+    SWEEP_PRESETS,
+    get_sweep_preset,
+    parameter_specs_for,
+    resolve_range,
+)
+from threadx.utils.log import get_logger
+
+logger = get_logger(__name__)
+
+
+def _normalize_param_type(raw_type: str | None) -> str:
+    if raw_type in {"int", "integer"}:
+        return "integer"
+    if raw_type in {"float", "number", None}:
+        return "float"
+    return raw_type
+
+
+def _generate_sweep_values(
+    min_val: float, max_val: float, n_values: int, param_type: str, step: float | None
+) -> list[Any]:
+    if n_values <= 1:
+        values = [min_val]
+    else:
+        span = max_val - min_val
+        values = [min_val + i * span / (n_values - 1) for i in range(n_values)]
+
+    if step:
+        snapped: list[float] = []
+        for v in values:
+            offset = v - min_val
+            snapped_val = min_val + round(offset / step) * step
+            snapped_val = max(min_val, min(snapped_val, max_val))
+            snapped.append(snapped_val)
+        values = snapped
+
+    if param_type == "integer":
+        values = [int(round(v)) for v in values]
+
+    return values
 
 
 def unload_ollama_model(model_name: str) -> bool:
@@ -182,7 +222,7 @@ from threadx.llm.ollama_manager import prepare_for_llm_run; c = LLMClient(model=
         sweep_params = {}
 
         for param_name, spec in param_specs.items():
-            param_type = spec.get("type", "number")
+            param_type = _normalize_param_type(spec.get("type", "number"))
             is_preset = False  # Flag pour savoir si c'est un préréglage
 
             if param_type == "boolean":
@@ -192,18 +232,23 @@ from threadx.llm.ollama_manager import prepare_for_llm_run; c = LLMClient(model=
 
             # Utiliser préréglages globaux si disponibles (source unique)
             preset = get_sweep_preset(param_name)
+            step = spec.get("step")
             if preset:
                 min_val = preset["min"]
                 max_val = preset["max"]
-                n_values = preset["n_values"]
+                step = preset.get("step", step)
+                n_values = max(2, preset.get("n_values", 3))
                 is_preset = True
                 # Afficher la raison du préréglage
                 reason = SWEEP_PRESETS[param_name]["reason"]
-                st.caption(f"🔒 {param_name}: {min_val} (fixé - {reason})")
+                st.caption(
+                    f"🔒 {param_name}: {min_val} → {max_val} "
+                    f"({n_values} valeurs préréglées, pas={step or 'auto'}) - {reason}"
+                )
             else:
-                min_val = spec.get("min", 0)
-                max_val = spec.get("max", 100)
-                step = spec.get("step", 1)
+                opt_min, opt_max = resolve_range(spec)
+                min_val = opt_min if opt_min is not None else spec.get("min", 0)
+                max_val = opt_max if opt_max is not None else spec.get("max", 100)
 
                 # Générer 3-4 valeurs dans la plage
                 n_values = st.slider(
@@ -218,20 +263,12 @@ from threadx.llm.ollama_manager import prepare_for_llm_run; c = LLMClient(model=
             if min_val is None or max_val is None:
                 st.warning(f"⚠️ Valeurs min/max invalides pour {param_name}, ignoré")
                 continue
-            if n_values == 1:
-                values = [min_val]
-            else:
-                values = [min_val + i * (max_val - min_val) / (n_values - 1)
-                         for i in range(n_values)]
-
-            if param_type == "integer":
-                values = [int(v) for v in values]
+            values = _generate_sweep_values(min_val, max_val, n_values, param_type, step)
 
             sweep_params[param_name] = values
 
-            # Afficher les valeurs générées uniquement si pas de préréglage
-            if not is_preset:
-                st.caption(f"✓ {param_name}: {values}")
+            # Afficher les valeurs générées
+            st.caption(f"✓ {param_name}: {values}")
 
         total_configs = 1
         for vals in sweep_params.values():
@@ -701,6 +738,12 @@ def run_multi_llm_optimization(
     # Tracker le temps de début du run pour le rapport
     st.session_state["llm_run_start_time"] = time.time()
 
+    logger.info(
+        f"[Multi-LLM] Démarrage optimisation - "
+        f"strategy:{strategy_name}, analyst:{analyst_model}, strategist:{strategist_model}, "
+        f"n_proposals:{n_proposals}, gpu:{use_gpu}, multigpu:{use_multigpu}"
+    )
+
     # Conteneurs pour affichage progressif
     progress_container = st.container()
     results_container = st.container()
@@ -728,6 +771,11 @@ def run_multi_llm_optimization(
                 force_processpool=force_processpool,
             )
         st.session_state["llm_sweep_duration"] = time.time() - sweep_start
+
+        logger.info(
+            f"[Multi-LLM] Étape 1/5 SWEEP terminé - "
+            f"{len(sweep_results)} configs testées en {time.time() - sweep_start:.2f}s"
+        )
 
         st.session_state.llm_results["sweep"] = sweep_results
 
@@ -772,6 +820,8 @@ def run_multi_llm_optimization(
             current_analyst_model = model_router.get_model_for_task(TaskType.INITIALIZATION)
             
         status_text.markdown(f"### 🧠 Étape 2/5: Analyse Analyst ({current_analyst_model})...")
+
+        logger.info(f"[Multi-LLM] Étape 2/5 ANALYST démarré - modèle:{current_analyst_model}, top_n:{top_n_analysis}")
 
         with st.spinner(f"Analyse des top {top_n_analysis} configs (peut prendre 30-60s)..."):
             analyst = Analyst(model=current_analyst_model, debug=False)
@@ -867,6 +917,11 @@ Votre rôle: analyser les données factuelles, identifier patterns et trade-offs
                     
                     elapsed = time.time() - start_time
                     st.session_state["llm_analyst_duration"] = elapsed
+
+                    logger.info(
+                        f"[Multi-LLM] Étape 2/5 ANALYST terminé - "
+                        f"{len(analysis_result.get('analysis', {}).get('recommendations', []))} recommandations en {elapsed:.2f}s"
+                    )
 
                     # Afficher résultats formatés
                     analysis_placeholder.empty()
@@ -1041,6 +1096,8 @@ Votre rôle: analyser les données factuelles, identifier patterns et trade-offs
                     # Construire param_specs pour validation
                     param_specs_full = parameter_specs_for(strategy_name)
 
+                    logger.info(f"[Multi-LLM] Étape 3/5 STRATEGIST démarré - modèle:{current_strategist_model}, n_proposals:{n_proposals}")
+
                     proposals_result = strategist.propose_modifications(
                         analysis=analysis_result,
                         current_params=baseline_params,
@@ -1049,6 +1106,11 @@ Votre rôle: analyser les données factuelles, identifier patterns et trade-offs
                     )
                     elapsed = time.time() - start_time
                     st.session_state["llm_strategist_duration"] = elapsed
+
+                    logger.info(
+                        f"[Multi-LLM] Étape 3/5 STRATEGIST terminé - "
+                        f"{len(proposals_result.get('proposals', []))} propositions en {elapsed:.2f}s"
+                    )
 
                     # Afficher propositions formatées
                     proposals_placeholder.empty()
@@ -1073,6 +1135,9 @@ Votre rôle: analyser les données factuelles, identifier patterns et trade-offs
         # ============================================================
         status_text.markdown("### ✅ Étape 4/5: Tests automatiques des propositions...")
 
+        logger.info(f"[Multi-LLM] Étape 4/5 TESTS démarré - {len(proposals_result['proposals'])} propositions à tester")
+        test_start = time.time()
+
         with st.spinner(f"Test de {len(proposals_result['proposals'])} propositions..."):
             test_results = test_proposals(
                 strategy_name=strategy_name,
@@ -1080,6 +1145,13 @@ Votre rôle: analyser les données factuelles, identifier patterns et trade-offs
                 baseline_config=baseline_config,
                 use_gpu=use_gpu,
             )
+
+        test_duration = time.time() - test_start
+        successful_tests = sum(1 for r in test_results if r.get('sharpe_ratio'))
+        logger.info(
+            f"[Multi-LLM] Étape 4/5 TESTS terminé - "
+            f"{successful_tests}/{len(proposals_result['proposals'])} propositions valides en {test_duration:.2f}s"
+        )
 
         st.session_state.llm_results["tests"] = test_results
 
@@ -1192,6 +1264,15 @@ Votre rôle: analyser les données factuelles, identifier patterns et trade-offs
         progress_bar.progress(100)
         status_text.success("### 🎉 Optimisation Multi-LLM terminée !")
 
+        total_duration = time.time() - st.session_state["llm_run_start_time"]
+        logger.info(
+            f"[Multi-LLM] Optimisation TERMINÉE - "
+            f"Durée totale:{total_duration:.2f}s, "
+            f"Sweep:{st.session_state.get('llm_sweep_duration', 0):.1f}s, "
+            f"Analyst:{st.session_state.get('llm_analyst_duration', 0):.1f}s, "
+            f"Strategist:{st.session_state.get('llm_strategist_duration', 0):.1f}s"
+        )
+
     except RuntimeError as e:
         error_msg = str(e)
 
@@ -1213,6 +1294,7 @@ Votre rôle: analyser les données factuelles, identifier patterns et trade-offs
             st.error(f"❌ Erreur d'exécution: {error_msg}")
 
     except Exception as e:
+        logger.error(f"[Multi-LLM] ERREUR lors de l'optimisation: {type(e).__name__}: {str(e)}", exc_info=True)
         st.error(f"❌ Erreur inattendue: {e}")
         import traceback
         with st.expander("🐛 Traceback complet"):
@@ -1267,6 +1349,8 @@ def execute_sweep(
 ):
     """Exécute le sweep et retourne les résultats avec SweepRunner performant."""
     import threading
+
+    logger.info(f"[Sweep] Démarrage sweep - strategy:{strategy_name}, gpu:{use_gpu}, workers:{max_workers}")
 
     # Configuration optimisation pour LLM: appliquer feeder_aggr
     os.environ["THREADX_FEEDER_AGGR"] = str(feeder_aggr)
@@ -1486,6 +1570,8 @@ def execute_sweep(
     eta_placeholder.metric("⏱️ Durée Totale", time_str)
     completed_placeholder.metric("✅ Résultats", f"{completed:,}", delta="100%", delta_color="normal")
 
+    logger.debug(f"[Sweep] {total_combinations} combinaisons générées")
+
     # Normaliser le format des résultats
     # SweepRunner retourne un format avec colonnes ['params', 'stats', 'error']
     # où 'stats' contient les métriques imbriquées
@@ -1596,11 +1682,19 @@ def execute_sweep(
     # Convertir DataFrame en liste de dicts pour compatibilité avec le reste du code
     results = results_df.to_dict('records')
 
+    best_sharpe = max((r.get('sharpe_ratio', r.get('sharpe', 0)) for r in results), default=0)
+    logger.info(
+        f"[Sweep] Terminé - {len(results)} résultats, "
+        f"meilleur sharpe:{best_sharpe:.3f}, durée:{elapsed_time:.1f}s"
+    )
+
     return results
 
 
 def test_proposals(strategy_name: str, proposals: list, baseline_config: dict, use_gpu: bool):
     """Teste chaque proposition et retourne les résultats."""
+
+    logger.info(f"[Test Proposals] Démarrage - {len(proposals)} propositions à tester")
 
     # Utiliser les mêmes données que le sweep (depuis session_state)
     if "data" in st.session_state and not st.session_state.data.empty:
@@ -1637,13 +1731,17 @@ def test_proposals(strategy_name: str, proposals: list, baseline_config: dict, u
                 "full_result": result,  # ← Capture résultat complet pour analyses futures
             })
 
-            st.success(f"✅ '{prop['name']}' testé : Sharpe={result.metrics.get('sharpe_ratio', 0.0):.3f}")
+            sharpe = result.metrics.get('sharpe_ratio', 0.0)
+            st.success(f"✅ '{prop['name']}' testé : Sharpe={sharpe:.3f}")
+            logger.debug(f"[Test Proposals] {prop['name']}: sharpe={sharpe:.3f}")
 
         except Exception as e:
+            logger.warning(f"[Test Proposals] Erreur sur {prop['name']}: {e}")
             st.error(f"❌ Erreur test '{prop['name']}': {str(e)}")
             st.caption(f"Paramètres reçus: {prop['params']}")
             continue
 
+    logger.info(f"[Test Proposals] Terminé - {len(test_results)} résultats")
     return test_results
 
 
