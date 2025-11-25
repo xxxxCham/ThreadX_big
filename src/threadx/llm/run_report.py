@@ -259,13 +259,21 @@ class TestsSection:
         best_sharpe = baseline_sharpe
 
         for res in test_results:
-            sharpe = res.get("sharpe_ratio", 0.0)
+            # CRITICAL: Handle None values explicitly
+            sharpe = res.get("sharpe_ratio")
+            if sharpe is None:
+                sharpe = 0.0
+
             trades = res.get("trades", [])
 
             # Calculer profit/loss trades
             profit_trades = sum(1 for t in trades if t.get("pnl", t.get("pnl_realized", 0)) > 0)
             total_trades = len(trades)
             loss_trades = total_trades - profit_trades
+
+            # Safe delta calculation
+            vs_baseline = (sharpe - baseline_sharpe) if sharpe is not None else None
+            is_improvement = (sharpe > baseline_sharpe) if sharpe is not None else False
 
             item = TestResultItem(
                 name=res.get("name", "Unknown"),
@@ -277,12 +285,12 @@ class TestsSection:
                 total_trades=total_trades,
                 profit_trades=profit_trades,
                 loss_trades=loss_trades,
-                vs_baseline_sharpe=sharpe - baseline_sharpe,
-                is_improvement=sharpe > baseline_sharpe,
+                vs_baseline_sharpe=vs_baseline if vs_baseline is not None else 0.0,
+                is_improvement=is_improvement,
             )
             results.append(item)
 
-            if sharpe > best_sharpe:
+            if sharpe is not None and sharpe > best_sharpe:
                 best_sharpe = sharpe
                 best_proposal = res.get("name")
 

@@ -2049,24 +2049,30 @@ def render_candlestick_with_trades(
         side = str(trade.get("side", "LONG")).upper()
         # FIX: Support both "pnl" (BacktestEngine) and "pnl_realized" (Strategy classes)
         pnl = trade.get("pnl", trade.get("pnl_realized", 0))
-        
+
         # Entrées (différencier LONG/SHORT)
-        if "entry_time" in trade and "entry_price" in trade:
+        # CRITICAL: Check values are not None to avoid Plotly format errors
+        entry_time = trade.get("entry_time")
+        entry_price = trade.get("entry_price")
+        if entry_time is not None and entry_price is not None:
             if side == "LONG":
-                entries_long_x.append(trade["entry_time"])
-                entries_long_y.append(trade["entry_price"])
+                entries_long_x.append(entry_time)
+                entries_long_y.append(entry_price)
             else:
-                entries_short_x.append(trade["entry_time"])
-                entries_short_y.append(trade["entry_price"])
-        
+                entries_short_x.append(entry_time)
+                entries_short_y.append(entry_price)
+
         # Sorties (différencier profit/perte)
-        if "exit_time" in trade and "exit_price" in trade:
+        # CRITICAL: Check values are not None
+        exit_time = trade.get("exit_time")
+        exit_price = trade.get("exit_price")
+        if exit_time is not None and exit_price is not None:
             if pnl > 0:
-                exits_profit_x.append(trade["exit_time"])
-                exits_profit_y.append(trade["exit_price"])
+                exits_profit_x.append(exit_time)
+                exits_profit_y.append(exit_price)
             else:
-                exits_loss_x.append(trade["exit_time"])
-                exits_loss_y.append(trade["exit_price"])
+                exits_loss_x.append(exit_time)
+                exits_loss_y.append(exit_price)
     
     # Ajouter traces pour entrées LONG
     if entries_long_x:
