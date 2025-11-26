@@ -19,7 +19,7 @@ import time
 from abc import ABC, abstractmethod
 from typing import Any
 
-from threadx.llm.client import LLMClient
+from threadx.llm.client import LLMClient, LLMNotConfiguredError
 
 
 class BaseAgent(ABC):
@@ -28,52 +28,71 @@ class BaseAgent(ABC):
 
     Attributes:
         name: Nom de l'agent (utilisé pour logging)
-        model: Modèle Ollama à utiliser
-        client: Instance LLMClient configurée
+        model: Modèle Ollama à utiliser (optionnel si use_llm=False)
+        client: Instance LLMClient configurée ou None si LLM désactivé
         timeout: Timeout par défaut pour requêtes LLM
+        use_llm: Indique si l'agent utilise un LLM
         logger: Logger avec préfixe [AgentName]
     """
 
     def __init__(
         self,
         name: str,
-        model: str,
+        model: str | None = None,
         timeout: float = 60.0,
         max_retries: int = 2,
         debug: bool = False,
+        use_llm: bool = True,
     ):
         """
         Initialise un agent LLM.
 
         Args:
             name: Nom de l'agent (ex: "Analyst", "Strategist")
-            model: Modèle Ollama (ex: "deepseek-r1:70b", "gpt-oss:20b")
+            model: Modèle Ollama (ex: "deepseek-r1:70b", "gpt-oss:20b").
+                   Peut être None si use_llm=False.
             timeout: Timeout en secondes pour requêtes LLM
             max_retries: Nombre de tentatives en cas d'échec
             debug: Active logging détaillé
+            use_llm: Active ou désactive explicitement les appels LLM.
+                     Si False, l'agent fonctionnera sans LLMClient.
         """
         self.name = name
         self.model = model
         self.timeout = timeout
         self.max_retries = max_retries
         self.debug = debug
+        self.use_llm = use_llm
 
         # Logger avec préfixe agent
         self.logger = logging.getLogger(f"threadx.llm.agents.{name.lower()}")
         if debug:
             self.logger.setLevel(logging.DEBUG)
 
-        # Client LLM partagé
-        self.client = LLMClient(
-            model=model, timeout=timeout, max_retries=max_retries, debug=debug
-        )
+        # Client LLM partagé (optionnel)
+        self.client = None
+        if self.use_llm:
+            if not self.model:
+                raise ValueError(
+                    f"Agent {name}: model requis si use_llm=True. "
+                    "Fournissez un modèle ou passez use_llm=False."
+                )
+            self.client = LLMClient(
+                model=model, timeout=timeout, max_retries=max_retries, debug=debug
+            )
 
         # Métriques de performance
         self._metrics = {"total_calls": 0, "total_time": 0.0, "errors": 0}
 
-        self.logger.info(
-            f"🤖 Agent {name} initialisé (model={model}, timeout={timeout}s)"
-        )
+        # Logging différencié selon mode
+        if self.use_llm and self.client:
+            self.logger.info(
+                f"🤖 Agent {name} initialisé (model={model}, timeout={timeout}s)"
+            )
+        else:
+            self.logger.info(
+                f"🤖 Agent {name} initialisé (mode: sans LLM, tests automatiques)"
+            )
 
     def _call_llm(
         self,
@@ -95,8 +114,15 @@ class BaseAgent(ABC):
             Réponse texte du LLM
 
         Raises:
+            LLMNotConfiguredError: Si l'agent n'a pas de client LLM configuré
             RuntimeError: Si LLM échoue après max_retries
         """
+        if not self.use_llm or self.client is None:
+            raise LLMNotConfiguredError(
+                f"Agent {self.name} configuré sans LLM (use_llm=False). "
+                "Impossible d'appeler _call_llm()."
+            )
+
         start_time = time.time()
         self._metrics["total_calls"] += 1
 
@@ -133,6 +159,7 @@ class BaseAgent(ABC):
         system: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 2000,
+        use_retry: bool = True,
     ) -> dict[str, Any]:
         """
         Appel LLM avec parsing JSON et validation de schéma.
@@ -143,14 +170,22 @@ class BaseAgent(ABC):
             system: Message système optionnel
             temperature: Température de génération
             max_tokens: Nombre max de tokens
+            use_retry: Utiliser retry intelligent si JSON invalide (défaut: True)
 
         Returns:
             Dict parsé depuis la réponse JSON du LLM
 
         Raises:
+            LLMNotConfiguredError: Si l'agent n'a pas de client LLM configuré
             ValueError: Si réponse non-JSON ou schéma invalide
             RuntimeError: Si LLM échoue après retries
         """
+        if not self.use_llm or self.client is None:
+            raise LLMNotConfiguredError(
+                f"Agent {self.name} configuré sans LLM (use_llm=False). "
+                "Impossible d'appeler _call_llm_structured()."
+            )
+
         start_time = time.time()
         self._metrics["total_calls"] += 1
 
@@ -160,15 +195,23 @@ class BaseAgent(ABC):
                     f"📤 LLM Structured Call - Expected schema: {expected_schema}"
                 )
 
-            # Note: LLMClient.complete_structured() n'a pas de param expected_schema
-            # On appelle directement et valide manuellement si besoin
-            response = self.client.complete_structured(
-                prompt=prompt,
-                system=system,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
-            
+            # Utiliser retry intelligent si activé
+            if use_retry:
+                response = self.client.complete_structured_with_retry(
+                    prompt=prompt,
+                    system=system,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    max_json_retries=2,
+                )
+            else:
+                response = self.client.complete_structured(
+                    prompt=prompt,
+                    system=system,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+
             # Validation optionnelle du schéma (basique)
             if expected_schema:
                 missing_keys = set(expected_schema.keys()) - set(response.keys())
@@ -244,4 +287,7 @@ class BaseAgent(ABC):
 
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(name={self.name}, model={self.model})"
+        return (
+            f"{self.__class__.__name__}(name={self.name}, model={self.model}, "
+            f"use_llm={self.use_llm})"
+        )

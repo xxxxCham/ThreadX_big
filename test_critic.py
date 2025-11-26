@@ -33,13 +33,16 @@ def test_critic_init():
     critic = Critic(criteria=criteria, debug=True)
 
     assert critic.name == "Critic"
-    assert critic.model == "deepseek-r1:8b"
+    assert critic.model is None  # Critic V1 ne nécessite pas de modèle
+    assert critic.use_llm is False  # Désactivé explicitement
+    assert critic.client is None  # Pas de LLMClient
     assert critic.timeout == 60.0
     assert critic.criteria.min_sharpe == 0.5
     assert critic.experimental_dir.exists()
 
     print("✅ Initialisation OK")
     print(f"   - Name: {critic.name}")
+    print(f"   - Model: {critic.model} (use_llm={critic.use_llm})")
     print(f"   - Critères: Sharpe≥{criteria.min_sharpe}, DD≥{criteria.max_drawdown_pct}%")
 
 

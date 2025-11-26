@@ -75,15 +75,26 @@ class Critic(BaseAgent):
             experimental_dir: Dossier des stratégies à valider
             debug: Active logs détaillés
         """
-        # Critic n'a pas besoin de LLM pour V1 (tests automatiques uniquement)
-        # Mais garde la structure BaseAgent pour cohérence
-        super().__init__(name="Critic", model="deepseek-r1:8b", timeout=60.0, debug=debug)
+        # Critic V1 n'utilise PAS de LLM (tests automatiques uniquement)
+        # V2 pourra ajouter LLM code review optionnel
+        super().__init__(
+            name="Critic",
+            model=None,  # Pas de modèle nécessaire pour V1
+            timeout=60.0,
+            debug=debug,
+            use_llm=False,  # Désactive explicitement les appels LLM
+        )
 
         self.criteria = criteria or ValidationCriteria()
         self.experimental_dir = Path(experimental_dir)
 
         self.logger.info(f"📁 Experimental directory: {self.experimental_dir}")
-        self.logger.info(f"📊 Critères: Sharpe≥{self.criteria.min_sharpe}, DD≥{self.criteria.max_drawdown_pct}%, Trades≥{self.criteria.min_trades}")
+        self.logger.info(
+            f"📊 Critères: Sharpe≥{self.criteria.min_sharpe}, "
+            f"DD≥{self.criteria.max_drawdown_pct}%, "
+            f"Trades≥{self.criteria.min_trades}, "
+            f"WinRate≥{self.criteria.min_win_rate_pct}%"
+        )
 
     def analyze(self, *args, **kwargs) -> dict[str, Any]:
         """
