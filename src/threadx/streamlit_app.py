@@ -35,8 +35,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from threadx.data_access import DATA_DIR
 from threadx.ui.page_backtest_optimization import main as backtest_page_main
 from threadx.ui.page_config_strategy import main as config_page_main
+<<<<<<< HEAD
 from threadx.ui.page_llm_optimizer import render_page as llm_optimizer_page
 from threadx.ui.page_reports import render_page as reports_page
+=======
+from threadx.ui.pages.autonomous_orchestrator import main as orchestrator_page_main
+>>>>>>> 1b119cb971277c69eb4e50ee864485c021549ced
 from threadx.ui.system_monitor import get_global_monitor
 import subprocess
 import platform
@@ -424,6 +428,7 @@ PAGE_TITLES = {
     "llm": "🤖 Multi-LLM Optimizer",
     "reports": "📚 Historique Rapports",
     "monitor": "🖥️ Monitoring Système",
+    "orchestrator": "🤖 Multi-Agents Autonome",
 }
 
 
@@ -519,6 +524,7 @@ PAGE_RENDERERS = {
     "llm": llm_optimizer_page,
     "reports": reports_page,
     "monitor": render_monitor_page,
+    "orchestrator": orchestrator_page_main,
 }
 
 
@@ -872,12 +878,21 @@ def render_sidebar() -> None:
             f"{'✅' if current_step > 2 else '⏳' if current_step == 2 else '⭕'}"
         )
         st.caption(
+<<<<<<< HEAD
             f"Étape 3/4 : Multi-LLM Optimizer "
             f"{'✅' if current_step > 3 else '⏳' if current_step == 3 else '⭕'}"
         )
         st.caption(
             f"Étape 4/4 : Monitoring système "
             f"{'⏳' if current_step == 4 else '⭕'}"
+=======
+            f"Étape 3/3 : Monitoring système "
+            f"{'✅' if current_step > 3 else '⏳' if current_step == 3 else '⭕'}"
+        )
+        st.caption(
+            f"🤖 Autonome : Orchestrator Multi-Agents "
+            f"{'✅' if current_page == 'orchestrator' else '⭕'}"
+>>>>>>> 1b119cb971277c69eb4e50ee864485c021549ced
         )
 
         # Bouton "Suivant" selon l'étape actuelle
@@ -886,6 +901,7 @@ def render_sidebar() -> None:
                 st.session_state.page = "backtest"
                 st.rerun()
         elif current_page == "backtest":
+<<<<<<< HEAD
             col_bt1, col_bt2 = st.columns(2)
             with col_bt1:
                 if st.button("🤖 Multi-LLM", use_container_width=True):
@@ -909,6 +925,17 @@ def render_sidebar() -> None:
             if st.button("🤖 Retour Multi-LLM", type="primary", use_container_width=True):
                 st.session_state.page = "llm"
                 st.rerun()
+=======
+            col_mon, col_orch = st.columns(2)
+            with col_mon:
+                if st.button("📊 Monitoring", use_container_width=True):
+                    st.session_state.page = "monitor"
+                    st.rerun()
+            with col_orch:
+                if st.button("🤖 Autonome", type="primary", use_container_width=True):
+                    st.session_state.page = "orchestrator"
+                    st.rerun()
+>>>>>>> 1b119cb971277c69eb4e50ee864485c021549ced
 
         st.markdown("---")
         st.markdown("### 🧭 Navigation")

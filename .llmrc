@@ -1,0 +1,34 @@
+# 🤖 INSTRUCTIONS POUR LLMs - ThreadX
+
+## ⚠️ OBLIGATION ABSOLUE
+
+### AVANT TOUTE RÉPONSE
+→ Consulter DIRECTIVES_DEV.md
+
+### AVANT DE CODER
+1. Lire DIRECTIVES_DEV.md
+2. Vérifier si code peut aller dans module existant
+3. SI nouveau fichier: justifier (perf ou size >2000 lignes)
+4. SI non justifié: ajouter au fichier existant
+
+### CHECKLIST CHAQUE MODIFICATION
+- [ ] Type hints complets
+- [ ] Docstrings (Google/NumPy)
+- [ ] Tests (coverage >80%)
+- [ ] Logging avec logger
+- [ ] Respecte conventions nommage
+- [ ] PAS de nouveau fichier markdown
+
+---
+
+## 🎯 RÉSUMÉ
+
+**Consolidation plutôt que dispersion.**
+
+Ajouter fonctions à fichiers existants = meilleur code.
+
+Consulter DIRECTIVES_DEV.md en cas de doute.
+
+---
+
+*Last Updated: 21 novembre 2025*

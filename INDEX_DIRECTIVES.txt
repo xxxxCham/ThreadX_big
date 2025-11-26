@@ -1,0 +1,199 @@
+================================================================================
+🤖 INDEX RAPIDE - INSTRUCTIONS POUR LLMs
+================================================================================
+
+⚠️ OBLIGATION N°1: Consulter DIRECTIVES_DEV.md AVANT toute réponse
+
+================================================================================
+📋 FICHIERS CLÉS (consultez dans cet ordre):
+================================================================================
+
+1. DIRECTIVES_DEV.md (258 lignes)
+   └─ Source de vérité UNIQUE pour développement
+   └─ Contient: principes, règles, architecture, conventions, stack, specs
+
+2. README.md (90 lignes)
+   └─ Quickstart + présentation générale
+   └─ Points à DIRECTIVES_DEV.md
+
+3. .llmrc (34 lignes)
+   └─ Instructions pour LLMs (instructions rapides)
+   └─ Checklist avant chaque réponse
+
+4. CHANGELOG_DIRECTIVES.md
+   └─ Historique des directives
+   └─ Prochaines étapes à implémenter
+
+5. check_directives.py
+   └─ Script validation (lancez: python3 check_directives.py)
+   └─ Vérifie respect des directives
+
+================================================================================
+🎯 RÈGLES ESSENTIELLES (12 mots résumé):
+================================================================================
+
+Consolidation plutôt que dispersion.
+Ajouter fonctions à modules existants.
+Type hints + docstrings + tests obligatoires.
+
+================================================================================
+📊 QUESTION → RÉPONSE (Lookup Table):
+================================================================================
+
+Q: "Où mettre mon code ?"
+A: Voir DIRECTIVES_DEV.md → Architecture Générale
+
+Q: "Comment nommer ma variable ?"
+A: Voir DIRECTIVES_DEV.md → Conventions Nommage
+
+Q: "Dois-je créer un fichier ?"
+A: Voir DIRECTIVES_DEV.md → Règles Consolidation
+
+Q: "Quelle version NumPy ?"
+A: Voir DIRECTIVES_DEV.md → Stack Technologique
+   (Réponse: 2.0.2 exactement, <2.1 pour numba)
+
+Q: "Comment intégrer frictions réalistes ?"
+A: Voir DIRECTIVES_DEV.md → Frictions Réalistes
+   (Location: src/threadx/backtest/engine.py)
+
+Q: "Netdata comment ?"
+A: Voir DIRECTIVES_DEV.md → Netdata MCP Bridge
+   (Go 1.16+, séparé du trading, /tools/netdata-bridge/)
+
+================================================================================
+✔️ CHECKLIST AVANT RÉPONSE (7 points):
+================================================================================
+
+[ ] 1. Consulté DIRECTIVES_DEV.md
+[ ] 2. Code dans module existant (pas nouveau fichier)
+[ ] 3. Type hints complets (def func(x: int) -> str:)
+[ ] 4. Docstrings Google/NumPy style
+[ ] 5. Tests (coverage >80%)
+[ ] 6. Logging (logger.info(), pas print())
+[ ] 7. Respecte conventions nommage
+
+================================================================================
+🚫 ERREURS À NE PAS FAIRE:
+================================================================================
+
+❌ Créer realistic_execution.py
+   → ✅ Ajouter à engine.py
+
+❌ Créer GUIDE_FRICTIONS.md
+   → ✅ Mettre dans DIRECTIVES_DEV.md
+
+❌ def calculate(prices):
+   → ✅ def calculate(prices: np.ndarray) -> float:
+
+❌ Sans docstring
+   → ✅ Docstring Google/NumPy + exemples
+
+❌ print("Processing")
+   → ✅ logger.info("Processing")
+
+❌ Pas de tests
+   → ✅ Tests (pytest, coverage >80%)
+
+================================================================================
+📚 STRUCTURE SECTIONS DIRECTIVES_DEV.md:
+================================================================================
+
+1. Principe Fondamental (5 lignes)
+2. Résumé Exécutif (20 lignes)
+3. Architecture Générale (30 lignes)
+4. Conventions Nommage (40 lignes)
+5. Stack Technologique (20 lignes)
+6. Frictions Réalistes (50 lignes)
+7. Netdata MCP Bridge (30 lignes)
+8. Checklist (10 lignes)
+9. Erreurs Courantes (40 lignes)
+10. Fichiers Critiques (10 lignes)
+11. En Cas de Doute (15 lignes)
+
+Total: 258 lignes lisibles en 5-10 minutes
+
+================================================================================
+🔄 WORKFLOW STANDARD:
+================================================================================
+
+1. Utilisateur demande feature
+   ↓
+2. LLM lis .llmrc (30 secondes)
+   ↓
+3. LLM consulte DIRECTIVES_DEV.md (2 minutes)
+   ↓
+4. LLM analyse où mettre code (1 minute)
+   ↓
+5. LLM modifie fichier existant (90% des cas)
+   ↓
+6. LLM ajoute type hints + docstrings + tests
+   ↓
+7. LLM valide checklist (1 minute)
+   ↓
+8. LLM présente résultat clair
+
+Total: 7-10 minutes pour bonne réponse
+
+================================================================================
+💡 EN CAS DE DOUTE:
+================================================================================
+
+Réponse standard:
+
+"Selon DIRECTIVES_DEV.md [Section X]:
+- [Règle applicable]
+- Donc je [Action décidée]"
+
+Exemple:
+
+"Selon DIRECTIVES_DEV.md 'Règles Consolidation':
+- Préférer ajouter à fichiers existants
+- Donc j'ajoute execute_realistic_order() à engine.py
+  (et non créer realistic_execution.py)"
+
+================================================================================
+🎓 PRINCIPES CLÉS À RETENIR:
+================================================================================
+
+1. Consolidation > Dispersion
+   └─ Ajouter fonctions à fichiers existants
+
+2. Qualité > Rapidité
+   └─ Type hints + docstrings + tests obligatoires
+
+3. Centralisation > Fragmentation
+   └─ DIRECTIVES_DEV.md = source unique de vérité
+
+4. Performance > Perfectionnisme
+   └─ Si impact perf: créer nouveau fichier OK
+
+5. Clarté > Concision
+   └─ Docstrings détaillées, pas "compressed"
+
+================================================================================
+📞 QUI CONSULTER:
+================================================================================
+
+Question sur:
+- Architecture       → DIRECTIVES_DEV.md Section 2
+- Nommage           → DIRECTIVES_DEV.md Section 3
+- Stack             → DIRECTIVES_DEV.md Section 4
+- Frictions réelles → DIRECTIVES_DEV.md Section 5
+- Netdata          → DIRECTIVES_DEV.md Section 6
+- Qualité code     → DIRECTIVES_DEV.md Section 7
+
+Doute → Relire Section 11 "En Cas de Doute"
+
+================================================================================
+✨ FINAL:
+
+Avant de coder: Lire DIRECTIVES_DEV.md
+
+Pendant le code: Suivre conventions
+
+Après le code: Valider checklist
+
+Code cohérent = Framework robuste
+
+================================================================================

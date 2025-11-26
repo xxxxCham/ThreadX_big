@@ -1,7 +1,7 @@
 # Core Dependencies (nécessaires pour l'application Streamlit et l'orchestration)
 streamlit==1.49.1  # Interface utilisateur interactive
 pandas==2.3.2  # Manipulation des DataFrames OHLCV
-numpy==2.3.3  # Calculs vectorisés rapides pour indicateurs
+numpy>=1.26.0,<2.1  # Calculs vectorisés rapides pour indicateurs (compatible numba)
 pydantic==2.9.2  # Validation type-safe pour configs et requêtes
 pydantic-settings==2.6.1  # Support pour configs TOML avec Pydantic
 toml==0.10.2  # Parsing des fichiers de configuration TOML

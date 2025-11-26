@@ -136,6 +136,88 @@ def _get_param_description(key: str) -> str:
     return descriptions.get(key, f"Paramètre {key.replace('_', ' ').title()}")
 
 
+<<<<<<< HEAD
+=======
+def _save_config_to_history(
+    strategy: str,
+    strategy_params: dict,
+    param_ranges: dict,
+    global_sensitivity: float = 1.0,
+    n_scenarios: int | None = None,
+    config_type: str = "Sweep",
+) -> None:
+    """Sauvegarde la configuration actuelle dans l'historique."""
+    if "config_history" not in st.session_state:
+        st.session_state.config_history = []
+
+    config = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "strategy": strategy,
+        "type": config_type,
+        "strategy_params": strategy_params.copy() if strategy_params else {},
+        "param_ranges": param_ranges.copy() if param_ranges else {},
+        "global_sensitivity": global_sensitivity,
+        "n_scenarios": n_scenarios,
+    }
+
+    st.session_state.config_history.append(config)
+
+    # Limiter l'historique à 20 configurations
+    if len(st.session_state.config_history) > 20:
+        st.session_state.config_history = st.session_state.config_history[-20:]
+
+
+def _render_config_history(key_prefix: str = "") -> dict | None:
+    """Affiche l'historique des configurations avec navigation.
+    
+    Args:
+        key_prefix: Préfixe pour les clés Streamlit (évite conflits entre onglets)
+    
+    Returns:
+        Configuration chargée ou None
+    """
+    with st.expander("📜 Historique des Configurations", expanded=False):
+        history = st.session_state.get("config_history", [])
+
+        if not history:
+            st.caption("Aucune configuration enregistrée pour l'instant.")
+            return None
+
+        # Navigation dans l'historique
+        st.caption(f"**{len(history)} configuration(s) sauvegardée(s)**")
+
+        # Afficher les configurations récentes
+        for idx, cfg in enumerate(reversed(history)):
+            with st.container():
+                col1, col2, col3 = st.columns([3, 1, 1])
+                with col1:
+                    st.markdown(
+                        f"**{cfg['type']} - {cfg['strategy']}**  \n"
+                        f"📅 {cfg['timestamp']}  \n"
+                        f"🎚️ Sensibilité: {cfg['global_sensitivity']}x"
+                    )
+                with col2:
+                    if st.button(
+                        "📥 Charger",
+                        key=f"{key_prefix}load_hist_{len(history) - 1 - idx}",
+                        use_container_width=True,
+                    ):
+                        return cfg
+                with col3:
+                    if st.button(
+                        "🗑️ Suppr.",
+                        key=f"{key_prefix}del_hist_{len(history) - 1 - idx}",
+                        use_container_width=True,
+                    ):
+                        st.session_state.config_history.pop(len(history) - 1 - idx)
+                        st.rerun()
+
+                st.markdown("---")
+
+        return None
+
+
+>>>>>>> 1b119cb971277c69eb4e50ee864485c021549ced
 def _sort_results_by_pnl(df: pd.DataFrame) -> pd.DataFrame:
     """Trie les résultats par PNL décroissant, avec fallback robuste.
 
@@ -340,7 +422,11 @@ def _render_monte_carlo_tab() -> None:
 
     with col_history:
         # Afficher l'historique et gérer le chargement
+<<<<<<< HEAD
         loaded_config = render_config_history(key_prefix="mc_")
+=======
+        loaded_config = _render_config_history(key_prefix="mc_")
+>>>>>>> 1b119cb971277c69eb4e50ee864485c021549ced
         if loaded_config:
             if loaded_config["type"] == "Monte-Carlo":
                 st.session_state.strategy = loaded_config["strategy"]
@@ -1050,7 +1136,11 @@ def _render_optimization_tab() -> None:
 
     with col_history:
         # Afficher l'historique et gérer le chargement
+<<<<<<< HEAD
         loaded_config = render_config_history(key_prefix="sweep_")
+=======
+        loaded_config = _render_config_history(key_prefix="sweep_")
+>>>>>>> 1b119cb971277c69eb4e50ee864485c021549ced
         if loaded_config:
             if loaded_config["type"] == "Sweep":
                 st.session_state.strategy = loaded_config["strategy"]
@@ -1992,9 +2082,100 @@ def _render_monitoring_section(
         st.plotly_chart(fig, use_container_width=True, key="monitoring_chart")
 
 
+def _render_llm_assisted_sweep() -> None:
+    """Onglet Sweep + LLM : Sweep classique avec analyse LLM des résultats."""
+    st.info("🚧 **Fonctionnalité en cours de développement**")
+    st.markdown("""
+    Cet onglet permettra de :
+    - Lancer un Sweep classique
+    - Analyser les résultats via LLM (DeepSeek, GPT-OSS, etc.)
+    - Obtenir des suggestions d'amélioration
+    - Ré-itérer avec des plages ajustées
+    
+    **Pour l'instant, utilisez :**
+    - **Sweep Classique** : Optimisation manuelle sans LLM
+    - **Multi-Agents Autonome** : Système autonome complet avec 3 agents
+    """)
+    
+    # Placeholder pour futures fonctionnalités
+    with st.expander("📋 Roadmap LLM-Assisted Sweep"):
+        st.markdown("""
+        1. ✅ Interface de base
+        2. 🔄 Intégration moteur Sweep existant
+        3. 🔄 Analyse LLM post-sweep (un seul agent)
+        4. 🔄 Suggestions de nouvelles plages
+        5. ⏳ Re-run automatique avec paramètres ajustés
+        """)
+
+
+def _render_autonomous_multi_agents() -> None:
+    """Onglet Multi-Agents Autonome : Redirection vers page dédiée."""
+    st.success("✅ **Système Multi-Agents actif sur page dédiée**")
+    
+    st.markdown("""
+    Le système Multi-Agents autonome (Analyst, Strategist, Critic) est disponible 
+    sur une **page dédiée** avec interface complète.
+    
+    ### 🧠 Navigation
+    """)
+    
+    col_nav, col_info = st.columns([1, 2])
+    
+    with col_nav:
+        if st.button("🚀 Ouvrir Multi-LLM Optimizer", type="primary", use_container_width=True):
+            st.session_state["page"] = "multi_llm"
+            st.rerun()
+    
+    with col_info:
+        st.caption("Redirige vers la page 'Multi-LLM Optimizer' avec :")
+        st.caption("- 🕵️ **Analyst** : Diagnostic des résultats")
+        st.caption("- 💡 **Strategist** : Génération de variantes")
+        st.caption("- 🔍 **Critic** : Validation des propositions")
+    
+    st.markdown("---")
+    
+    # Aperçu des fonctionnalités
+    with st.expander("ℹ️ Aperçu du système Multi-Agents"):
+        st.markdown("""
+        ### Fonctionnalités principales :
+        
+        **1. Orchestration autonome**
+        - Boucle d'optimisation automatique
+        - 3 agents collaboratifs (Analyst, Strategist, Critic)
+        - Sélection automatique de la meilleure variante
+        
+        **2. Interfaces de visualisation**
+        - Affichage temps réel des logs
+        - Code généré par chaque agent (3 fenêtres)
+        - Historique des itérations
+        
+        **3. Configuration flexible**
+        - Mode Simple : Paramètres par défaut auto-chargés
+        - Mode Avancé : JSON personnalisé
+        - Support de toutes les 9 stratégies
+        
+        **4. Monitoring système**
+        - Surveillance GPU/CPU en temps réel
+        - Métriques de performance
+        - Historique des ressources
+        
+        ### 📊 Stratégies supportées (9) :
+        - Bollinger Breakout
+        - EMA Cross
+        - ATR Channel
+        - Bollinger Dual
+        - Amplitude Hunter
+        - MA Crossover
+        - Volume Profile Breakout ⭐ (2025)
+        - VWAP Momentum Reversion 🏆 (2025)
+        - EMA Stoch Scalp ⚡ (2025)
+        """)
+
+
 def main() -> None:
     """Point d'entrée de la page Optimisation."""
     st.title("🔬 Optimisation de Stratégies")
+    
     # Unified run-state across UI
     if "run_active" not in st.session_state:
         st.session_state.run_active = False
@@ -2018,9 +2199,11 @@ def main() -> None:
             except Exception:
                 pass
             st.warning("Arrêt demandé — tentative d'interruption des tâches en cours.")
-    st.markdown("*Optimisez vos paramètres de trading avec Sweep ou Monte-Carlo*")
+    
+    st.markdown("*Optimisez vos paramètres avec 3 approches différentes*")
     st.markdown("---")
 
+<<<<<<< HEAD
     # Onglets principaux
     tab1, tab2, tab3 = st.tabs(["� Backtest", "�🔬 Sweep", "🎲 Monte-Carlo"])
 
@@ -2032,6 +2215,29 @@ def main() -> None:
 
     with tab3:
         _render_monte_carlo_tab()
+=======
+    # 3 ONGLETS DISTINCTS : Sweep Classique | Sweep + LLM | Multi-Agents Autonome
+    tab_sweep, tab_llm, tab_autonomous = st.tabs([
+        "🔬 Sweep Classique", 
+        "🤖 Sweep + LLM", 
+        "🧠 Multi-Agents Autonome"
+    ])
+
+    with tab_sweep:
+        st.markdown("### 🔬 Optimisation par Sweep (Grille Exhaustive)")
+        st.caption("Balayage exhaustif de paramètres avec réglages manuels")
+        _render_optimization_tab()
+
+    with tab_llm:
+        st.markdown("### 🤖 Sweep Assisté par LLM")
+        st.caption("Analyse LLM des résultats pour suggestions d'amélioration")
+        _render_llm_assisted_sweep()
+
+    with tab_autonomous:
+        st.markdown("### 🧠 Multi-Agents Autonome")
+        st.caption("Système autonome avec Analyst, Strategist, Critic")
+        _render_autonomous_multi_agents()
+>>>>>>> 1b119cb971277c69eb4e50ee864485c021549ced
 
 
 if __name__ == "__main__":

@@ -44,6 +44,7 @@ Data Schema:
 
 import time
 import warnings
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +57,22 @@ matplotlib.use("Agg")  # Headless backend for Windows PowerShell compatibility
 
 # ThreadX imports
 from threadx.utils.log import get_logger
+
+# Configure logging
+logger = get_logger(__name__)
+
+# Tier S metrics (2025 standards)
+try:
+    from threadx.backtest.metrics_tier_s import (
+        calculate_tier_s_metrics,
+        validate_tier_s,
+        TIER_S_THRESHOLDS,
+        TIER_A_THRESHOLDS,
+    )
+    HAS_TIER_S = True
+except ImportError:
+    HAS_TIER_S = False
+    logger.warning("metrics_tier_s not available, Tier S validation disabled")
 
 # GPU support with fallback
 try:
@@ -1055,20 +1072,26 @@ def summarize(
 
                 # Duration calculation
                 if len(returns) > 1:
-                    duration = (
-                        returns.index[-1] - returns.index[0]
-                    ).total_seconds() / (24 * 3600)
-                    summary["duration_days"] = duration
+                    # Vérifier que index est datetime
+                    if isinstance(returns.index[0], (pd.Timestamp, datetime)):
+                        duration = (
+                            returns.index[-1] - returns.index[0]
+                        ).total_seconds() / (24 * 3600)
+                        summary["duration_days"] = duration
 
-                    # CAGR calculation
-                    if duration > 0:
-                        years = duration / 365.25
-                        if years > 0:
-                            summary["cagr"] = (
-                                (summary["final_equity"] / initial_capital)
-                                ** (1 / years)
-                                - 1
-                            ) * 100
+                        # CAGR calculation
+                        if duration > 0:
+                            years = duration / 365.25
+                            if years > 0:
+                                summary["cagr"] = (
+                                    (summary["final_equity"] / initial_capital)
+                                    ** (1 / years)
+                                    - 1
+                                ) * 100
+                    else:
+                        # Fallback si index n'est pas datetime (ex: int)
+                        summary["duration_days"] = len(returns)
+                        summary["cagr"] = 0.0
 
                 # Risk metrics
                 summary["max_drawdown"] = max_drawdown(equity)
@@ -1116,13 +1139,86 @@ def summarize(
                         summary["avg_loss"] = abs(losing_trades.mean())
                         summary["largest_loss"] = abs(losing_trades.min())
 
+        # === TIER S METRICS (2025 Standards) ===
+        if HAS_TIER_S and not returns.empty and not trades.empty:
+            try:
+                # Calculer toutes métriques Tier S/A/B/C
+                tier_s_metrics = calculate_tier_s_metrics(
+                    returns=returns,
+                    trades=trades,
+                    equity_curve=equity if 'equity' in locals() else None,
+                    risk_free_rate=risk_free,
+                    strategy_type="trend",  # Détection auto possible future
+                )
+                
+                # Validation Tier S
+                passed, score, report = validate_tier_s(tier_s_metrics, strict=False)
+                
+                # Enrichir summary avec métriques Tier S
+                summary.update({
+                    # Tier S (10 obligatoires)
+                    "sharpe_ratio": tier_s_metrics.sharpe_ratio,  # Override avec version Tier S
+                    "sortino_ratio": tier_s_metrics.sortino_ratio,
+                    "calmar_ratio": tier_s_metrics.calmar_ratio,
+                    "profit_factor_tier_s": tier_s_metrics.profit_factor,
+                    "recovery_factor": tier_s_metrics.recovery_factor,
+                    "expectancy_pct": tier_s_metrics.expectancy_pct,
+                    "sqn": tier_s_metrics.sqn,
+                    "outlier_adjusted_sharpe": tier_s_metrics.outlier_adjusted_sharpe,
+                    
+                    # Tier A (6 importantes)
+                    "r_multiple": tier_s_metrics.r_multiple,
+                    "time_in_market_pct": tier_s_metrics.time_in_market_pct,
+                    "max_flat_period_days": tier_s_metrics.max_flat_period_days,
+                    "annual_return_per_dd": tier_s_metrics.annual_return_per_dd,
+                    "gain_pain_ratio": tier_s_metrics.gain_pain_ratio,
+                    
+                    # Tier B (utiles)
+                    "max_consecutive_wins": tier_s_metrics.max_consecutive_wins,
+                    "max_consecutive_loss_pct": tier_s_metrics.max_consecutive_loss_pct,
+                    "avg_trade_duration_hours": tier_s_metrics.avg_trade_duration_hours,
+                    "ulcer_index": tier_s_metrics.ulcer_index,
+                    "z_score_trades": tier_s_metrics.z_score_trades,
+                    
+                    # Tier C (bonus ThreadX)
+                    "pain_adjusted_return": tier_s_metrics.pain_adjusted_return,
+                    "serenity_ratio": tier_s_metrics.serenity_ratio,
+                    
+                    # Validation Tier S
+                    "tier_s_validation": {
+                        "passed": passed,
+                        "score": score,
+                        "tier_s_passed": report.tier_s_passed,
+                        "tier_s_total": report.tier_s_total,
+                        "failed_metrics": report.failed_metrics,
+                        "warnings": report.warnings,
+                        "ai_evolved_gold": report.ai_evolved_gold,
+                    },
+                    
+                    # Seuils référence (pour LLM)
+                    "tier_s_thresholds": TIER_S_THRESHOLDS,
+                    "tier_a_thresholds": TIER_A_THRESHOLDS,
+                })
+                
+                logger.info(
+                    f"Tier S validation: {report.tier_s_passed}/10 passed, "
+                    f"score={score:.1f}/100, AI-Gold={report.ai_evolved_gold}"
+                )
+                
+            except Exception as e:
+                logger.error(f"Tier S calculation failed: {e}", exc_info=True)
+                summary["tier_s_validation"] = {
+                    "passed": False,
+                    "error": str(e),
+                }
+        
         elapsed = time.time() - start_time
 
         logger.info(
             f"Performance summary completed in {elapsed:.3f}s: "
             f"Final ${summary['final_equity']:,.2f} "
             f"({summary['total_return']:+.1f}%), "
-            f"Sharpe {summary['sharpe']:.2f}, "
+            f"Sharpe {summary.get('sharpe_ratio', summary['sharpe']):.2f}, "
             f"Max DD {summary['max_drawdown']:.1%}"
         )
 
