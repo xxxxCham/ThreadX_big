@@ -15,13 +15,14 @@ from __future__ import annotations
 
 import logging
 import time
+import traceback
 from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from .strategy_registry import list_strategies
+from .strategy_registry import list_strategies, get_strategy_class
 
 logger = logging.getLogger(__name__)
 
@@ -241,6 +242,8 @@ def run_backtest_gpu(
     timeframe: str = "1m",
     use_gpu: bool = True,
     enable_monitoring: bool = True,
+    enable_llm: bool = False,
+    llm_model: str = "deepseek-r1:8b",
 ) -> BacktestResult:
     """
     Exécute un backtest GPU-accelerated avec le moteur de production.
@@ -279,6 +282,7 @@ def run_backtest_gpu(
         >>> print(f"Multi-GPU: {result.metadata.get('multi_gpu_enabled')}")
     """
     # Import lazy des modules GPU
+    logger.warning(f"DEBUG: run_backtest_gpu called for {strategy}")
     _ensure_gpu_imports()
 
     if not _ENGINE_IMPORTS_DONE:
@@ -297,6 +301,62 @@ def run_backtest_gpu(
     missing_cols = [col for col in required_cols if col not in df.columns]
     if missing_cols:
         raise ValueError(f"Le DataFrame doit contenir les colonnes OHLCV: {missing_cols}")
+
+    # === NEW LOGIC: Try to use specific Strategy Class (Legacy Mode) ===
+    logger.warning(f"DEBUG: Attempting Legacy Mode for {strategy}")
+    try:
+        StrategyClass = get_strategy_class(strategy)
+        logger.warning(f"DEBUG: StrategyClass found: {StrategyClass}")
+        if StrategyClass:
+            logger.info(f"🔄 Using Strategy Class: {StrategyClass.__name__}")
+            
+            # Initialize engine
+            logger.warning("DEBUG: Initializing legacy engine")
+            engine = _BacktestEngine(use_multi_gpu=False)
+            
+            # Run legacy backtest
+            start_legacy = time.time()
+            result = engine.run(
+                strategy_class=StrategyClass,
+                data=df,
+                params=params
+            )
+            duration = time.time() - start_legacy
+            
+            # Convert to BacktestResult (avec protection AttributeError)
+            stats = getattr(result, "stats", None)
+            metrics = {
+                "total_return": getattr(result, "total_return", 0.0),
+                "sharpe_ratio": getattr(result, "sharpe_ratio", 0.0),
+                "max_drawdown": getattr(result, "max_drawdown", 0.0),
+                "win_rate": getattr(stats, "win_rate_pct", 0.0) if stats else 0.0,
+                "total_trades": getattr(stats, "total_trades", 0) if stats else 0,
+            }
+
+            # Extract trades from meta (avec protection None)
+            meta = getattr(stats, "meta", {}) if stats else {}
+            trades_list = meta.get("trades", []) if meta else []
+            
+            return BacktestResult(
+                equity=result.equity,
+                metrics=metrics,
+                trades=trades_list,
+                metadata={
+                    "strategy": strategy,
+                    "params": params,
+                    "gpu_enabled": False,
+                    "execution_time_sec": duration,
+                    "engine_meta": getattr(result.stats, "meta", {}),
+                },
+            )
+            
+    except Exception as e:
+        logger.warning(f"⚠️ Mode Legacy échoué pour {strategy}: {e}. Fallback Production Mode.")
+        print(f"DEBUG: Legacy mode failed for {strategy}: {type(e).__name__}: {e}")
+        traceback.print_exc()
+        # Fallback to standard production mode
+        pass
+    # === END NEW LOGIC ===
 
     start_time = time.time()
     logger.info(f"🚀 Démarrage backtest GPU: {symbol} {timeframe}, GPU={use_gpu}, monitoring={enable_monitoring}")
@@ -396,6 +456,35 @@ def run_backtest_gpu(
             "annualized_volatility": volatility,
             "sharpe_ratio": sharpe,
         }
+
+        # Ajout interprétation LLM si activée
+        if enable_llm:
+            try:
+                from threadx.backtest.performance import summarize_with_llm
+
+                logger.info(f"🤖 Calcul interprétation LLM (model={llm_model})...")
+
+                # Préparer données pour LLM
+                trades_df = result.trades if not result.trades.empty else pd.DataFrame()
+
+                # Appel summarize_with_llm pour obtenir métriques enrichies
+                enhanced_summary = summarize_with_llm(
+                    trades=trades_df,
+                    returns=returns,
+                    initial_capital=engine_params.get("initial_capital", 10000.0),
+                    params=params,
+                    enable_llm=True,
+                    llm_model=llm_model,
+                )
+
+                # Fusionner interprétation LLM dans metrics
+                if enhanced_summary.get("llm_interpretation"):
+                    metrics["llm_interpretation"] = enhanced_summary["llm_interpretation"]
+                    logger.info("✅ Interprétation LLM ajoutée aux métriques")
+
+            except Exception as e:
+                logger.warning(f"⚠️ Échec interprétation LLM: {e}")
+                # Ne pas ajouter la clé si échec (évite erreur de type)
 
         # Conversion trades DataFrame → List[Dict]
         trades_list = []

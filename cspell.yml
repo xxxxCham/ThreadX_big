@@ -122,6 +122,14 @@ words:
   - transformers
   - huggingface
   - sklearn
+  - ollama
+  - deepseek
+  - mistral
+  - llama
+  - qwen
+  - gemma
+  - sandboxing
+  - overfitting
 
   # Finance et trading
   - ohlcv
@@ -129,15 +137,29 @@ words:
   - forex
   - bollinger
   - bbands
+  - bbwidth
   - atr
   - rsi
   - ema
   - sma
   - macd
   - stochastic
+  - ichimoku
+  - tenkan
+  - kijun
+  - senkou
+  - chikou
+  - fibonacci
+  - retracement
+  - zscore
+  - stdev
+  - stddev
+  - parabolic
+  - surachat
   - indicators
   - backtests
   - backtest
+  - backtesting
   - equity
   - drawdown
   - sharpe

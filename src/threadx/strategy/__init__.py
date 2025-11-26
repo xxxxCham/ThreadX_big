@@ -6,7 +6,10 @@ Module de stratégies de trading avec gestion avancée du risque.
 
 Modules:
 - model.py : Types de données (Trade, RunStats, Strategy Protocol)
-- bb_atr.py : Stratégie Bollinger Bands + ATR avec améliorations
+- bollinger_dual.py : Stratégie Bollinger Bands double bande
+- ma_crossover.py : Stratégie croisement de moyennes mobiles
+- ema_cross.py : Stratégie croisement EMA
+- atr_channel.py : Stratégie canal ATR
 
 Caractéristiques:
 - Protocol Pattern pour extensibilité des stratégies
@@ -22,36 +25,6 @@ Améliorations vs TradXPro:
 - Filtrage min PnL et micro-optimisations
 """
 
-from .amplitude_hunter import (
-    # Paramètres et implémentation
-    AmplitudeHunterParams,
-    AmplitudeHunterStrategy,
-)
-from .amplitude_hunter import (
-    backtest as amplitude_hunter_backtest,
-)
-from .amplitude_hunter import (
-    create_default_params as amplitude_hunter_create_default_params,
-)
-from .amplitude_hunter import (
-    # Fonctions de convenance
-    generate_signals as amplitude_hunter_generate_signals,
-)
-from .bb_atr import (
-    # Paramètres et implémentation
-    BBAtrParams,
-    BBAtrStrategy,
-)
-from .bb_atr import (
-    backtest as bb_atr_backtest,
-)
-from .bb_atr import (
-    create_default_params as bb_atr_create_default_params,
-)
-from .bb_atr import (
-    # Fonctions de convenance (préfixées pour éviter les conflits)
-    generate_signals as bb_atr_generate_signals,
-)
 from .bollinger_dual import (
     # Paramètres et implémentation
     BollingerDualParams,
@@ -65,6 +38,14 @@ from .ma_crossover import (
     # MA Crossover Strategy (test/validation)
     MACrossoverParams,
     MACrossoverStrategy,
+)
+from .ema_cross import (
+    EMACrossParams,
+    EMACrossStrategy,
+)
+from .atr_channel import (
+    ATRChannelParams,
+    ATRChannelStrategy,
 )
 from .model import (
     RunStats,
@@ -97,26 +78,17 @@ __all__ = [
     "load_run_results",
     "validate_ohlcv_dataframe",
     "validate_strategy_params",
-    # BB+ATR Strategy exports
-    "BBAtrParams",
-    "BBAtrStrategy",
-    "bb_atr_generate_signals",
-    "bb_atr_backtest",
-    "bb_atr_create_default_params",
     # Bollinger Dual Strategy exports
     "BollingerDualParams",
     "BollingerDualStrategy",
     "bollinger_dual_create_default_params",
-    # AmplitudeHunter Strategy exports
-    "AmplitudeHunterParams",
-    "AmplitudeHunterStrategy",
-    "amplitude_hunter_generate_signals",
-    "amplitude_hunter_backtest",
-    "amplitude_hunter_create_default_params",
     # MA Crossover Strategy exports (test/validation)
     "MACrossoverParams",
     "MACrossoverStrategy",
+    # EMA Cross Strategy exports
+    "EMACrossParams",
+    "EMACrossStrategy",
+    # ATR Channel Strategy exports
+    "ATRChannelParams",
+    "ATRChannelStrategy",
 ]
-
-
-

@@ -80,7 +80,7 @@ class Critic(BaseAgent):
         super().__init__(
             name="Critic",
             model=None,  # Pas de modèle nécessaire pour V1
-            timeout=60.0,
+            timeout=180.0,  # 3 minutes pour modèles lents
             debug=debug,
             use_llm=False,  # Désactive explicitement les appels LLM
         )
@@ -200,7 +200,9 @@ class Critic(BaseAgent):
         )
 
         if not test_quantitative["passed"]:
-            errors.append(f"Critères quantitatifs non satisfaits: {test_quantitative.get('failures', [])}")
+            errors.append(
+                f"Critères quantitatifs non satisfaits: {test_quantitative.get('failures', [])}"
+            )
             return {
                 "status": "rejected",
                 "test_syntax": test_syntax,
@@ -392,14 +394,16 @@ class Critic(BaseAgent):
 
             except Exception as e:
                 self.logger.error(f"    ❌ Backtest failed: {e}")
-                results.append({
-                    "description": scenario.get("description", "N/A"),
-                    "sharpe": None,
-                    "max_drawdown_pct": None,
-                    "total_trades": 0,
-                    "win_rate_pct": None,
-                    "error": str(e),
-                })
+                results.append(
+                    {
+                        "description": scenario.get("description", "N/A"),
+                        "sharpe": None,
+                        "max_drawdown_pct": None,
+                        "total_trades": 0,
+                        "win_rate_pct": None,
+                        "error": str(e),
+                    }
+                )
                 all_passed = False
 
         return {
@@ -429,10 +433,20 @@ class Critic(BaseAgent):
         failures = []
 
         # Agréger métriques sur tous les scénarios
-        sharpe_values = [r["sharpe"] for r in scenario_results if r["sharpe"] is not None]
-        dd_values = [r["max_drawdown_pct"] for r in scenario_results if r["max_drawdown_pct"] is not None]
-        trades_values = [r["total_trades"] for r in scenario_results if r["total_trades"] is not None]
-        winrate_values = [r["win_rate_pct"] for r in scenario_results if r["win_rate_pct"] is not None]
+        sharpe_values = [
+            r["sharpe"] for r in scenario_results if r["sharpe"] is not None
+        ]
+        dd_values = [
+            r["max_drawdown_pct"]
+            for r in scenario_results
+            if r["max_drawdown_pct"] is not None
+        ]
+        trades_values = [
+            r["total_trades"] for r in scenario_results if r["total_trades"] is not None
+        ]
+        winrate_values = [
+            r["win_rate_pct"] for r in scenario_results if r["win_rate_pct"] is not None
+        ]
 
         if not sharpe_values:
             failures.append("Aucun Sharpe valide calculé")
@@ -441,24 +455,32 @@ class Critic(BaseAgent):
         best_sharpe = max(sharpe_values)
         worst_drawdown = min(dd_values) if dd_values else 0.0
         min_trades = min(trades_values) if trades_values else 0
-        avg_winrate = sum(winrate_values) / len(winrate_values) if winrate_values else 0.0
+        avg_winrate = (
+            sum(winrate_values) / len(winrate_values) if winrate_values else 0.0
+        )
 
         # Vérification critères
         if best_sharpe < self.criteria.min_sharpe:
             failures.append(f"Sharpe {best_sharpe:.2f} < {self.criteria.min_sharpe}")
 
         if worst_drawdown < self.criteria.max_drawdown_pct:
-            failures.append(f"Max DD {worst_drawdown:.1f}% < {self.criteria.max_drawdown_pct}%")
+            failures.append(
+                f"Max DD {worst_drawdown:.1f}% < {self.criteria.max_drawdown_pct}%"
+            )
 
         if min_trades < self.criteria.min_trades:
             failures.append(f"Trades {min_trades} < {self.criteria.min_trades}")
 
         if avg_winrate < self.criteria.min_win_rate_pct:
-            failures.append(f"Win Rate {avg_winrate:.1f}% < {self.criteria.min_win_rate_pct}%")
+            failures.append(
+                f"Win Rate {avg_winrate:.1f}% < {self.criteria.min_win_rate_pct}%"
+            )
 
         passed = len(failures) == 0
 
-        self.logger.debug(f"    📊 Métriques: Sharpe={best_sharpe:.2f}, DD={worst_drawdown:.1f}%, Trades={min_trades}, WinRate={avg_winrate:.1f}%")
+        self.logger.debug(
+            f"    📊 Métriques: Sharpe={best_sharpe:.2f}, DD={worst_drawdown:.1f}%, Trades={min_trades}, WinRate={avg_winrate:.1f}%"
+        )
 
         if not passed:
             self.logger.debug(f"    ❌ Échecs: {', '.join(failures)}")

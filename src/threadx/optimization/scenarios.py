@@ -57,7 +57,19 @@ def generate_param_grid(grid_spec: dict[str, Any]) -> list[dict[str, Any]]:
 
     combos: list[dict[str, Any]] = []
     for prod in itertools.product(*choices):
-        combos.append({k: v for k, v in zip(keys, prod)})
+        combo = {k: v for k, v in zip(keys, prod)}
+
+        # Contraintes génériques MA/EMA: slow > fast (évite des milliers de configs invalides)
+        fast = combo.get("fast_period")
+        slow = combo.get("slow_period")
+        if fast is not None and slow is not None:
+            try:
+                if float(slow) <= float(fast):
+                    continue
+            except Exception:
+                pass
+
+        combos.append(combo)
     return combos
 
 

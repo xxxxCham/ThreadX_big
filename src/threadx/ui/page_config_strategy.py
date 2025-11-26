@@ -15,7 +15,6 @@ from datetime import date
 from typing import Any
 
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 
 from ..data_access import (
@@ -24,48 +23,14 @@ from ..data_access import (
     load_ohlcv,
 )
 from .strategy_registry import indicator_specs_for, list_strategies, parameter_specs_for
+from .styles import apply_custom_styles
+from .components.charts import render_ohlcv_chart
+from .components.config import normalize_spec
 
 DEFAULT_SYMBOL = "BTCUSDC"
 DEFAULT_TIMEFRAME = "15m"
 DEFAULT_START_DATE = date(2024, 12, 1)
 DEFAULT_END_DATE = date(2025, 1, 31)
-
-
-def _render_ohlcv_chart(df: pd.DataFrame) -> None:
-    """Affiche un graphique en chandelier moderne des données OHLCV."""
-    fig = go.Figure()
-
-    fig.add_trace(
-        go.Candlestick(
-            x=df.index,
-            open=df["open"],
-            high=df["high"],
-            low=df["low"],
-            close=df["close"],
-            name="OHLC",
-            increasing_line_color='#26a69a',
-            decreasing_line_color='#ef5350',
-        )
-    )
-
-    fig.update_layout(
-        height=450,
-        margin=dict(l=0, r=0, t=10, b=0),
-        template="plotly_dark",
-        xaxis_title="",
-        yaxis_title="Prix (USD)",
-        xaxis=dict(
-            rangeslider=dict(visible=False),
-            gridcolor='rgba(128,128,128,0.2)',
-        ),
-        yaxis=dict(gridcolor='rgba(128,128,128,0.2)'),
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#a8b2d1', size=11),
-        hovermode='x unified',
-    )
-
-    st.plotly_chart(fig, use_container_width=True, key="chart_preview")
 
 
 def _render_data_section() -> None:
@@ -152,7 +117,7 @@ def _render_data_section() -> None:
 
                 # Graphique
                 st.markdown("#### 📈 Aperçu du Marché")
-                _render_ohlcv_chart(df)
+                render_ohlcv_chart(df, key="chart_preview")
 
                 # Stats rapides en colonnes
                 col_s1, col_s2, col_s3, col_s4 = st.columns(4)
@@ -180,239 +145,13 @@ def _render_data_section() -> None:
         )
 
 
-def _normalize_spec(spec: Any) -> dict[str, Any]:
-    if isinstance(spec, dict):
-        normalized = dict(spec)
-        if "type" not in normalized:
-            default = normalized.get("default")
-            if isinstance(default, bool):
-                normalized["type"] = "bool"
-            elif isinstance(default, int) and not isinstance(default, bool):
-                normalized["type"] = "int"
-            elif isinstance(default, float):
-                normalized["type"] = "float"
-            elif "options" in normalized:
-                normalized["type"] = "select"
-            else:
-                normalized["type"] = "text"
-        return normalized
-
-    default = spec
-    if isinstance(default, bool):
-        inferred_type = "bool"
-    elif isinstance(default, int) and not isinstance(default, bool):
-        inferred_type = "int"
-    elif isinstance(default, float):
-        inferred_type = "float"
-    else:
-        inferred_type = "text"
-
-    return {
-        "default": default,
-        "type": inferred_type,
-    }
-
-
-
-
-
-def _render_param_control(
-    label: str,
-    widget_key: str,
-    spec: dict[str, Any],
-    prefill: Any,
-    range_store: dict[str, tuple[Any, Any]] | None = None,
-    store_key: str | None = None,
-) -> Any:
-    normalized = _normalize_spec(spec)
-    param_type = normalized.get("type", "text")
-    default = normalized.get("default")
-    min_value = normalized.get("min")
-    max_value = normalized.get("max")
-    step = normalized.get("step")
-    options = normalized.get("options")
-    control = normalized.get("control")
-    opt_range = normalized.get("opt_range")
-
-    if prefill is None:
-        prefill = default
-
-    # Gestion des sliders de plage pour les paramètres numériques
-    if (
-        range_store is not None
-        and store_key
-        and param_type in {"int", "float"}
-        and normalized.get("range_slider", True)
-    ):
-        if opt_range and min_value is None:
-            min_value = opt_range[0]
-        if opt_range and max_value is None:
-            max_value = opt_range[1]
-
-        if param_type == "int":
-            step_val = int(step or 1)
-            if min_value is None:
-                min_value = int(prefill) if prefill is not None else 0
-            else:
-                min_value = int(min_value)
-            if max_value is None:
-                max_value = int(prefill + step_val * 10) if prefill is not None else min_value + step_val * 10
-            else:
-                max_value = int(max_value)
-
-            stored_range = range_store.get(store_key) or opt_range
-            if stored_range:
-                low, high = map(int, stored_range)
-            else:
-                center = int(prefill) if prefill is not None else (min_value + max_value) // 2
-                low = center - step_val * 5
-                high = center + step_val * 5
-
-            low = max(min_value, low)
-            high = min(max_value, high)
-            if low > high:
-                low, high = min_value, max_value
-
-            slider_value = st.slider(
-                label,
-                min_value=min_value,
-                max_value=max_value,
-                value=(int(low), int(high)),
-                step=step_val,
-                key=widget_key,
-            )
-            slider_value = (int(slider_value[0]), int(slider_value[1]))
-            range_store[store_key] = slider_value
-            return int(round((slider_value[0] + slider_value[1]) / 2))
-
-        if param_type == "float":
-            step_val = float(step or 0.05)
-            if min_value is None:
-                min_value = float(prefill) - step_val * 10 if prefill is not None else 0.0
-            else:
-                min_value = float(min_value)
-            if max_value is None:
-                if prefill is not None:
-                    max_value = float(prefill) + step_val * 10
-                else:
-                    max_value = min_value + step_val * 20
-            else:
-                max_value = float(max_value)
-
-            stored_range = range_store.get(store_key) or opt_range
-            if stored_range:
-                low, high = map(float, stored_range)
-            else:
-                center = float(prefill) if prefill is not None else (min_value + max_value) / 2.0
-                span = step_val * 5
-                low = center - span
-                high = center + span
-
-            low = max(min_value, low)
-            high = min(max_value, high)
-            if low > high:
-                low, high = min_value, max_value
-
-            slider_value = st.slider(
-                label,
-                min_value=float(min_value),
-                max_value=float(max_value),
-                value=(float(low), float(high)),
-                step=step_val,
-                key=widget_key,
-            )
-            slider_value = (float(slider_value[0]), float(slider_value[1]))
-            range_store[store_key] = slider_value
-            return float((slider_value[0] + slider_value[1]) / 2.0)
-
-    if min_value is not None and prefill is not None:
-        prefill = max(prefill, min_value)
-    if max_value is not None and prefill is not None:
-        prefill = min(prefill, max_value)
-
-    if param_type == "bool":
-        return st.checkbox(label, value=bool(prefill), key=widget_key)
-
-    if options:
-        try:
-            index = options.index(prefill)
-        except ValueError:
-            index = 0
-        return st.selectbox(label, options=options, index=index, key=widget_key)
-
-    if param_type == "int":
-        step_val = int(step or 1)
-        if control == "number_input" or min_value is None or max_value is None:
-            return st.number_input(
-                label,
-                value=int(prefill) if prefill is not None else int(default or 0),
-                step=step_val,
-                key=widget_key,
-            )
-
-        min_int = int(min_value)
-        max_int = int(max_value)
-        value = int(prefill) if prefill is not None else int(default or min_int)
-        value = min(max(value, min_int), max_int)
-        return st.slider(
-            label,
-            min_value=min_int,
-            max_value=max_int,
-            value=value,
-            step=step_val,
-            key=widget_key,
-        )
-
-    if param_type == "float":
-        step_val = float(step or 0.1)
-        if control == "number_input" or min_value is None or max_value is None:
-            return st.number_input(
-                label,
-                value=float(prefill) if prefill is not None else float(default or 0.0),
-                step=step_val,
-                key=widget_key,
-            )
-
-        min_float = float(min_value)
-        max_float = float(max_value)
-        value = float(prefill) if prefill is not None else float(default or min_float)
-        value = min(max(value, min_float), max_float)
-        return st.slider(
-            label,
-            min_value=min_float,
-            max_value=max_float,
-            value=value,
-            step=step_val,
-            key=widget_key,
-        )
-
-    return st.text_input(label, value=str(prefill) if prefill is not None else "", key=widget_key)
-
-
-def _render_indicator_inputs(name: str, specs: dict[str, Any], range_store: dict[str, tuple[Any, Any]]) -> dict[str, Any]:
-    """Rendu des inputs pour un indicateur."""
-    prev_indicators = st.session_state.get("indicators", {})
-    saved = prev_indicators.get(name, {})
-    result: dict[str, Any] = {}
-
-    for key, spec in specs.items():
-        normalized = _normalize_spec(spec)
-        prefill = saved.get(key, normalized.get("default"))
-        label = normalized.get("label") or f"{key}".replace("_", " ").title()
-        col_key = f"{name}_{key}"
-        store_key = f"{name}.{key}"
-        result[key] = _render_param_control(label, col_key, normalized, prefill, range_store, store_key)
-
-    return result
-
-
 def _render_strategy_section() -> None:
     """Section de configuration de la stratégie."""
-    st.markdown("### ?? Configuration de la Stratégie")
+    st.markdown("### ⚙️ Configuration de la Stratégie")
 
     strategies = list_strategies()
     if not strategies:
-        st.error("? Aucune stratégie disponible dans le registre.")
+        st.error("❌ Aucune stratégie disponible dans le registre.")
         return
 
     default_strat = st.session_state.get("strategy", strategies[0])
@@ -430,20 +169,56 @@ def _render_strategy_section() -> None:
         indicator_specs = indicator_specs_for(strategy)
         param_specs = parameter_specs_for(strategy)
     except KeyError:
-        st.error(f"? Stratégie inconnue: {strategy}")
+        st.error(f"❌ Stratégie inconnue: {strategy}")
         return
 
     # Initialiser valeurs d'indicateurs avec leurs défauts (onglet supprimé)
     if indicator_specs:
         indicator_values = {
             ind_name: {
-                key: _normalize_spec(spec).get("default")
+                key: normalize_spec(spec).get("default")
                 for key, spec in ind_spec.items()
             }
             for ind_name, ind_spec in indicator_specs.items()
         }
     else:
         indicator_values = {}
+
+    # Afficher les indicateurs avec valeurs par défaut pour la stratégie sélectionnée
+    if indicator_specs:
+        with st.expander("📈 Indicateurs techniques (préréglés)", expanded=False):
+            indicator_rows = []
+            for ind_name, ind_spec in indicator_specs.items():
+                for key, spec in ind_spec.items():
+                    normalized = normalize_spec(spec)
+                    label = normalized.get("label") or key.replace("_", " ").title()
+                    default_val = normalized.get("default")
+                    min_val = normalized.get("min")
+                    max_val = normalized.get("max")
+                    step_val = normalized.get("step")
+
+                    if isinstance(default_val, float):
+                        default_fmt = f"{default_val:.4f}".rstrip("0").rstrip(".")
+                    else:
+                        default_fmt = str(default_val)
+
+                    indicator_rows.append(
+                        {
+                            "Indicateur": ind_name,
+                            "Paramètre": label,
+                            "Défaut": default_fmt,
+                            "Min": min_val,
+                            "Max": max_val,
+                            "Pas": step_val,
+                        }
+                    )
+
+            import pandas as pd
+
+            df_ind = pd.DataFrame(indicator_rows)
+            st.dataframe(df_ind, use_container_width=True, hide_index=True)
+    else:
+        st.info("ℹ️ Aucun indicateur spécifique pour cette stratégie.")
 
     # Récupérer les paramètres par défaut depuis le registre (pas besoin de sliders ici)
     from .strategy_registry import base_params_for
@@ -462,7 +237,7 @@ def _render_strategy_section() -> None:
         with st.expander("🔍 Voir les paramètres par défaut", expanded=False):
             params_data = []
             for key, spec in param_specs.items():
-                normalized = _normalize_spec(spec)
+                normalized = normalize_spec(spec)
                 label = normalized.get("label") or key.replace("_", " ").title()
                 default_val = normalized.get("default")
                 param_type = normalized.get("type", "")
@@ -493,10 +268,10 @@ def _render_strategy_section() -> None:
     st.success(f"✅ Configuration enregistrée : **{strategy}** avec paramètres par défaut")
 
 
-
-
 def main() -> None:
     """Point d'entrée de la page Chargement & Visualisation."""
+    apply_custom_styles()
+    
     st.title("📊 Chargement des Données")
     st.markdown("*Sélectionnez et prévisualisez vos données de marché*")
     st.markdown("---")

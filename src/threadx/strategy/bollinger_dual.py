@@ -485,28 +485,26 @@ class BollingerDualStrategy:
             trades.append(position)
 
         # Construction courbe d'équité
-        equity_curve = pd.Series(equity, index=df.index)
+        equity_series = pd.Series(equity, index=df.index)
 
         # Calcul statistiques
-        run_stats = RunStats.from_trades_and_equity(
+        stats = RunStats.from_trades_and_equity(
             trades=trades,
-            equity_curve=equity_curve,
+            equity_curve=equity_series,
             initial_capital=initial_capital,
             meta={
-                "strategy": "BollingerDual",
+                "strategy": "Bollinger_Dual",
                 "params": params,
                 "fee_bps": fee_bps,
-                "slippage_bps": slippage_bps,
-                "symbol": self.symbol,
-                "timeframe": self.timeframe,
+                "trades": [t.to_dict() for t in trades]
             },
         )
 
         logger.info(
-            f"Backtest terminé: {run_stats.total_trades} trades, PnL={run_stats.total_pnl:.2f} ({run_stats.total_pnl_pct:.2f}%)"
+            f"Backtest terminé: {stats.total_trades} trades, PnL={stats.total_pnl:.2f} ({stats.total_pnl_pct:.2f}%)"
         )
 
-        return equity_curve, run_stats
+        return equity_series, stats
 
 
 def create_default_params(**overrides) -> BollingerDualParams:

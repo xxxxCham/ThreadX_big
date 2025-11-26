@@ -39,7 +39,7 @@ class BaseAgent(ABC):
         self,
         name: str,
         model: str | None = None,
-        timeout: float = 60.0,
+        timeout: float = 180.0,
         max_retries: int = 2,
         debug: bool = False,
         use_llm: bool = True,
@@ -251,9 +251,7 @@ class BaseAgent(ABC):
             }
         """
         total_calls = self._metrics["total_calls"]
-        avg_time = (
-            self._metrics["total_time"] / total_calls if total_calls > 0 else 0.0
-        )
+        avg_time = self._metrics["total_time"] / total_calls if total_calls > 0 else 0.0
         success_rate = (
             (total_calls - self._metrics["errors"]) / total_calls
             if total_calls > 0
@@ -284,7 +282,6 @@ class BaseAgent(ABC):
         avec sa logique spécifique (ex: analyze_sweep_results pour Analyst).
         """
         raise NotImplementedError("Subclasses must implement analyze()")
-
 
     def __repr__(self) -> str:
         return (
