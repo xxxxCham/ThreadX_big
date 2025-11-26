@@ -234,11 +234,12 @@ class MultiGPUManager:
 
         if gpu_primary and gpu_2060:
             # Configuration idéale: RTX 5080/5090 + RTX 2060
-            # Balance selon VRAM: 16GB / 8GB = 2:1 ratio = 66%:34%
+            # Balance selon performance relative: RTX 5080 est ~4x plus puissante
+            # Ratio optimal: 80%/20% (compromis entre performance et saturation)
             primary_name = gpu_primary.name
-            balance[primary_name] = 0.66  # RTX 5080 (16GB) → 66%
-            balance["2060"] = 0.34         # RTX 2060 (8GB) → 34%
-            logger.info(f"💎 Multi-GPU optimal: {primary_name} (66%) + 2060 (34%)")
+            balance[primary_name] = 0.80  # RTX 5080 (16GB, plus puissante) → 80%
+            balance["2060"] = 0.20         # RTX 2060 (8GB, secondaire) → 20%
+            logger.info(f"💎 Multi-GPU optimal: {primary_name} (80%) + 2060 (20%)")
         elif gpu_primary:
             # Seulement RTX 5090/5080
             balance[gpu_primary.name] = 1.0

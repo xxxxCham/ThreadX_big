@@ -20,7 +20,7 @@ Pipeline:
 Architecture:
 - BacktestEngine : orchestrateur principal
 - RunResult : structure de données standardisée
-- Multi-device : balance 75%/25% par défaut entre GPUs
+- Multi-device : balance 80%/20% par défaut entre GPUs (5080/2060)
 - Strategy : Bollinger mean reversion + ATR filter
 
 Author: ThreadX Framework
@@ -85,22 +85,6 @@ try:
 except ImportError:
     XP_AVAILABLE = False
     xp_module = None
-
-
-def get_xp_module():
-    """Retourne le module array (CuPy ou NumPy) via couche xp.
-
-    Fallback automatique sur NumPy si couche xp indisponible ou échoue.
-    """
-    if XP_AVAILABLE and xp_module is not None:
-        try:
-            return xp_module.get_xp()
-        except Exception as e:
-            # Log en debug avec stacktrace et fallback NumPy
-            import logging
-
-            logging.getLogger(__name__).debug("xp.get_xp() failed: %s", e, exc_info=True)
-    return np
 
 
 # GPU management avec fallback gracieux
@@ -214,7 +198,7 @@ class BacktestEngine:
     4. ui.display(result, metrics)
 
     Features:
-    - Multi-GPU: balance 75%/25% par défaut (configurable)
+    - Multi-GPU: balance 80%/20% par défaut (configurable)
     - Déterminisme: seed=42 pour reproductibilité
     - Device fallback: GPU → CPU transparent
     - Logs structurés: INFO/DEBUG/WARNING/ERROR
@@ -250,7 +234,10 @@ class BacktestEngine:
     """
 
     def __init__(
-        self, gpu_balance: Optional[dict[str, float]] = None, use_multi_gpu: bool = True
+        self,
+        gpu_balance: Optional[dict[str, float]] = None,
+        use_multi_gpu: bool = True,
+        use_gpu: bool = True,
     ):
         """
         Initialise le moteur de backtesting.
@@ -320,15 +307,59 @@ class BacktestEngine:
 
     def run(
         self,
-        df_1m: pd.DataFrame,
-        indicators: dict[str, Any],
+        df_1m: Optional[pd.DataFrame] = None,
+        indicators: Optional[dict[str, Any]] = None,
         *,
-        params: dict[str, Any],
-        symbol: str,
-        timeframe: str,
+        params: Optional[dict[str, Any]] = None,
+        symbol: str = "UNKNOWN",
+        timeframe: str = "1m",
         seed: int = 42,
         use_gpu: Optional[bool] = None,
-    ) -> RunResult:
+        strategy_class: Optional[Any] = None,
+        data: Optional[pd.DataFrame] = None,
+    ) -> Any:
+        """
+        Exécute un backtest. Supporte deux modes:
+        1. Mode Legacy/Generic: via strategy_class et data
+        2. Mode Production: via df_1m et indicators (Bollinger+ATR)
+        """
+        # Mode Legacy/Generic (Notebooks)
+        if strategy_class is not None:
+            if data is None:
+                raise ValueError("data is required when using strategy_class")
+            
+            # Instancier et exécuter la stratégie
+            strategy = strategy_class()
+            # Adapter les paramètres si nécessaire
+            run_params = params if params is not None else {}
+            
+            # Exécuter backtest
+            # Note: ma_crossover retourne (equity, stats)
+            equity, stats = strategy.backtest(data, run_params)
+            
+            # Créer un objet résultat compatible avec ce que le notebook attend
+            # Le notebook attend: result.sharpe_ratio, result.total_return, result.max_drawdown
+            from types import SimpleNamespace
+            
+            result = SimpleNamespace()
+            result.sharpe_ratio = stats.sharpe_ratio if hasattr(stats, 'sharpe_ratio') else 0.0
+            result.total_return = stats.total_pnl_pct if hasattr(stats, 'total_pnl_pct') else 0.0
+            result.max_drawdown = stats.max_drawdown_pct if hasattr(stats, 'max_drawdown_pct') else 0.0
+            result.equity = equity
+            result.stats = stats
+            
+            # Ajouter d'autres attributs si nécessaire pour compatibilité
+            result.win_rate = stats.win_rate_pct if hasattr(stats, 'win_rate_pct') else 0.0
+            result.total_trades = stats.total_trades if hasattr(stats, 'total_trades') else 0
+            
+            return result
+
+        # Mode Production (Bollinger + ATR)
+        if df_1m is None or indicators is None:
+            raise ValueError("df_1m and indicators are required for production mode")
+            
+        if params is None:
+             raise ValueError("params is required for production mode")
         """
         Exécute un backtest complet avec stratégie Bollinger Bands + ATR.
 
@@ -362,7 +393,7 @@ class BacktestEngine:
 
         Notes:
             Multi-GPU: Si plusieurs devices disponibles, distribue automatiquement
-            le workload selon balance configurée (75%/25% par défaut).
+            le workload selon balance configurée (80%/20% par défaut).
 
             Déterminisme: seed=42 appliqué à tous composants pseudo-aléatoires.
 
