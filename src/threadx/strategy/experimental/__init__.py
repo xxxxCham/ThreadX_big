@@ -1,6 +1,5 @@
 """
 ThreadX Experimental Strategies - AI-Generated Code
-====================================================
 
 ⚠️ **ATTENTION: Stratégies Expérimentales**
 

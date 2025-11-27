@@ -33,6 +33,7 @@ Intégration Autopsy:
 from typing import Any
 
 from threadx.llm.agents.base_agent import BaseAgent
+from threadx.strategy.experimental import update_strategy_status
 
 
 <<<<<<< HEAD
@@ -559,6 +560,7 @@ __all__ = ["Critic", "ValidationCriteria", "ValidationResult"]
         analysis: dict[str, Any],
         current_params: dict[str, Any],
         param_specs: dict[str, Any] | None = None,
+        strategy_id: str | None = None,
     ) -> dict[str, Any]:
         """
         Valide et filtre les propositions du Strategist.
@@ -568,6 +570,7 @@ __all__ = ["Critic", "ValidationCriteria", "ValidationResult"]
             analysis: Analyse de l'Analyst (pour vérifier cohérence)
             current_params: Paramètres actuels de la stratégie
             param_specs: Spécifications des paramètres (min/max/type)
+            strategy_id: Identifiant de la stratégie expérimentale (optionnel)
 
         Returns:
             dict avec:
@@ -665,12 +668,18 @@ Réponds en JSON:
                 len(response.get("rejected_proposals", [])),
             )
 
+            status = (
+                "validated" if response.get("validated_proposals") else "rejected"
+            )
+            metrics = response.get("overall_assessment")
+            self._update_strategy_registry(strategy_id, status, metrics)
+
             return response
 
         except Exception as e:
             self.logger.error("Error during validation: %s", e)
             # Fallback: accepter toutes les propositions avec score conservatif
-            return {
+            fallback_response = {
                 "validated_proposals": [
                     {
                         "proposal_id": i,
@@ -689,6 +698,13 @@ Réponds en JSON:
                     "warnings": [f"LLM validation failed: {e}"],
                 },
             }
+            self._update_strategy_registry(
+                strategy_id,
+                "fallback",
+                metrics=fallback_response["overall_assessment"],
+            )
+
+            return fallback_response
 
     def _format_validation_context(
         self,
@@ -783,6 +799,23 @@ Réponds en JSON:
         except json.JSONDecodeError as e:
             self.logger.error("Failed to parse JSON from LLM response: %s", e)
             raise ValueError(f"Invalid JSON in LLM response: {e}") from e
+
+    def _update_strategy_registry(
+        self, strategy_id: str | None, status: str, metrics: dict[str, Any] | None
+    ) -> None:
+        """Met à jour le registre expérimental de façon sécurisée."""
+
+        if not strategy_id:
+            return
+        try:
+            update_strategy_status(strategy_id, status, metrics=metrics)
+        except Exception as exc:
+            self.logger.error(
+                "Registry update failed for %s (status=%s): %s",
+                strategy_id,
+                status,
+                exc,
+            )
 
     def analyze_failure_with_autopsy(
         self,

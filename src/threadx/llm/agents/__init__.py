@@ -33,7 +33,8 @@ Usage:
 
 from threadx.llm.agents.analyst import Analyst
 from threadx.llm.agents.autopsy import Autopsy
+from threadx.llm.agents.codewriter import CodeWriter
 from threadx.llm.agents.critic import Critic
 from threadx.llm.agents.strategist import Strategist
 
-__all__ = ["Analyst", "Strategist", "Critic", "Autopsy"]
+__all__ = ["Analyst", "Strategist", "Critic", "Autopsy", "CodeWriter"]
