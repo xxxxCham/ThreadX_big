@@ -501,7 +501,12 @@ class MACrossoverStrategy:
             trades=trades,
             equity_curve=equity_series,
             initial_capital=initial_capital,
-            meta={"strategy": self.name, "params": params, "fee_bps": p.fee_bps},
+            meta={
+                "strategy": self.name,
+                "params": params,
+                "fee_bps": p.fee_bps,
+                "trades": [t.to_dict() for t in trades]
+            },
         )
 
         logger.info(

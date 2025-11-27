@@ -18,6 +18,7 @@ import hashlib
 import itertools
 import json
 import os
+import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import (
@@ -54,6 +55,27 @@ except ImportError:
     PSUTIL_AVAILABLE = False
 
 logger = get_logger(__name__)
+
+# ===================================================================
+# PATCH CRITIQUE : Liste des paramètres devant être des entiers stricts
+# Évite ValueError: min_periods must be an integer dans pandas.rolling
+# ===================================================================
+INTEGER_PARAM_KEYS = {
+    "fast_period", "slow_period", "rsi_period", "bb_period",
+    "atr_period", "ema_period", "macd_fast", "macd_slow", "macd_signal",
+    "max_hold_bars", "lookback_bars", "trend_period"
+}
+
+def _force_integer_params(params: dict) -> dict:
+    """Convertit les paramètres censés être entiers en int (évite float 5.0 → crash pandas)."""
+    params = params.copy()
+    for key in INTEGER_PARAM_KEYS:
+        if key in params and params[key] is not None:
+            try:
+                params[key] = int(round(float(params[key])))
+            except (ValueError, TypeError):
+                pass  # Garder la valeur d'origine si conversion impossible
+    return params
 
 # Global stop flag to allow UI-triggered cancellation without direct runner reference
 _GLOBAL_STOP_FLAG = False
@@ -107,9 +129,10 @@ def _evaluate_combo_worker(
         # Import local pour ├®viter overhead dans process principal
         from threadx.indicators.bank import IndicatorBank, IndicatorSettings
         from threadx.strategy import (
-            BBAtrStrategy,
             BollingerDualStrategy,
             MACrossoverStrategy,
+            EMACrossStrategy,
+            ATRChannelStrategy,
         )
 
         # Cr├®er IndicatorBank dans ce process worker
@@ -118,9 +141,10 @@ def _evaluate_combo_worker(
 
         # Mapping strat├®gie ÔåÆ classe
         strategy_classes = {
-            "Bollinger_Breakout": BBAtrStrategy,
             "Bollinger_Dual": BollingerDualStrategy,
             "MA_Crossover": MACrossoverStrategy,
+            "EMA_Cross": EMACrossStrategy,
+            "ATR_Channel": ATRChannelStrategy,
         }
 
         # Fallback to process globals if args are None (ProcessPool with initializer)
@@ -129,8 +153,8 @@ def _evaluate_combo_worker(
         sym = symbol if symbol is not None else _G_SYMBOL
         tf = timeframe if timeframe is not None else _G_TIMEFRAME
         # Get strategy name from combo first, then fallback to args/globals
-        strat_name = combo.get("strategy") or strategy_name or _G_STRATEGY_NAME or "Bollinger_Breakout"
-        strategy_class = strategy_classes.get(strat_name, BBAtrStrategy)
+        strat_name = combo.get("strategy") or strategy_name or _G_STRATEGY_NAME or "Bollinger_Dual"
+        strategy_class = strategy_classes.get(strat_name, BollingerDualStrategy)
 
         # Cr├®er strat├®gie avec IndicatorBank local
         strategy = strategy_class(symbol=sym, timeframe=tf, indicator_bank=indicator_bank)
@@ -160,15 +184,28 @@ def _evaluate_combo_worker(
             strategy_params.setdefault("entry_z", 2.0)
             strategy_params.setdefault("trailing_stop", False)
 
+        # Extraire fee_bps et slippage_bps avant de passer params
+        # (backtest() les attend comme arguments séparés, pas dans le dict params)
+        fee_bps_val = strategy_params.pop("fee_bps", None)
+        slippage_bps_val = strategy_params.pop("slippage_bps", None)
+
+        # ═ CORRECTION CRITIQUE : Forcer conversion int des param├и├гtres de p├и├гriode
+        strategy_params = _force_integer_params(strategy_params)
+
         # Backtest
         equity, stats = strategy.backtest(
             df=rd,
             params=strategy_params,
+            fee_bps=fee_bps_val,
+            slippage_bps=slippage_bps_val,
             precomputed_indicators=ci,
         )
 
-        # R├®sultat
-        result = {"params": combo, "stats": stats.__dict__ if hasattr(stats, "__dict__") else {}}
+        # R├®sultat - utiliser to_dict() pour inclure les @property calcul├®es (ex: total_pnl_pct)
+        result = {
+            "params": combo,
+            "stats": stats.to_dict() if hasattr(stats, "to_dict") else (stats.__dict__ if hasattr(stats, "__dict__") else {})
+        }
 
         return result
 
@@ -209,7 +246,7 @@ class SweepRunner:
         indicator_bank: IndicatorBank | None = None,
         max_workers: int | None = None,
         use_multigpu: bool = True,
-        use_processes: bool = False,  # Ô£à DEFAULT False: ThreadPool (GPU release GIL = OK)
+        use_processes: bool | None = None,  # Ô£à None = auto (ProcessPool si Multi-GPU, sinon ThreadPool)
     ):
         """
         Initialise le runner de sweeps avec support Multi-GPU.
@@ -219,10 +256,19 @@ class SweepRunner:
             max_workers: Nombre de workers (None = auto-d├®tection dynamique)
             use_multigpu: Activer distribution Multi-GPU si disponible
             use_processes: True = ProcessPoolExecutor (vrai parall├®lisme),
-                          False = ThreadPoolExecutor (limit├® par GIL)
+                          False = ThreadPoolExecutor (limit├® par GIL),
+                          None = auto (ProcessPool si Multi-GPU activ├®, sinon ThreadPool)
         """
         self.indicator_bank = indicator_bank or IndicatorBank()
         self.logger = get_logger(__name__)
+        self._cache_lock = threading.Lock()  # Lock pour accès concurrent au cache
+
+        # Ô£à Auto-d├®termination de use_processes
+        if use_processes is None:
+            # Activer ProcessPool si Multi-GPU pour vrai parall├®lisme
+            use_processes = use_multigpu and MULTIGPU_AVAILABLE
+            self.logger.info(f"Auto-d├®tection use_processes: {use_processes} (Multi-GPU={use_multigpu})")
+        
         self.use_processes = use_processes  # Ô£à Stocker choix
 
         # Multi-GPU Manager
@@ -232,7 +278,17 @@ class SweepRunner:
         if self.use_multigpu:
             try:
                 self.gpu_manager = get_default_manager()
-                self.logger.info("Ô£à Multi-GPU activ├®")
+                # Log détaillé Multi-GPU
+                gpu_devices = [d for d in self.gpu_manager.available_devices if d.device_id != -1]
+                if len(gpu_devices) >= 2:
+                    gpu_names = [d.name for d in gpu_devices]
+                    balance = self.gpu_manager.device_balance
+                    balance_str = ", ".join([f"{name}: {balance.get(name, 0):.0%}" for name in gpu_names])
+                    self.logger.info(f"💎 Multi-GPU activé: {len(gpu_devices)} GPUs ({', '.join(gpu_names)})")
+                    self.logger.info(f"⚖️  Balance configurée: {balance_str}")
+                    self.logger.info(f"🚀 ProcessPool: {'✅ Activé' if self.use_processes else '❌ Désactivé (ThreadPool)'}")
+                else:
+                    self.logger.info("Ô£à Multi-GPU activé (1 GPU détecté)")
             except Exception as e:
                 self.logger.warning(f"ÔÜá´©Å Multi-GPU non disponible: {e}")
                 self.use_multigpu = False
@@ -284,10 +340,10 @@ class SweepRunner:
             ]
 
             if len(gpu_devices) >= 2:
-                # 2 GPUs: 60 workers par GPU = 120 total
-                # RTX 5080 (16GB) + RTX 2060 (8GB) peuvent g├®rer 120 workers (GPU release GIL)
-                optimal = len(gpu_devices) * 60
-                self.logger.info(f"­ƒÜÇ Multi-GPU: {len(gpu_devices)} GPUs ÔåÆ {optimal} workers")
+                # 2 GPUs: 40 workers par GPU = 80 total (évite overhead context switching)
+                # RTX 5080 (16-46GB) + RTX 2060 (8GB) peuvent gérer 80 workers efficacement
+                optimal = len(gpu_devices) * 40
+                self.logger.info(f"💎 Multi-GPU: {len(gpu_devices)} GPUs → {optimal} workers (ProcessPool)")
             elif len(gpu_devices) == 1:
                 # 1 GPU: 20 workers (saturer GPU unique)
                 optimal = 20
@@ -310,7 +366,7 @@ class SweepRunner:
                 optimal = min(optimal, 16)
             elif ram_gb >= 40:
                 # RAM abondante (60 GB): autoriser 50+ workers
-                optimal = min(optimal * 1.5, 50)
+                optimal = int(min(optimal * 1.5, 50))
                 self.logger.info(f"­ƒÆ¥ RAM abondante ({ram_gb:.1f} GB) ÔåÆ max {optimal} workers")
 
         return max(optimal, 2)  # Minimum 2 workers
@@ -693,7 +749,12 @@ class SweepRunner:
                 feeder_aggr = max(1, min(feeder_aggr, 64))
                 inflight_limit = max(int(self.max_workers) * feeder_aggr, 64)
                 exec_kwargs = {}
-                if self.use_processes:
+
+                # FIX PICKLE WINDOWS: Désactiver initializer sur Windows/Streamlit
+                # car 'spawn' mode + Streamlit reload causent "it's not the same object"
+                use_initializer = self.use_processes and os.name != 'nt'
+
+                if use_initializer:
                     exec_kwargs["initializer"] = _init_process_globals
                     exec_kwargs["initargs"] = (
                         computed_indicators,
@@ -710,9 +771,22 @@ class SweepRunner:
                     def submit_one(idx: int) -> None:
                         combo = combinations[idx]
                         if self.use_processes:
-                            fut = executor.submit(
-                                _evaluate_combo_worker, combo, None, None, None, None, strategy_name
-                            )
+                            # Windows: Passer données comme args (pas de globalizer)
+                            # Linux: Passer None (globales initialisées par initializer)
+                            if use_initializer:
+                                fut = executor.submit(
+                                    _evaluate_combo_worker, combo, None, None, None, None, strategy_name
+                                )
+                            else:
+                                fut = executor.submit(
+                                    _evaluate_combo_worker,
+                                    combo,
+                                    computed_indicators,
+                                    real_data,
+                                    symbol,
+                                    timeframe,
+                                    strategy_name,
+                                )
                         else:
                             fut = executor.submit(
                                 self._evaluate_single_combination,
@@ -1036,39 +1110,43 @@ class SweepRunner:
         try:
             # Ô£à Import des strat├®gies disponibles
             from threadx.strategy import (
-            BBAtrStrategy,
-            BollingerDualStrategy,
-            MACrossoverStrategy,
-        )
+                BollingerDualStrategy,
+                MACrossoverStrategy,
+                EMACrossStrategy,
+                ATRChannelStrategy,
+            )
 
             # Mapping strat├®gie ÔåÆ classe
             strategy_classes = {
-                "Bollinger_Breakout": BBAtrStrategy,
                 "Bollinger_Dual": BollingerDualStrategy,
                 "MA_Crossover": MACrossoverStrategy,
+                "EMA_Cross": EMACrossStrategy,
+                "ATR_Channel": ATRChannelStrategy,
             }
 
             # D├®terminer quelle strat├®gie utiliser
             # Priorit├®: param "strategy" dans combo, sinon strat├®gie par d├®faut
-            strat_name = combo.get("strategy") or strategy_name or "Bollinger_Breakout"
+            strat_name = combo.get("strategy") or strategy_name or "Bollinger_Dual"
 
-            strategy_class = strategy_classes.get(strat_name, BBAtrStrategy)
+            strategy_class = strategy_classes.get(strat_name, BollingerDualStrategy)
 
             # ­ƒÜÇ OPTIMISATION CRITIQUE: R├®utiliser instance existante si disponible
             # ├ëvite de recr├®er GPU Manager, Bollinger, ATR, IndicatorBank pour chaque combo
-            if not hasattr(self, "_cached_strategy_instances"):
-                self._cached_strategy_instances = {}
+            # Protégé par lock pour éviter race condition en multi-threading
+            with self._cache_lock:
+                if not hasattr(self, "_cached_strategy_instances"):
+                    self._cached_strategy_instances = {}
 
-            cache_key = (strat_name, symbol, timeframe)
-            if cache_key not in self._cached_strategy_instances:
-                # Ô£à P0.2: INJECTER SINGLETON IndicatorBank (├®limine recr├®ation GPU Manager 16x)
-                self._cached_strategy_instances[cache_key] = strategy_class(
-                    symbol=symbol,
-                    timeframe=timeframe,
-                    indicator_bank=self.indicator_bank  # ÔåÉ Singleton partag├® !
-                )
+                cache_key = (strat_name, symbol, timeframe)
+                if cache_key not in self._cached_strategy_instances:
+                    # Ô£à P0.2: INJECTER SINGLETON IndicatorBank (├®limine recr├®ation GPU Manager 16x)
+                    self._cached_strategy_instances[cache_key] = strategy_class(
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        indicator_bank=self.indicator_bank  # ÔåÉ Singleton partag├® !
+                    )
 
-            strategy = self._cached_strategy_instances[cache_key]
+                strategy = self._cached_strategy_instances[cache_key]
 
             # Ô£à MAPPING: Transformer param├¿tres sweep ÔåÆ param├¿tres strat├®gie
             strategy_params = {}
@@ -1226,6 +1304,7 @@ class UnifiedOptimizationEngine:
         # Utilise l'IndicatorBank existant ou en cr├®e un nouveau
         self.indicator_bank = indicator_bank or IndicatorBank()
         self.max_workers = max_workers
+        self.use_processes = False  # ThreadPool par défaut (ProcessPool si True)
         self.logger = get_logger(__name__)
 
         # ├ëtat d'ex├®cution

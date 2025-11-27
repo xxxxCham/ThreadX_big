@@ -243,11 +243,8 @@ def list_devices(use_cache: bool = True) -> list[DeviceInfo]:
         _CACHE_TIMESTAMP = time.time()
         logger.debug(f"Cache devices mis à jour ({len(devices)} devices)")
 
-    # Log initial au niveau INFO (seulement première fois ou force re-scan)
-    if not use_cache or _CACHE_TIMESTAMP == time.time():
-        gpu_devices = [d for d in devices if d.device_id >= 0]
-        if gpu_devices:
-            logger.info(f"GPUs détectés: {', '.join([f'{d.name} ({d.memory_total_gb:.1f}GB)' for d in gpu_devices])}")
+    # Note: Logging des GPUs détectés est fait dans startup_check.py
+    # pour éviter les doublons au démarrage
 
     return devices
 
@@ -311,7 +308,8 @@ def check_nccl_support() -> bool:
             logger.debug("NCCL disponible mais <2 GPU détectés")
             return False
 
-        logger.info("Support NCCL activé pour synchronisation multi-GPU")
+        # Note: Statut NCCL loggé par MultiGPUManager
+        logger.debug("Support NCCL vérifié et disponible")
         return True
 
     except (ImportError, AttributeError) as e:
@@ -414,19 +412,38 @@ def get_memory_info(device_name: str) -> dict[str, float]:
 
 
 # Export des exceptions CuPy si disponibles
-if CUPY_AVAILABLE and cp and hasattr(cp, "cuda"):
-    CudaMemoryError = cp.cuda.memory.OutOfMemoryError
-    CudaRuntimeError = cp.cuda.runtime.CUDARuntimeError
+if CUPY_AVAILABLE and cp:
+    try:
+        # Tentative d'import des exceptions CuPy (compatible avec différentes versions)
+        from cupy.cuda.memory import OutOfMemoryError as CudaMemoryError
+    except (ImportError, AttributeError):
+        # Fallback si cupy.cuda.memory n'existe pas
+        try:
+            # Certaines versions de CuPy utilisent directement cp.cuda
+            CudaMemoryError = cp.cuda.OutOfMemoryError
+        except AttributeError:
+            # Dernière tentative: exception générique CuPy
+            class CudaMemoryError(RuntimeError):
+                """Exception pour erreurs mémoire GPU (fallback)"""
+                pass
+    
+    try:
+        from cupy.cuda.runtime import CUDARuntimeError as CudaRuntimeError
+    except (ImportError, AttributeError):
+        try:
+            CudaRuntimeError = cp.cuda.runtime.CUDARuntimeError
+        except AttributeError:
+            class CudaRuntimeError(RuntimeError):
+                """Exception pour erreurs runtime GPU (fallback)"""
+                pass
 else:
-    # Fallback exceptions
+    # Fallback exceptions si CuPy indisponible
     class CudaMemoryError(RuntimeError):
         """Exception pour erreurs mémoire GPU (fallback)"""
-
         pass
 
     class CudaRuntimeError(RuntimeError):
         """Exception pour erreurs runtime GPU (fallback)"""
-
         pass
 
 

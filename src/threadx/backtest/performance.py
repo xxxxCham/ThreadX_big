@@ -832,6 +832,123 @@ def expectancy(trades: pd.DataFrame) -> float:
     return float(expectancy_val)
 
 
+def calmar_ratio(
+    returns: pd.Series, max_dd: float | None = None, periods_per_year: int = 365
+) -> float:
+    """
+    Calculate Calmar Ratio.
+
+    Annualized Return / Abs(Max Drawdown).
+    Measures return per unit of drawdown risk.
+
+    Parameters
+    ----------
+    returns : pd.Series
+        Time series of returns.
+    max_dd : float, optional
+        Pre-calculated max drawdown (negative). If None, will be calculated.
+    periods_per_year : int, default 365
+        Periods per year for annualization.
+
+    Returns
+    -------
+    float
+        Calmar ratio. Returns 0.0 if max_dd is 0.
+    """
+    if returns.empty:
+        return 0.0
+
+    # Calculate annualized return
+    # Simple annualization: mean * periods
+    # CAGR based annualization is better but for consistency with Sharpe we use mean
+    mean_return = returns.mean() * periods_per_year
+
+    if max_dd is None:
+        # Calculate max drawdown if not provided
+        # We need equity curve for accurate max drawdown
+        equity = equity_curve(returns, 10000.0)
+        max_dd = max_drawdown(equity)
+
+    if abs(max_dd) < 1e-6:
+        return 0.0
+
+    return abs(mean_return / max_dd)
+
+
+def omega_ratio(returns: pd.Series, threshold: float = 0.0) -> float:
+    """
+    Calculate Omega Ratio.
+
+    Probability weighted ratio of gains vs losses for a threshold.
+    Sum(Gains > Threshold) / Abs(Sum(Losses < Threshold)).
+
+    Parameters
+    ----------
+    returns : pd.Series
+        Time series of returns.
+    threshold : float, default 0.0
+        Target return threshold (e.g. 0 or risk-free rate).
+
+    Returns
+    -------
+    float
+        Omega ratio. Returns inf if no losses.
+    """
+    if returns.empty:
+        return 0.0
+
+    returns_clean = returns.dropna()
+    if returns_clean.empty:
+        return 0.0
+
+    excess_returns = returns_clean - threshold
+
+    gains = excess_returns[excess_returns > 0].sum()
+    losses = abs(excess_returns[excess_returns < 0].sum())
+
+    if losses == 0:
+        return float("inf")
+
+    return gains / losses
+
+
+def tail_ratio(returns: pd.Series, cutoff: float = 0.95) -> float:
+    """
+    Calculate Tail Ratio.
+
+    Ratio of right tail (95th percentile) to left tail (5th percentile).
+    Measures skewness of the distribution.
+
+    Parameters
+    ----------
+    returns : pd.Series
+        Time series of returns.
+    cutoff : float, default 0.95
+        Percentile cutoff (0.95 means 95th and 5th percentiles).
+
+    Returns
+    -------
+    float
+        Tail ratio. > 1 means right tail is larger (good).
+    """
+    if returns.empty:
+        return 0.0
+
+    returns_clean = returns.dropna()
+    if returns_clean.empty:
+        return 0.0
+
+    # 95th percentile (gains)
+    right_tail = returns_clean.quantile(cutoff)
+    # 5th percentile (losses)
+    left_tail = abs(returns_clean.quantile(1 - cutoff))
+
+    if left_tail == 0:
+        return float("inf")
+
+    return right_tail / left_tail
+
+
 def summarize(
     trades: pd.DataFrame,
     returns: pd.Series,
@@ -924,6 +1041,9 @@ def summarize(
         "cagr": 0.0,
         "sharpe": 0.0,
         "sortino": 0.0,
+        "calmar": 0.0,
+        "omega": 0.0,
+        "tail_ratio": 0.0,
         "max_drawdown": 0.0,
         "profit_factor": 0.0,
         "win_rate": 0.0,
@@ -977,6 +1097,11 @@ def summarize(
                 summary["max_drawdown"] = max_drawdown(equity)
                 summary["sharpe"] = sharpe_ratio(returns, risk_free, periods_per_year)
                 summary["sortino"] = sortino_ratio(returns, risk_free, periods_per_year)
+                summary["calmar"] = calmar_ratio(
+                    returns, summary["max_drawdown"], periods_per_year
+                )
+                summary["omega"] = omega_ratio(returns, risk_free / periods_per_year)
+                summary["tail_ratio"] = tail_ratio(returns)
 
                 # Volatility
                 if len(returns) > 1:
@@ -1102,6 +1227,113 @@ def summarize(
     except Exception as e:
         logger.error(f"Performance summary failed: {e}", exc_info=True)
         return summary  # Return safe defaults
+
+
+def summarize_with_llm(
+    trades: pd.DataFrame,
+    returns: pd.Series,
+    initial_capital: float,
+    *,
+    params: dict[str, Any] | None = None,
+    enable_llm: bool = True,
+    llm_model: str = "deepseek-r1:8b",
+    risk_free: float = 0.0,
+    periods_per_year: int = 252,
+) -> dict[str, Any]:
+    """
+    Enhanced performance summary with optional LLM interpretation.
+
+    Wrapper around `summarize()` that adds AI-powered insights when enabled.
+
+    Parameters
+    ----------
+    trades : pd.DataFrame
+        Trades DataFrame (same format as `summarize()`)
+    returns : pd.Series
+        Returns series (same format as `summarize()`)
+    initial_capital : float
+        Initial capital amount
+    params : Optional[dict], default None
+        Strategy parameters dict for LLM context
+    enable_llm : bool, default True
+        Enable LLM interpretation (graceful fallback if disabled/fails)
+    llm_model : str, default "deepseek-r1:8b"
+        Ollama model to use for interpretation
+    risk_free : float, default 0.0
+        Risk-free rate for metrics (passed to `summarize()`)
+    periods_per_year : int, default 252
+        Periods per year for metrics (passed to `summarize()`)
+
+    Returns
+    -------
+    dict
+        Performance summary dict with additional key `llm_interpretation` if enabled:
+        {
+            ... (all standard metrics from summarize()) ...,
+            "llm_interpretation": {
+                "interpretation": str,
+                "strengths": list[str],
+                "weaknesses": list[str],
+                "recommendations": list[str],
+                "risk_level": str,
+                "suitability": str
+            }
+        }
+
+    Notes
+    -----
+    - LLM interpretation is OPTIONAL and will gracefully fail if:
+      * Ollama is not running
+      * Model is not available
+      * Network timeout occurs
+    - In all failure cases, standard summary is still returned
+    - Adds ~5-10 seconds latency when LLM is enabled
+
+    Examples
+    --------
+    >>> summary = summarize_with_llm(
+    ...     trades_df, returns_series, 10000,
+    ...     params={"bb_period": 20, "atr_multiplier": 1.5},
+    ...     enable_llm=True
+    ... )
+    >>> print(summary["llm_interpretation"]["interpretation"])
+    """
+    # Standard performance metrics
+    summary = summarize(trades, returns, initial_capital, risk_free=risk_free, periods_per_year=periods_per_year)
+
+    # Add LLM interpretation if enabled
+    if enable_llm:
+        try:
+            from threadx.llm.client import LLMClient
+
+            logger.info(f"Requesting LLM interpretation (model={llm_model})...")
+            start_llm = time.time()
+
+            client = LLMClient(model=llm_model, timeout=30.0, debug=False)
+
+            # Prepare params context
+            params_dict = params or {}
+
+            # Call LLM interpretation
+            interpretation = client.interpret_backtest_results(summary=summary, params=params_dict, trades_df=trades)
+
+            elapsed_llm = time.time() - start_llm
+            logger.info(f"LLM interpretation completed in {elapsed_llm:.2f}s")
+
+            summary["llm_interpretation"] = interpretation
+
+        except ImportError:
+            logger.warning("LLM module not available (ollama not installed). Skipping interpretation.")
+            summary["llm_interpretation"] = None
+
+        except Exception as e:
+            logger.warning(f"LLM interpretation failed: {e}. Continuing without AI insights.")
+            summary["llm_interpretation"] = None
+
+    else:
+        summary["llm_interpretation"] = None
+
+    return summary
 
 
 def plot_drawdown(

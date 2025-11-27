@@ -10,7 +10,7 @@
 #   step = pas d'incrémentation
 #   default = valeur par défaut (optionnel)
 #
-# Source: Tableau de référence backtesting classique
+# Source: Tableau de référence back-testing classique
 # Date: 2025
 
 # ==========================================================================
@@ -109,21 +109,21 @@ description = "MACD Signal (EMA)"
 # ICHIMOKU
 # ==========================================================================
 
-[ichimoku.tenkan]
+[ichimoku.Tenkan]
 min = 7
 max = 12
 step = 1
 default = 9
 description = "Tenkan-sen (Conversion Line)"
 
-[ichimoku.kijun]
+[ichimoku.Kijun]
 min = 22
 max = 30
 step = 1
 default = 26
 description = "Kijun-sen (Base Line)"
 
-[ichimoku.senkou_b]
+[ichimoku.Senkou_b]
 min = 44
 max = 60
 step = 2
@@ -331,6 +331,13 @@ step = 0.25
 default = 2.0
 description = "Multiplicateur pour stops"
 
+[atr.entry_z]
+min = 0.5
+max = 2.5
+step = 0.25
+default = 1.0
+description = "Seuil Z-score pour déclenchement signal BB+ATR"
+
 # ==========================================================================
 # STANDARD DEVIATION (Écart-type)
 # ==========================================================================
@@ -353,10 +360,10 @@ description = "Multiplicateur pour enveloppes"
 # FIBONACCI & PIVOT POINTS
 # ==========================================================================
 
-[fibonacci.levels]
+[Fibonacci.levels]
 type = "fixed"
 values = [0.236, 0.382, 0.5, 0.618, 0.786]
-description = "Niveaux de retracement Fibonacci fixes"
+description = "Niveaux de Retracement Fibonacci fixes"
 
 [pivot.timeframe]
 type = "categorical"
@@ -402,14 +409,14 @@ description = "Pi Cycle Top - 350 DMA x2"
 # Paramètres spécifiques à la stratégie AmplitudeHunter
 # qui ne sont pas des indicateurs standards
 
-[amplitude_hunter.bbwidth_percentile_threshold]
+[amplitude_hunter.bb_width_percentile_threshold]
 min = 30
 max = 70
 step = 5
 default = 50
 description = "Seuil percentile BBWidth"
 
-[amplitude_hunter.volume_zscore_threshold]
+[amplitude_hunter.volume_z_score_threshold]
 min = 0.0
 max = 2.0
 step = 0.25

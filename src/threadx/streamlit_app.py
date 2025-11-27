@@ -13,7 +13,9 @@ Version: 2.0.0 - UI Redesign
 """
 
 from __future__ import annotations
+import threadx_gpu_init  # ⚡ CRITICAL: Force RTX 5080 as default GPU
 
+import gc
 import logging
 import os
 import sys
@@ -33,8 +35,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from threadx.data_access import DATA_DIR
 from threadx.ui.page_backtest_optimization import main as backtest_page_main
 from threadx.ui.page_config_strategy import main as config_page_main
+<<<<<<< HEAD
+from threadx.ui.page_llm_optimizer import render_page as llm_optimizer_page
+from threadx.ui.page_reports import render_page as reports_page
+=======
 from threadx.ui.pages.autonomous_orchestrator import main as orchestrator_page_main
+>>>>>>> 1b119cb971277c69eb4e50ee864485c021549ced
 from threadx.ui.system_monitor import get_global_monitor
+import subprocess
+import platform
 
 # Configuration
 st.set_page_config(
@@ -416,6 +425,8 @@ st.markdown(
 PAGE_TITLES = {
     "config": "📊 Chargement des Données",
     "backtest": "⚡ Optimisation",
+    "llm": "🤖 Multi-LLM Optimizer",
+    "reports": "📚 Historique Rapports",
     "monitor": "🖥️ Monitoring Système",
     "orchestrator": "🤖 Multi-Agents Autonome",
 }
@@ -510,6 +521,8 @@ def render_monitor_page() -> None:
 PAGE_RENDERERS = {
     "config": config_page_main,
     "backtest": backtest_page_main,
+    "llm": llm_optimizer_page,
+    "reports": reports_page,
     "monitor": render_monitor_page,
     "orchestrator": orchestrator_page_main,
 }
@@ -576,6 +589,269 @@ def init_session() -> None:
         st.session_state.session_initialized = True
 
 
+def reset_ollama() -> tuple[bool, str]:
+    """
+    Arrête et redémarre Ollama pour éviter les blocages.
+
+    Returns:
+        tuple[bool, str]: (succès, message)
+    """
+    try:
+        is_windows = platform.system() == "Windows"
+
+        # Étape 1: Arrêter Ollama
+        if is_windows:
+            # Utiliser PowerShell pour arrêter proprement
+            stop_cmd = ["powershell", "-Command", "Stop-Process -Name ollama -Force -ErrorAction SilentlyContinue"]
+        else:
+            stop_cmd = ["pkill", "-9", "ollama"]
+
+        try:
+            subprocess.run(stop_cmd, capture_output=True, timeout=5)
+            time.sleep(1)  # Laisser le temps au processus de se terminer
+        except Exception:
+            pass  # Si aucun processus Ollama n'est en cours, c'est OK
+
+        # Étape 2: Vérifier que Ollama est bien arrêté
+        if is_windows:
+            check_cmd = ["tasklist", "/FI", "IMAGENAME eq ollama.exe"]
+            try:
+                # Fix encoding Windows : utiliser errors='ignore' pour éviter UnicodeDecodeError
+                result = subprocess.run(
+                    check_cmd,
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8',
+                    errors='ignore',  # Ignore les caractères non-UTF8
+                    timeout=3
+                )
+                # Fix NoneType : vérifier que stdout existe avant le 'in'
+                if result.stdout and "ollama.exe" in result.stdout:
+                    return False, "❌ Impossible d'arrêter Ollama (processus toujours actif)"
+            except Exception as e:
+                # Si la vérification échoue, on continue quand même
+                pass
+
+        # Étape 3: Redémarrer Ollama en arrière-plan
+        if is_windows:
+            # Démarrer Ollama en arrière-plan avec Start-Process
+            start_cmd = ["powershell", "-Command", "Start-Process -FilePath 'ollama' -ArgumentList 'serve' -WindowStyle Hidden"]
+            # Windows : CREATE_NEW_CONSOLE pour éviter les problèmes d'encoding
+            subprocess.Popen(
+                start_cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NEW_CONSOLE if is_windows else 0
+            )
+        else:
+            start_cmd = ["ollama", "serve"]
+            subprocess.Popen(
+                start_cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True
+            )
+
+        time.sleep(2)  # Laisser le temps à Ollama de démarrer
+
+        return True, "✅ Ollama réinitialisé avec succès"
+
+    except subprocess.TimeoutExpired:
+        return False, "⏱️ Timeout lors de la réinitialisation d'Ollama"
+    except FileNotFoundError:
+        return False, "❌ Ollama non trouvé (vérifiez l'installation)"
+    except Exception as e:
+        return False, f"❌ Erreur: {str(e)}"
+
+
+def clean_all_memory() -> tuple[bool, str]:
+    """
+    Nettoyage complet de toute la mémoire (RAM système, VRAM GPU, caches).
+
+    Returns:
+        tuple[bool, str]: (succès, message détaillé)
+    """
+    messages = []
+    success = True
+
+    try:
+        # 1. Nettoyer la VRAM GPU (NVIDIA)
+        try:
+            import cupy as cp
+            # Vider tous les memory pools CuPy
+            mempool = cp.get_default_memory_pool()
+            pinned_mempool = cp.get_default_pinned_memory_pool()
+
+            freed_vram = mempool.used_bytes()
+            freed_pinned = pinned_mempool.n_free_blocks()
+
+            mempool.free_all_blocks()
+            pinned_mempool.free_all_blocks()
+
+            messages.append(f"✅ VRAM GPU vidée: {freed_vram / (1024**3):.2f} GB libérés")
+        except ImportError:
+            messages.append("⚠️ CuPy non disponible (VRAM GPU non vidée)")
+        except Exception as e:
+            messages.append(f"⚠️ Erreur vidage VRAM: {str(e)}")
+            success = False
+
+        # 2. Vider le cache IndicatorBank (si disponible)
+        try:
+            from threadx.indicators.bank import IndicatorBank
+            # Réinitialiser singleton IndicatorBank
+            if hasattr(IndicatorBank, '_instance'):
+                IndicatorBank._instance = None
+            messages.append("✅ Cache IndicatorBank vidé")
+        except Exception as e:
+            messages.append(f"⚠️ IndicatorBank: {str(e)}")
+
+        # 3. Vider les caches Streamlit
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        messages.append("✅ Caches Streamlit vidés")
+
+        # 4. Nettoyer le session_state (conserver clés système)
+        keys_to_keep = [k for k in st.session_state.keys() if k.startswith('_')]
+        keys_to_delete = [k for k in st.session_state.keys() if not k.startswith('_')]
+
+        for key in keys_to_delete:
+            del st.session_state[key]
+
+        messages.append(f"✅ Session_state nettoyé ({len(keys_to_delete)} clés supprimées)")
+
+        # 5. Forcer le garbage collector Python (RAM système)
+        collected = gc.collect()
+        messages.append(f"✅ RAM système: {collected} objets collectés par GC")
+
+        # 6. Reset Ollama
+        ollama_success, ollama_msg = reset_ollama()
+        if ollama_success:
+            messages.append(f"✅ {ollama_msg}")
+        else:
+            messages.append(f"⚠️ Ollama: {ollama_msg}")
+            success = False
+
+        # Message final
+        final_msg = "\n".join(messages)
+        return success, final_msg
+
+    except Exception as e:
+        return False, f"❌ Erreur critique lors du nettoyage: {str(e)}"
+
+
+def shutdown_app() -> None:
+    """
+    Arrête l'application Streamlit proprement.
+
+    Nettoie toute la mémoire (GPU, cache, session) avant de quitter.
+    """
+    try:
+        st.info("⏳ Arrêt en cours...")
+
+        # 1. Arrêter le monitoring si actif
+        try:
+            monitor = get_global_monitor()
+            if monitor.is_running():
+                monitor.stop()
+                st.caption("✅ Monitoring arrêté")
+        except Exception as e:
+            logging.debug(f"Monitor stop failed (ignoré): {e}")
+
+        # 2. Nettoyer GPU Manager si actif
+        try:
+            from threadx.gpu.multi_gpu import get_default_manager
+            manager = get_default_manager()
+            if hasattr(manager, 'stop'):
+                manager.stop()
+                st.caption("✅ GPU Manager arrêté")
+        except Exception as e:
+            logging.debug(f"GPU Manager stop failed (ignoré): {e}")
+
+        # 3. Nettoyer toute la mémoire
+        success, msg = clean_all_memory()
+        if success:
+            st.success("✅ Mémoire nettoyée")
+        else:
+            st.warning(f"⚠️ Nettoyage partiel: {msg}")
+
+        # Message utilisateur final
+        st.success("✅ Application arrêtée proprement. Vous pouvez fermer cet onglet.")
+        st.info("💡 Pour redémarrer : `streamlit run src/threadx/streamlit_app.py`")
+
+        # Arrêter Streamlit (force rerun puis stop)
+        time.sleep(1.5)
+        st.stop()
+
+    except Exception as e:
+        st.error(f"❌ Erreur lors de l'arrêt: {str(e)}")
+
+
+def restart_app() -> None:
+    """
+    Redémarre l'application en réinitialisant tout (cache, GPU, session).
+
+    Équivalent à un premier démarrage : tous les caches sont vidés,
+    la session est réinitialisée, les GPUs sont nettoyés.
+    """
+    try:
+        st.info("🔄 Redémarrage en cours...")
+
+        # 1. Arrêter le monitoring
+        try:
+            monitor = get_global_monitor()
+            if monitor.is_running():
+                monitor.stop()
+                st.caption("✅ Monitoring arrêté")
+        except Exception as e:
+            logging.debug(f"Monitor stop failed (ignoré): {e}")
+
+        # 2. Nettoyer GPU Manager
+        try:
+            from threadx.gpu.multi_gpu import get_default_manager
+            manager = get_default_manager()
+            if hasattr(manager, 'stop'):
+                manager.stop()
+            # Réinitialiser le singleton
+            if hasattr(manager.__class__, '_default_manager'):
+                manager.__class__._default_manager = None
+            st.caption("✅ GPU Manager réinitialisé")
+        except Exception as e:
+            logging.debug(f"GPU Manager reset failed (ignoré): {e}")
+
+        # 3. Nettoyage COMPLET mémoire
+        success, msg = clean_all_memory()
+        st.caption("✅ Mémoire nettoyée")
+
+        # 4. Réinitialiser TOUTES les clés session_state (même système)
+        all_keys = list(st.session_state.keys())
+        for key in all_keys:
+            del st.session_state[key]
+        st.caption(f"✅ Session réinitialisée ({len(all_keys)} clés supprimées)")
+
+        # 5. Vider tous les caches fichiers IndicatorBank
+        try:
+            from pathlib import Path
+            cache_dir = Path("cache/indicators")
+            if cache_dir.exists():
+                import shutil
+                shutil.rmtree(cache_dir)
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                st.caption("✅ Cache fichiers vidé")
+        except Exception as e:
+            st.caption(f"⚠️ Cache fichiers: {e}")
+
+        # Message final
+        st.success("✅ Application prête à redémarrer !")
+        st.info("🔄 La page va se recharger dans 2 secondes...")
+
+        # Force rerun pour redémarrage complet
+        time.sleep(2)
+        st.rerun()
+
+    except Exception as e:
+        st.error(f"❌ Erreur lors du redémarrage: {str(e)}")
+
+
 def render_sidebar() -> None:
     with st.sidebar:
         st.markdown("# ThreadX v2.0")
@@ -584,8 +860,8 @@ def render_sidebar() -> None:
 
         # Barre de progression du workflow
         st.markdown("### 📍 Progression")
-        steps_total = 3
-        page_to_step = {"config": 1, "backtest": 2, "monitor": 3}
+        steps_total = 4
+        page_to_step = {"config": 1, "backtest": 2, "llm": 3, "monitor": 4}
         current_page = st.session_state.get("page", "config")
         current_step = page_to_step.get(current_page, 1)
 
@@ -594,20 +870,29 @@ def render_sidebar() -> None:
 
         # Afficher les étapes avec statut
         st.caption(
-            f"Étape 1/3 : Configuration données "
+            f"Étape 1/4 : Configuration données "
             f"{'✅' if current_step > 1 else '⏳' if current_step == 1 else '⭕'}"
         )
         st.caption(
-            f"Étape 2/3 : Optimisation "
+            f"Étape 2/4 : Optimisation "
             f"{'✅' if current_step > 2 else '⏳' if current_step == 2 else '⭕'}"
         )
         st.caption(
+<<<<<<< HEAD
+            f"Étape 3/4 : Multi-LLM Optimizer "
+            f"{'✅' if current_step > 3 else '⏳' if current_step == 3 else '⭕'}"
+        )
+        st.caption(
+            f"Étape 4/4 : Monitoring système "
+            f"{'⏳' if current_step == 4 else '⭕'}"
+=======
             f"Étape 3/3 : Monitoring système "
             f"{'✅' if current_step > 3 else '⏳' if current_step == 3 else '⭕'}"
         )
         st.caption(
             f"🤖 Autonome : Orchestrator Multi-Agents "
             f"{'✅' if current_page == 'orchestrator' else '⭕'}"
+>>>>>>> 1b119cb971277c69eb4e50ee864485c021549ced
         )
 
         # Bouton "Suivant" selon l'étape actuelle
@@ -616,6 +901,31 @@ def render_sidebar() -> None:
                 st.session_state.page = "backtest"
                 st.rerun()
         elif current_page == "backtest":
+<<<<<<< HEAD
+            col_bt1, col_bt2 = st.columns(2)
+            with col_bt1:
+                if st.button("🤖 Multi-LLM", use_container_width=True):
+                    st.session_state.page = "llm"
+                    st.rerun()
+            with col_bt2:
+                if st.button("📊 Monitoring", use_container_width=True):
+                    st.session_state.page = "monitor"
+                    st.rerun()
+        elif current_page == "llm":
+            col_bt1, col_bt2 = st.columns(2)
+            with col_bt1:
+                if st.button("📚 Historique", use_container_width=True):
+                    st.session_state.page = "reports"
+                    st.rerun()
+            with col_bt2:
+                if st.button("📊 Monitoring", use_container_width=True):
+                    st.session_state.page = "monitor"
+                    st.rerun()
+        elif current_page == "reports":
+            if st.button("🤖 Retour Multi-LLM", type="primary", use_container_width=True):
+                st.session_state.page = "llm"
+                st.rerun()
+=======
             col_mon, col_orch = st.columns(2)
             with col_mon:
                 if st.button("📊 Monitoring", use_container_width=True):
@@ -625,6 +935,7 @@ def render_sidebar() -> None:
                 if st.button("🤖 Autonome", type="primary", use_container_width=True):
                     st.session_state.page = "orchestrator"
                     st.rerun()
+>>>>>>> 1b119cb971277c69eb4e50ee864485c021549ced
 
         st.markdown("---")
         st.markdown("### 🧭 Navigation")
@@ -649,6 +960,167 @@ def render_sidebar() -> None:
             st.metric("Backend", "NumPy")
         with col2:
             st.metric("Config", "TOML")
+
+        # === CONFIGURATION GLOBALE ===
+        st.markdown("---")
+        st.markdown("### 🎛️ Configuration Globale")
+
+        # GPU & Calcul - Détection dynamique
+        with st.expander("🖥️ GPU & Calcul", expanded=True):
+            # Détection GPUs disponibles
+            try:
+                from threadx.gpu.device_manager import list_devices
+                devices = list_devices(use_cache=True)
+                gpu_devices = [d for d in devices if d.device_id >= 0]
+
+                if len(gpu_devices) == 0:
+                    st.warning("⚠️ Aucun GPU détecté - Mode CPU uniquement")
+                elif len(gpu_devices) == 1:
+                    gpu = gpu_devices[0]
+                    st.success(f"✅ GPU détecté : {gpu.name}")
+                    st.caption(f"   └─ {gpu.memory_total_gb:.1f} GB VRAM")
+                else:
+                    # Multi-GPU disponible
+                    gpu_names = [d.name for d in gpu_devices]
+                    st.success(f"✅ {len(gpu_devices)} GPUs détectés : {', '.join(gpu_names)}")
+                    for gpu in gpu_devices:
+                        st.caption(f"   • GPU {gpu.device_id} ({gpu.name}): {gpu.memory_total_gb:.1f} GB VRAM")
+
+                # Checkbox Multi-GPU (seulement si 2+ GPUs)
+                if len(gpu_devices) >= 2:
+                    use_multigpu = st.checkbox(
+                        "🔥 Activer Multi-GPU",
+                        value=st.session_state.get("global_use_multigpu", True),
+                        key="global_use_multigpu",
+                        help=f"Répartit les calculs sur {len(gpu_devices)} GPUs. Décocher si un GPU est utilisé ailleurs (Ollama, autre app)"
+                    )
+
+                    if use_multigpu:
+                        # Afficher la balance depuis le manager
+                        try:
+                            from threadx.gpu.multi_gpu import get_default_manager
+                            manager = get_default_manager()
+                            balance_str = " + ".join([f"{name} ({ratio:.0%})" for name, ratio in manager.device_balance.items() if name != "cpu"])
+                            st.caption(f"⚖️  Répartition : {balance_str}")
+                        except Exception:
+                            st.caption("⚖️  Répartition automatique selon VRAM")
+                    else:
+                        st.caption(f"⚡ GPU principal uniquement ({gpu_devices[0].name})")
+                else:
+                    # Single GPU : pas de checkbox multi-GPU
+                    st.session_state["global_use_multigpu"] = False
+
+            except Exception as e:
+                st.error(f"❌ Erreur détection GPU : {e}")
+                st.caption("Mode CPU sera utilisé")
+
+        # Profil de Performances
+        with st.expander("🔧 Profil de Performances", expanded=True):
+            # Préréglages disponibles
+            profiles = {
+                "🚀 Optimisé": {"workers": 40, "feeder": 24, "desc": "Performance maximale (CPU ~35-40%)"},
+                "⚖️ Équilibré": {"workers": 30, "feeder": 16, "desc": "Bon compromis (CPU ~25-30%)"},
+                "💾 Économique": {"workers": 16, "feeder": 8, "desc": "Multitâche (CPU ~15-20%)"},
+                "🔧 Personnalisé": {"workers": None, "feeder": None, "desc": "Réglages manuels"},
+            }
+
+            # Sélection du profil (Équilibré par défaut)
+            default_profile = st.session_state.get("global_perf_profile", "⚖️ Équilibré")
+            selected_profile = st.selectbox(
+                "Choisir un profil",
+                list(profiles.keys()),
+                index=list(profiles.keys()).index(default_profile),
+                key="global_perf_profile",
+                help="Préréglages optimisés pour différents usages"
+            )
+
+            # Afficher description du profil
+            st.caption(f"📋 {profiles[selected_profile]['desc']}")
+
+            # Afficher ou permettre réglages manuels
+            if selected_profile == "🔧 Personnalisé":
+                manual_workers = st.number_input(
+                    "Workers (parallélisme)",
+                    min_value=2,
+                    max_value=64,
+                    value=st.session_state.get("global_manual_workers", 30),
+                    step=2,
+                    key="global_manual_workers",
+                    help="Nombre de workers parallèles"
+                )
+                manual_feeder = st.select_slider(
+                    "Feeder aggression (pipeline CPU)",
+                    options=[1, 2, 4, 6, 8, 10, 12, 16, 24, 32],
+                    value=st.session_state.get("global_manual_feeder", 16),
+                    key="global_manual_feeder",
+                    help="Contrôle la fenêtre de tâches en vol"
+                )
+                # Stocker valeurs manuelles
+                st.session_state.global_workers = manual_workers
+                st.session_state.global_feeder_aggr = manual_feeder
+            else:
+                # Utiliser valeurs du profil
+                st.session_state.global_workers = profiles[selected_profile]["workers"]
+                st.session_state.global_feeder_aggr = profiles[selected_profile]["feeder"]
+
+                # Afficher valeurs en lecture seule
+                col_w, col_f = st.columns(2)
+                with col_w:
+                    st.metric("Workers", profiles[selected_profile]["workers"])
+                with col_f:
+                    st.metric("Feeder", profiles[selected_profile]["feeder"])
+
+        # Monitoring
+        with st.expander("📊 Monitoring Temps Réel", expanded=False):
+            enable_monitoring = st.checkbox(
+                "Afficher stats CPU/GPU/RAM",
+                value=st.session_state.get("global_monitoring", True),
+                key="global_monitoring",
+                help="Monitoring système pendant les calculs lourds"
+            )
+
+            if enable_monitoring:
+                st.caption("✅ Stats temps réel activées")
+            else:
+                st.caption("⚠️ Monitoring désactivé (léger gain perfs)")
+
+        # Intelligence Artificielle (LLM)
+        with st.expander("🤖 Intelligence Artificielle", expanded=False):
+            enable_llm = st.checkbox(
+                "Activer analyse LLM (quand disponible)",
+                value=st.session_state.get("global_enable_llm", False),
+                key="global_enable_llm",
+                help="Analyse IA des résultats de backtest (Ollama requis)"
+            )
+
+            if enable_llm:
+                st.caption("🤖 Analyse LLM activée pour toutes les pages")
+            else:
+                st.caption("💡 Désactivé (gain mémoire/vitesse)")
+
+        # Bouton Nettoyage Complet (fusion des 2 anciens boutons)
+        st.markdown("---")
+        if st.button("🧹 Nettoyage Complet (RAM + VRAM + Cache)", type="secondary", use_container_width=True, help="Vide la RAM système, VRAM GPU, tous les caches et reset Ollama"):
+            with st.spinner("⏳ Nettoyage mémoire en cours..."):
+                success, message = clean_all_memory()
+
+                # Afficher résultat détaillé
+                if success:
+                    st.success("✅ Nettoyage terminé avec succès!")
+                else:
+                    st.warning("⚠️ Nettoyage partiel (voir détails)")
+
+                # Afficher tous les messages dans un expander
+                with st.expander("📋 Détails du nettoyage", expanded=True):
+                    st.text(message)
+
+                # Marquer pour réinitialisation
+                st.session_state.session_initialized = False
+
+                # Rerun après 1.5 secondes
+                st.caption("🔄 Rechargement de l'application dans 1.5s...")
+                time.sleep(1.5)
+                st.rerun()
 
         # Panneau monitoring compact (activable à la demande)
         st.markdown("---")
@@ -705,15 +1177,50 @@ def render_sidebar() -> None:
                 if auto_refresh_sb:
                     time.sleep(float(interval_sb))
                     st.rerun()
+
+        # Actions Système : Redémarrage et Arrêt
         st.markdown("---")
-        if st.button("🔄 Rafraîchir Cache", use_container_width=True):
-            st.cache_data.clear()
-            st.success("✅ Cache vidé!")
+        st.markdown("### 🔧 Actions Système")
+
+        col_restart, col_shutdown = st.columns(2)
+
+        with col_restart:
+            if st.button(
+                "🔄 Redémarrer",
+                type="secondary",
+                use_container_width=True,
+                help="Redémarre l'application en réinitialisant tout (cache, GPU, session)\nÉquivalent à un premier démarrage"
+            ):
+                restart_app()
+
+        with col_shutdown:
+            if st.button(
+                "🛑 Arrêter",
+                type="primary",
+                use_container_width=True,
+                help="Nettoie la mémoire et arrête l'application proprement"
+            ):
+                shutdown_app()
+
+        st.caption("💡 **Redémarrer** : réinitialise tout (cache, GPU, session)")
+        st.caption("💡 **Arrêter** : ferme l'application proprement")
+
         st.markdown("---")
         st.caption("**ThreadX v2.0** | © 2025")
 
 
 def main() -> None:
+    # NOTE: Reset Ollama au startup DÉSACTIVÉ par défaut (source de bugs)
+    # L'utilisateur peut utiliser le bouton "Reset Ollama" dans la sidebar si nécessaire
+    #
+    # Si vous voulez réactiver le reset automatique, décommentez ce bloc:
+    # if "ollama_reset_on_startup" not in st.session_state:
+    #     st.session_state.ollama_reset_on_startup = True
+    #     with st.spinner("⏳ Réinitialisation d'Ollama au démarrage..."):
+    #         success, message = reset_ollama()
+    #         if not success:
+    #             logging.warning(f"Ollama reset failed on startup: {message}")
+
     init_session()
     render_sidebar()
     page_key = st.session_state.get("page", "config")

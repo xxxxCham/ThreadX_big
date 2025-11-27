@@ -24,14 +24,14 @@ class Analyst(BaseAgent):
 
     def __init__(
         self,
-        model: str = "deepseek-r1:70b",
+        model: str = "deepseek-r1:32b",
         debug: bool = False,
     ) -> None:
         """
         Initialise l'agent Analyst.
 
         Args:
-            model: Modèle LLM à utiliser (par défaut deepseek-r1:70b pour analyse)
+            model: Modèle LLM à utiliser (par défaut deepseek-r1:32b pour analyse)
             debug: Active les logs détaillés
         """
         super().__init__(name="Analyst", model=model, debug=debug)
@@ -79,23 +79,56 @@ class Analyst(BaseAgent):
         # Préparer données pour le LLM
         configs_str = self._format_sweep_results(top_df)
 
-        # Prompt pour analyse quantitative
-        prompt = f"""Analyse les {top_n} meilleures configurations de backtest ci-dessous.
+        # Prompt pour analyse quantitative avec consignes système
+        system_instructions = """
+🎯 OBJECTIFS PRIORITAIRES:
+- Maximiser le Sharpe Ratio (risque/rendement optimal)
+- Minimiser le drawdown maximum (protection du capital)
+- Maintenir un win rate > 50% (cohérence stratégique)
+- Optimiser le nombre de trades (éviter over/under-trading)
+
+📊 APPROCHE D'ANALYSE:
+- Identifier les patterns reproductibles dans les meilleures configurations
+- Détecter les corrélations entre paramètres (interactions non-linéaires)
+- Privilégier la robustesse à la performance brute (éviter overfitting)
+- Analyser les trade-offs (ex: rendement vs stabilité)
+- **DÉTECTER INCOHÉRENCES** (ex: slow_period < fast_period, TP/SL < 1.5, leverage élevé avec sharpe faible)
+
+⚠️ CONTRAINTES CRITIQUES:
+- risk_per_trade: Rester dans [0.005, 0.02] (gestion risque stricte)
+- max_hold_bars: Adapter selon volatilité observée
+- Stop Loss / Take Profit: Ratio minimum 1:1.5 (asymétrie favorable)
+- Respecter TOUJOURS les plages min/max des paramètres
+- **MA Crossover/EMA Cross: slow_period DOIT être > fast_period**
+
+💡 PRINCIPES:
+- Préférer solutions simples et explicables
+- Documenter clairement le raisonnement
+- Signaler EXPLICITEMENT les anomalies ou incohérences dans les données
+"""
+        
+        prompt = f"""{system_instructions}
+
+Analyse les {top_n} meilleures configurations de backtest ci-dessous.
 
 Résultats du sweep (triés par Sharpe ratio):
 {configs_str}
 
 Identifie:
-1. **Patterns communs** dans les paramètres performants (ex: "short_period souvent < 15")
-2. **Métriques clés** (Sharpe moyen, drawdown max, win rate)
+1. **Patterns communs** dans les paramètres performants (ex: "slow_period souvent entre 60-100")
+2. **Métriques clés** (Sharpe moyen, drawdown max, win rate moyen)
 3. **Trade-offs observés** (ex: "Sharpe élevé mais drawdown important")
-4. **Recommandations** pour prochaines optimisations (plages de paramètres prometteuses)
+4. **Incohérences détectées** (ex: "Config #1: slow < fast → invalide")
+5. **Recommandations** pour prochaines optimisations (plages de paramètres prometteuses)
+
+IMPORTANT: Si tu détectes des incohérences (slow < fast, TP/SL anormal), SIGNALE-LES clairement.
 
 Réponds en JSON avec:
 {{
   "patterns": ["pattern1", "pattern2", ...],
-  "key_metrics": {{"avg_sharpe": X, "max_drawdown_avg": Y, ...}},
+  "key_metrics": {{"avg_sharpe": X, "max_drawdown_avg": Y, "avg_win_rate": Z, ...}},
   "trade_offs": ["trade-off1", ...],
+  "anomalies": ["anomalie1", ...],
   "recommendations": ["rec1", "rec2", ...]
 }}
 """
@@ -112,6 +145,25 @@ Réponds en JSON avec:
             temperature=0.3,  # Basse température pour analyse factuelle
             max_tokens=2000,
         )
+
+        # Garantir que toutes les clés existent avec types corrects (validation)
+        if not isinstance(analysis_result.get("patterns"), list):
+            analysis_result["patterns"] = []
+        if not isinstance(analysis_result.get("key_metrics"), dict):
+            analysis_result["key_metrics"] = {}
+        if not isinstance(analysis_result.get("trade_offs"), list):
+            analysis_result["trade_offs"] = []
+        if not isinstance(analysis_result.get("recommendations"), list):
+            analysis_result["recommendations"] = []
+        
+        # Si recommendations vide, générer une recommandation basique
+        if not analysis_result["recommendations"]:
+            self.logger.warning("⚠️ LLM n'a pas généré de recommandations - ajout fallback")
+            analysis_result["recommendations"] = [
+                "Analyser les patterns identifiés pour affiner les plages de paramètres",
+                "Tester des configurations avec Sharpe > moyenne observée",
+                "Réduire le drawdown en ajustant les stops loss",
+            ]
 
         # Identifier patterns quantitatifs (complément à l'analyse LLM)
         quantitative_patterns = self._identify_quantitative_patterns(top_df)
@@ -248,11 +300,23 @@ Réponds en JSON:
 
     def _format_sweep_results(self, df: pd.DataFrame) -> str:
         """Formate un DataFrame de sweep pour le LLM (texte tabulaire lisible)."""
-        # Colonnes clés à afficher
-        key_cols = ["strategy", "sharpe_ratio", "total_return", "max_drawdown"]
-        param_cols = [c for c in df.columns if c not in key_cols and not c.startswith("_")]
+        # Colonnes clés à afficher (vérifier qu'elles existent)
+        key_cols = []
+        for col in ["strategy", "sharpe_ratio", "total_return", "max_drawdown"]:
+            if col in df.columns:
+                key_cols.append(col)
+        
+        # Colonnes de paramètres (exclure métriques et colonnes internes)
+        metrics = ["sharpe_ratio", "total_return", "max_drawdown", "win_rate", "profit_factor", 
+                   "avg_win", "avg_loss", "total_trades", "strategy"]
+        param_cols = [c for c in df.columns if c not in metrics and not c.startswith("_")]
 
         display_cols = key_cols + param_cols[:5]  # Limiter à 5 params pour lisibilité
+        
+        # Si aucune colonne clé, afficher au moins les paramètres
+        if not display_cols:
+            display_cols = list(df.columns)[:8]
+        
         return str(df[display_cols].to_string(index=False))
 
     def _format_backtest_result(self, result: dict[str, Any], params: dict[str, Any]) -> str:

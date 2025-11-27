@@ -1,5 +1,4 @@
 # Core Dependencies (nécessaires pour l'application Streamlit et l'orchestration)
-cupy-cuda12x==13.6.0
 streamlit==1.49.1  # Interface utilisateur interactive
 pandas==2.3.2  # Manipulation des DataFrames OHLCV
 numpy>=1.26.0,<2.1  # Calculs vectorisés rapides pour indicateurs (compatible numba)
@@ -7,7 +6,8 @@ pydantic==2.9.2  # Validation type-safe pour configs et requêtes
 pydantic-settings==2.6.1  # Support pour configs TOML avec Pydantic
 toml==0.10.2  # Parsing des fichiers de configuration TOML
 pandera==0.20.4  # Validation des schémas de DataFrames
-pyarrow==22.0.0  # Lecture/écriture de fichiers Parquet pour persistance
+pyarrow==21.0.0  # Lecture/écriture de fichiers Parquet pour persistance
+numba==0.62.1
 
 # Visualisation Dependencies (pour graphs interactifs et statiques)
 plotly==6.3.0  # Graphiques interactifs (candlesticks, heatmaps)
@@ -32,12 +32,11 @@ websocket-client==1.8.0  # Support pour connexions WebSocket
 pycryptodome==3.23.0  # Chiffrement pour API sécurisées
 
 # Optimisation and GPU Dependencies
-numba==0.60.0  # Compilation JIT pour performance critique
 cupy-cuda12x==13.6.0  # Calculs GPU pour indicateurs rapides
 nvidia-ml-py3>=7.352.0  # GPU monitoring (pynvml)
-torch==2.5.1  # Support ML/GPU optionnel
-torchvision==0.20.1  # Dépendance Torch pour vision
-torchaudio==2.5.1  # Dépendance Torch pour audio
+torch==2.5.1+cu121  # Support ML/GPU optionnel
+torchvision==0.20.1+cu121  # Dépendance Torch pour vision
+torchaudio==2.5.1+cu121  # Dépendance Torch pour audio
 fastrlock==0.8.3  # Verrouillage rapide pour parallélisation
 threadpoolctl==3.6.0  # Gestion des threads pour scikit-learn
 scikit-learn==1.7.2  # Algorithmes ML pour stratégies avancées

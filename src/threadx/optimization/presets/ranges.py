@@ -380,6 +380,7 @@ def get_strategy_preset(strategy_name: str) -> StrategyPresetMapper:
                 # ATR
                 "atr_period": "atr.period",
                 "atr_multiplier": "atr.stop_multiplier",
+                "entry_z": "atr.entry_z",  # Z-score threshold for signal trigger
                 # Risk management
                 "risk_per_trade": "amplitude_hunter.risk_per_trade",  # Réutilise le même preset
                 "max_hold_bars": "amplitude_hunter.max_hold_bars",

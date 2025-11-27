@@ -234,11 +234,12 @@ class MultiGPUManager:
 
         if gpu_primary and gpu_2060:
             # Configuration idéale: RTX 5080/5090 + RTX 2060
-            # Balance selon VRAM: 16GB / 8GB = 2:1 ratio = 66%:34%
+            # Balance selon performance relative: RTX 5080 est ~5x plus puissante
+            # Ratio optimisé: 90%/10% pour maximiser utilisation RTX 5080
             primary_name = gpu_primary.name
-            balance[primary_name] = 0.66  # RTX 5080 (16GB) → 66%
-            balance["2060"] = 0.34         # RTX 2060 (8GB) → 34%
-            logger.info(f"💎 Multi-GPU optimal: {primary_name} (66%) + 2060 (34%)")
+            balance[primary_name] = 0.90  # RTX 5080 (16GB, plus puissante) → 90%
+            balance["2060"] = 0.10  # RTX 2060 (8GB, auxiliaire) → 10%
+            logger.info(f"💎 Multi-GPU optimisé: {primary_name} (90%) + 2060 (10%)")
         elif gpu_primary:
             # Seulement RTX 5090/5080
             balance[gpu_primary.name] = 1.0
@@ -457,7 +458,8 @@ class MultiGPUManager:
                         try:
                             mem_info = cp.cuda.runtime.memGetInfo()
                             device_memory_used = (mem_info[1] - mem_info[0]) / (1024**3)
-                        except Exception:
+                        except Exception as e:
+                            logger.debug(f"GPU memory query failed (ignoré): {e}")
                             pass
 
                         # Calcul
@@ -872,7 +874,8 @@ class MultiGPUManager:
                     if hasattr(stream, "close"):
                         stream.close()
                 self._device_streams.clear()
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Stream cleanup in __del__ failed (ignoré): {e}")
             pass
 
 
@@ -922,9 +925,10 @@ def shutdown_default_manager() -> None:
                     if hasattr(stream, "close"):
                         stream.close()
                 _default_manager._device_streams.clear()
-            logger.info("✅ Gestionnaire multi-GPU arrêté proprement")
+            # Log uniquement au niveau DEBUG pour éviter spam
+            logger.debug("Gestionnaire multi-GPU arrêté proprement")
         except Exception as e:
-            logger.warning(f"Erreur lors du shutdown GPU: {e}")
+            logger.warning("Erreur lors du shutdown GPU: %s", e)
         finally:
             _default_manager = None
 
